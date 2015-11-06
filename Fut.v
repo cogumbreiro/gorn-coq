@@ -189,9 +189,11 @@ Module FutNotations.
   Infix "<~" := Assign (at level 25, left associativity).
   Definition vlam (f:exp->exp) : value := \\ (fun x => f (^ ($ x))).
   Notation "\" := vlam (at level 30).
-  Definition vlet e f := (^ (\ f)) @@ e.
   Definition seq e e' := ((^ (\ (fun x => e'))) @@ e).
   Infix ";" := seq (at level 25, left associativity).
+  Import Map_NAME.
+  Notation "y %"  := (add y) (at level 45, left associativity). 
+  Notation ":0" := (empty _).
 End FutNotations.
 
 Module Examples.
@@ -199,6 +201,7 @@ Module Examples.
   Import Semantics.
   Import Map_NAME.
   Import FutNotations.
+  Definition vlet e f := (^ (\ f)) @@ e.
 
   Example example1 :=
      vlet (Mkref (Future (^ Unit)))
@@ -265,11 +268,25 @@ Module Examples.
 
   Let s3 :=
     mk_state
-      (add y ($ y) (empty _))
-      (add h1 ((^)
+      (y % ($ h2) :0)
+      (h1 % ((^)
      (\\ (fun x => ^ ($ x) <~ Future (Get (! (^ ($ x)))))) @@ ^ ($ y))
-       (add h2 (^ Unit) (empty _))).
-  
+       (h2 % (^ Unit) :0)).
+
+  (* Just to ensure we wrote the term correctly: we compare the data on the reduction above
+     with state s3 *)
+  Goal Map_NAME_Props.to_list (get_data (put_code
+      (put_data s2 y ($ h2))
+      h1 (c2 CtxHole @ ^ ($ y)))) = Map_NAME_Props.to_list (get_data s3).
+    auto.
+  Qed.
+  (* We do the same for the code section *)
+  Goal Map_NAME_Props.to_list (get_code (put_code
+      (put_data s2 y ($ h2))
+      h1 (c2 CtxHole @ ^ ($ y)))) = Map_NAME_Props.to_list (get_code s3).
+    auto.
+  Qed.
+
   Goal Reduction s3 (put_code s3 h1 (CtxHole @ (fun x => x <~ Future (Get (! x))) (^ ($ y)) )).
     unfold s3.
     simpl in *.
@@ -285,9 +302,9 @@ Module Examples.
   Let c3 := CtxAssignRight ($ y) CtxHole.
   Let s4 :=
     mk_state
-      (add y ($ y) (empty _))
-      (add h1 (c3 @ Future (Get (! (^ ($ y)))))
-       (add h2 (^ Unit) (empty _))).
+      (y % ($ h2) :0)
+      (h1 % (c3 @ Future (Get (! (^ ($ y)))))
+       (h2 % (^ Unit) :0)).
   Let h3 := 3.
 
   Goal Reduction s4
@@ -318,5 +335,14 @@ Module Examples.
         apply Map_NAME_Facts.empty_in_iff in H.
         assumption.
   Qed.
+
+  Let s5 :=
+    mk_state (y  %  ($ h2) :0)
+             (h1 % ((^ ($ y)) <~ (^ ($ h3)))
+                (h2 % (^ Unit) 
+                  (h3 % (Get (! (^ ($ y)))) :0)
+                 )
+              ).
+  Print s5.
 End Examples.
 
