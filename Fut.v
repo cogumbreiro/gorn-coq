@@ -37,7 +37,7 @@ Set Implicit Arguments.
 
 Module Lang.
   Inductive value :=
-  | Var:  name -> value
+  | Var: name -> value
   | Unit
   | Lambda: (name -> exp) -> value
   with exp :=
@@ -50,18 +50,26 @@ Module Lang.
   | Deref: exp -> exp.
   
   Definition store := Map_NAME.t value.
+  Definition mk_store := @Map_NAME.empty value.
   Definition taskmap := Map_NAME.t exp.
+  Definition mk_taskmap h e := (Map_NAME.add h e (@Map_NAME.empty exp)).
 
   Structure state := mk_state {
-    get_memory: store;
+    get_data: store;
     get_code: taskmap
   }.
 
-  Definition set_code (s:state) m :=
-    mk_state (get_memory s) m.
+  Definition load h e := mk_state mk_store (mk_taskmap h e).
 
-  Definition set_memory (s:state) m :=
+  Definition set_code (s:state) m :=
+    mk_state (get_data s) m.
+
+  Definition set_data (s:state) m :=
   mk_state m (get_code s).
+End Lang.
+
+Module Semantics.
+  Import Lang.
 
   Inductive ctx :=
   | CtxAppLeft : ctx -> exp -> ctx
@@ -78,7 +86,7 @@ Module Lang.
   | CtxAppLeft c e' => App (plug c e) e'
   | CtxAppRight v c => App (Value v) (plug c e)
   | CtxGet c => Get (plug c e)
-  | CtxMkref c => Get (plug c e)
+  | CtxMkref c => Mkref (plug c e)
   | CtxAssignLeft c e' => Assign (plug c e) e'
   | CtxAssignRight v c => Assign (Value v) (plug c e)
   | CtxDeref c => Deref (plug c e)
@@ -89,9 +97,9 @@ Module Lang.
 
   Import Map_NAME.
 
-  Definition DataIn h s : Prop := Map_NAME.In h (get_memory s).
+  Definition DataIn h s : Prop := Map_NAME.In h (get_data s).
+
   Definition CodeIn h s : Prop := Map_NAME.In h (get_code s).
-    
 
   Inductive In h s : Prop :=
     | in_code:
@@ -101,15 +109,18 @@ Module Lang.
       CodeIn h s ->
       In h s.
   
-  Definition GetCode (h:name) (e:exp) (s:state) : Prop := (MapsTo h e (get_code s)).
-  Definition GetData (h:name) (v:value) (s:state) : Prop := (MapsTo h v (get_memory s)).
+  (** Simple abbreviations of map-related functions. *)
 
+  Definition GetCode (h:name) (e:exp) (s:state) : Prop := (MapsTo h e (get_code s)).
+  Definition GetData (h:name) (v:value) (s:state) : Prop := (MapsTo h v (get_data s)).
   Definition put_code (s:state) (h:name) (e:exp) := set_code s (add h e (get_code s)).
-  Definition put_data (s:state) (h:name) (v:value) := set_memory s (add h v (get_memory s)).
+  Definition put_data (s:state) (h:name) (v:value) := set_data s (add h v (get_data s)).
 
   Inductive Reduction (s:state) : state -> Prop :=
   | red_app:
     forall E h x f,
+    (* The only thing that can be passed to a lambda is a variable, we can still encode
+       with the aid of a future+get. Actually our lambdas do not need variables. *)
     GetCode h (E @ (App (Value (Lambda f)) (Value (Var x)))) s ->
     Reduction s (put_code s h (E @ (f x)))
 
@@ -117,7 +128,10 @@ Module Lang.
     forall E h e h',
     GetCode h (E @ (Future e)) s ->
     ~ In h' s ->
-    Reduction s (put_code s h (E @ (Value (Var h'))))
+    Reduction s
+    (put_code
+    (put_code s h (E @ (Value (Var h'))))
+    h' e)
   
   | red_get:
     forall E h h' v,
@@ -150,4 +164,69 @@ Module Lang.
     Reduction s
       (put_code s h (E @ (Value v))).
 
-End Lang.
+End Semantics.
+
+Module Races.
+  Import Lang.
+  Import Semantics.
+
+  Inductive Racy (s:state) : Prop :=
+    racy_def:
+      forall h c x e,
+      GetCode h (c @ Deref (Value (Var x))) s ->
+      GetCode h (c @ Assign (Value (Var x)) e) s ->
+      Racy s.
+
+End Races.
+
+
+Module Examples.
+  Import Lang.
+  Import Semantics.
+  Import Map_NAME.
+  Definition v_unit := Value Unit.
+
+  Definition mk_fref e := Mkref (Future e).
+
+  Definition force e := (Get (Future e)).
+
+  Definition vlam (f:exp->exp) : value := (Lambda (fun x => f (Value (Var x)))).
+  Definition lam (f:exp->exp) := Value (vlam f).
+  Definition vlet e f := App (lam f) e.
+  Definition seq e e' := vlet e (fun x => e').
+  Definition eapp e1 e2 := App e1 (Mkref e2).
+  Definition elet e f := eapp (lam f) e.
+
+  Example example1 :=
+     vlet (mk_fref v_unit)
+     (fun x =>
+       Assign x (Future (Get (Deref x)))).
+
+  Eval compute in example1.
+  Let c2 := CtxAppRight (vlam (fun x =>
+       Assign x (Future (Get (Deref x))))).
+  Let c1 := c2 (CtxMkref CtxHole).
+  Goal c1 @ (Future v_unit) = example1.
+  auto.
+  Qed.
+  Let h1 := 0.
+  Let h2 := 1.
+  Goal let s := load h1 example1 in
+   Reduction s (put_code (put_code s h1 (c1 @ (Value (Var h2)))) h2 v_unit).
+  Proof.
+    apply red_future.
+    - unfold GetCode, get_code, load, mk_taskmap.
+      auto using add_1.
+    - unfold not, GetCode, get_code, load, mk_taskmap, mk_store.
+      intros.
+      inversion H; unfold DataIn, CodeIn in *; simpl in *.
+      + apply Map_NAME_Facts.empty_in_iff in H0.
+        assumption.
+      + apply Map_NAME_Facts.add_in_iff in H0.
+        destruct H0.
+        * inversion H0.
+        * apply Map_NAME_Facts.empty_in_iff in H0.
+          assumption.
+  Qed.
+End Examples.  
+
