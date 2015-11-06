@@ -59,7 +59,7 @@ Module Lang.
     get_code: taskmap
   }.
 
-  Definition load h e := mk_state mk_store (mk_taskmap h e).
+  Definition load (h:name) (e:exp) := mk_state mk_store (mk_taskmap h e).
 
   Definition set_code (s:state) m :=
     mk_state (get_data s) m.
@@ -179,47 +179,53 @@ Module Races.
 
 End Races.
 
+Module FutNotations.
+  Import Lang.
+  Notation "^" := (Value) (at level 20).
+  Notation "$" := (Var) (at level 20).
+  Infix "@@" := App (at level 25, left associativity).
+  Notation "\\" := (Lambda) (at level 35).
+  Notation "!" := (Deref) (at level 20).
+  Infix "<~" := Assign (at level 25, left associativity).
+  Definition vlam (f:exp->exp) : value := \\ (fun x => f (^ ($ x))).
+  Notation "\" := vlam (at level 30).
+  Definition vlet e f := (^ (\ f)) @@ e.
+  Definition seq e e' := ((^ (\ (fun x => e'))) @@ e).
+  Infix ";" := seq (at level 25, left associativity).
+End FutNotations.
 
 Module Examples.
   Import Lang.
   Import Semantics.
   Import Map_NAME.
-  Definition v_unit := Value Unit.
-
-  Definition mk_fref e := Mkref (Future e).
-
-  Definition force e := (Get (Future e)).
-
-  Definition vlam (f:exp->exp) : value := (Lambda (fun x => f (Value (Var x)))).
-  Definition lam (f:exp->exp) := Value (vlam f).
-  Definition vlet e f := App (lam f) e.
-  Definition seq e e' := vlet e (fun x => e').
-  Definition eapp e1 e2 := App e1 (Mkref e2).
-  Definition elet e f := eapp (lam f) e.
+  Import FutNotations.
 
   Example example1 :=
-     vlet (mk_fref v_unit)
-     (fun x =>
-       Assign x (Future (Get (Deref x)))).
+     vlet (Mkref (Future (^ Unit)))
+     (fun x => x <~ (Future (Get (! x)))).
 
   Eval compute in example1.
   Let c2 := CtxAppRight (vlam (fun x =>
-       Assign x (Future (Get (Deref x))))).
+       x <~ (Future (Get (! x))))).
   Let c1 := c2 (CtxMkref CtxHole).
-  Goal c1 @ (Future v_unit) = example1.
-  auto.
+  Goal c1 @ (Future (^ Unit)) = example1.
+    auto.
   Qed.
   Let h1 := 0.
   Let h2 := 1.
-  Goal let s := load h1 example1 in
-   Reduction s (put_code (put_code s h1 (c1 @ (Value (Var h2)))) h2 v_unit).
+  Let s1 := load h1 example1.
+  (* simplifies the definitions *)
+  Ltac f_simpl := unfold GetCode, get_code, load, mk_taskmap, GetData, get_data, seq, vlet, vlam, DataIn, CodeIn in *.
+  Goal
+   Reduction s1 (put_code (put_code s1 h1 (c1 @ (^ ($ h2)))) h2 (^ Unit)).
   Proof.
-    apply red_future.
-    - unfold GetCode, get_code, load, mk_taskmap.
-      auto using add_1.
-    - unfold not, GetCode, get_code, load, mk_taskmap, mk_store.
+    unfold s1.
+    f_simpl.
+    apply red_future; f_simpl.
+    - auto using add_1.
+    - unfold not.
       intros.
-      inversion H; unfold DataIn, CodeIn in *; simpl in *.
+      inversion H; f_simpl.
       + apply Map_NAME_Facts.empty_in_iff in H0.
         assumption.
       + apply Map_NAME_Facts.add_in_iff in H0.
@@ -228,5 +234,89 @@ Module Examples.
         * apply Map_NAME_Facts.empty_in_iff in H0.
           assumption.
   Qed.
-End Examples.  
+
+  Let y := 2.
+  Let s2 := (put_code (load h1 (c2 CtxHole @ (Mkref (^ ($ h2))))) h2 (^ Unit)).
+  Goal Reduction s2
+    (put_code
+      (put_data s2 y ($ h2))
+      h1 (c2 CtxHole @ ^ ($ y))).
+  Proof.
+    unfold s2; f_simpl.
+    apply red_mkref; f_simpl; simpl.
+    - auto using add_1, add_2 with *.
+    - intuition; f_simpl.
+      + apply Map_NAME_Facts.empty_in_iff in H0.
+        assumption.
+      + simpl in *.
+        apply Map_NAME_Facts.add_in_iff in H0.
+        destruct H0.
+        * inversion H.
+        * apply Map_NAME_Facts.add_in_iff in H.
+          destruct H.
+          { inversion H. }
+          apply Map_NAME_Facts.empty_in_iff in H.
+          assumption.
+  Qed.
+  
+  Goal c2 CtxHole @ (^ ($ y)) = ^ (\ (fun x : exp => x <~ Future (Get (! x)))) @@ ^ ($ y).
+    auto.
+  Qed.
+
+  Let s3 :=
+    mk_state
+      (add y ($ y) (empty _))
+      (add h1 ((^)
+     (\\ (fun x => ^ ($ x) <~ Future (Get (! (^ ($ x)))))) @@ ^ ($ y))
+       (add h2 (^ Unit) (empty _))).
+  
+  Goal Reduction s3 (put_code s3 h1 (CtxHole @ (fun x => x <~ Future (Get (! x))) (^ ($ y)) )).
+    unfold s3.
+    simpl in *.
+    apply (@red_app _ CtxHole _ _ (
+      fun x => (
+        (^ ($ x)) <~ (Future (Get (! (^ ($ x))))))
+      )).
+    f_simpl.
+    simpl.
+    apply add_1; auto.
+  Qed.
+
+  Let c3 := CtxAssignRight ($ y) CtxHole.
+  Let s4 :=
+    mk_state
+      (add y ($ y) (empty _))
+      (add h1 (c3 @ Future (Get (! (^ ($ y)))))
+       (add h2 (^ Unit) (empty _))).
+  Let h3 := 3.
+
+  Goal Reduction s4
+    (put_code (put_code s4 h1 (c3 @ ^ ($ h3))) h3
+       (Get (! (^ ($ y))))).
+    simpl.
+    apply (@red_future s4 c3 h1 (Get (! (^ ($ y)))) h3).
+    - f_simpl.
+      simpl.
+      auto using add_1.
+    - intuition.
+      + unfold s4 in *.
+        f_simpl.
+        simpl in *.
+        apply Map_NAME_Facts.add_in_iff in H0.
+        destruct H0.
+        inversion H.
+        apply Map_NAME_Facts.empty_in_iff in H.
+        assumption.
+      + unfold s4 in *; f_simpl.
+        simpl in *.
+        apply Map_NAME_Facts.add_in_iff in H0.
+        destruct H0.
+        inversion H.
+        apply Map_NAME_Facts.add_in_iff in H.
+        destruct H.
+        inversion H.
+        apply Map_NAME_Facts.empty_in_iff in H.
+        assumption.
+  Qed.
+End Examples.
 
