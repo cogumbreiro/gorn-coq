@@ -281,6 +281,45 @@ Module Races.
 
 End Races.
 
+Module Dependencies.
+  Import Map_NAME.
+  Import Lang.
+  Import Semantics.
+
+  (** Points-to dependency: a variable points to another variable in the store. *)
+
+  Inductive PointsTo d x y : Prop :=
+    points_to_def:
+      MapsTo x (Var y) d ->
+      PointsTo d x y.
+
+  (** Blocked dependency: a task is blocked on a future in the taskmap. *)
+
+  Inductive Blocked c x y : Prop :=
+    blocked_def:
+      forall C,
+      MapsTo x (C @ Get (Value (Var y))) c ->
+      Blocked c x y.
+
+  (** Dependencies between two names in a state wraps up blocked and points-to
+     dependencies. *)
+
+  Inductive Dep s (x y:name) : Prop :=
+    | dep_points_to:
+      PointsTo (get_data s) x y ->
+      Dep s x y
+    | dep_blocked:
+      Blocked (get_code s) x y ->
+      Dep s x y.
+
+  Require Import Coq.Relations.Relation_Operators.
+
+  (** Defines the [Depends] relation as the transitive closure of [Dep]. *)
+
+  Definition Depends s := clos_trans _ (Dep s).
+
+End Dependencies.
+
 Module FutNotations.
   Import Lang.
   Notation "^" := (Value) (at level 20).
