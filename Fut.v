@@ -36,30 +36,30 @@ Qed.
 Set Implicit Arguments.
 
 Module Lang.
-  Inductive value :=
-  | Var: name -> value
+  Inductive f_value :=
+  | Var: name -> f_value
   | Unit
-  | Lambda: (name -> exp) -> value
-  with exp :=
-  | Value:  value -> exp
-  | App: exp -> exp -> exp
-  | Future: exp -> exp
-  | Get: exp -> exp
-  | Mkref: exp -> exp
-  | Assign: exp -> exp -> exp
-  | Deref: exp -> exp.
+  | Lambda: (name -> f_exp) -> f_value
+  with f_exp :=
+  | Value:  f_value -> f_exp
+  | App: f_exp -> f_exp -> f_exp
+  | Future: f_exp -> f_exp
+  | Get: f_exp -> f_exp
+  | Mkref: f_exp -> f_exp
+  | Assign: f_exp -> f_exp -> f_exp
+  | Deref: f_exp -> f_exp.
   
-  Definition store := Map_NAME.t value.
-  Definition mk_store := @Map_NAME.empty value.
-  Definition taskmap := Map_NAME.t exp.
-  Definition mk_taskmap h e := (Map_NAME.add h e (@Map_NAME.empty exp)).
+  Definition store := Map_NAME.t f_value.
+  Definition mk_store := @Map_NAME.empty f_value.
+  Definition taskmap := Map_NAME.t f_exp.
+  Definition mk_taskmap h e := (Map_NAME.add h e (@Map_NAME.empty f_exp)).
 
   Structure state := mk_state {
     get_data: store;
     get_code: taskmap
   }.
 
-  Definition load (h:name) (e:exp) := mk_state mk_store (mk_taskmap h e).
+  Definition load (h:name) (e:f_exp) := mk_state mk_store (mk_taskmap h e).
 
   Definition set_code (s:state) m :=
     mk_state (get_data s) m.
@@ -72,16 +72,16 @@ Module Semantics.
   Import Lang.
 
   Inductive ctx :=
-  | CtxAppLeft : ctx -> exp -> ctx
-  | CtxAppRight: value -> ctx -> ctx
+  | CtxAppLeft : ctx -> f_exp -> ctx
+  | CtxAppRight: f_value -> ctx -> ctx
   | CtxGet: ctx -> ctx
   | CtxMkref: ctx -> ctx
-  | CtxAssignLeft: ctx -> exp -> ctx
-  | CtxAssignRight: value -> ctx -> ctx
+  | CtxAssignLeft: ctx -> f_exp -> ctx
+  | CtxAssignRight: f_value -> ctx -> ctx
   | CtxDeref: ctx -> ctx
   | CtxHole.
 
-  Fixpoint plug (c:ctx) (e:exp) : exp :=
+  Fixpoint plug (c:ctx) (e:f_exp) : f_exp :=
   match c with
   | CtxAppLeft c e' => App (plug c e) e'
   | CtxAppRight v c => App (Value v) (plug c e)
@@ -111,10 +111,10 @@ Module Semantics.
   
   (** Simple abbreviations of map-related functions. *)
 
-  Definition GetCode (h:name) (e:exp) (s:state) : Prop := (MapsTo h e (get_code s)).
-  Definition GetData (h:name) (v:value) (s:state) : Prop := (MapsTo h v (get_data s)).
-  Definition put_code (s:state) (h:name) (e:exp) := set_code s (add h e (get_code s)).
-  Definition put_data (s:state) (h:name) (v:value) := set_data s (add h v (get_data s)).
+  Definition GetCode (h:name) (e:f_exp) (s:state) : Prop := (MapsTo h e (get_code s)).
+  Definition GetData (h:name) (v:f_value) (s:state) : Prop := (MapsTo h v (get_data s)).
+  Definition put_code (s:state) (h:name) (e:f_exp) := set_code s (add h e (get_code s)).
+  Definition put_data (s:state) (h:name) (v:f_value) := set_data s (add h v (get_data s)).
 
   Inductive Reduction (s:state) : state -> Prop :=
   | red_app:
@@ -166,6 +166,108 @@ Module Semantics.
 
 End Semantics.
 
+Module Typesystem.
+  Import Lang.
+
+  Inductive f_type :=
+    | TUnit
+    | TArrow : f_type -> f_type -> f_type
+    | TRef : f_type -> f_type
+    | TThr : f_type -> f_type.
+
+  Definition typing := Map_NAME.t f_type.
+
+  (** Typing rules for values: *)
+
+  Inductive VCheck (Gamma:typing) : f_value -> f_type -> Prop :=
+    | v_check_var:
+      forall x t,
+      Map_NAME.MapsTo x t Gamma ->
+      (* ---------------- *)
+      VCheck Gamma (Var x) t
+
+    | v_check_unit:
+      (* ----------------- *)
+      VCheck Gamma Unit TUnit
+
+    | v_check_lambda:
+      forall x t1 t2 f,
+      ECheck (Map_NAME.add x t1 Gamma) (f x) t2 ->
+      (* -------------------------------- *)
+      VCheck Gamma (Lambda f) (TArrow t1 t2)
+
+  (** Typing rules for expressions: *)
+
+  with ECheck (Gamma:typing) : f_exp -> f_type -> Prop :=
+    | e_check_value:
+      forall v t,
+      VCheck Gamma v t ->
+      ECheck Gamma (Value v) t
+
+    | e_check_app:
+      forall e1 e2 t1 t2,
+      ECheck Gamma e1 (TArrow t1 t2) ->
+      ECheck Gamma e2 t1 ->
+      (* --------------------- *)
+      ECheck Gamma (App e1 e2) t2
+    
+    | e_check_mkref:
+      forall e t,
+      ECheck Gamma e t ->
+      (* -------------------------- *)
+      ECheck Gamma (Mkref e) (TRef t)
+
+    | e_check_deref:
+      forall  e t,
+      ECheck Gamma e (TRef t) ->
+      (* ------------------ *)
+      ECheck Gamma (Deref e) t
+
+    | e_check_assign:
+      forall e1 e2 t,
+      ECheck Gamma e1 (TRef t) ->
+      ECheck Gamma e2 t ->
+      (* ----------------------------*)
+      ECheck Gamma (Assign e1 e2) TUnit
+
+    | e_check_future:
+      forall e t,
+      ECheck Gamma e t ->
+      (* ---------------------------*)
+      ECheck Gamma (Future e) (TThr t)
+   
+    | e_check_get:
+      forall e t,
+      ECheck Gamma e (TRef t) ->
+      (* ----------- *)
+      ECheck Gamma e t.
+
+
+  (** Typing rules for code: *)
+
+  Inductive CCheck (Gamma:typing) (c:taskmap) : Prop :=
+    c_check_def:
+      (forall x e, Map_NAME.MapsTo x e c -> exists t, ECheck Gamma e (TThr t)) ->
+      CCheck Gamma c.
+
+  (** Typing rules for data: *)
+
+  Inductive DCheck (Gamma:typing) (d:store) : Prop :=
+    d_check_def:
+      (forall x v, Map_NAME.MapsTo x v d -> exists t, VCheck Gamma v (TRef t)) ->
+      DCheck Gamma d.
+
+  (** Typing rules for states: *)
+
+  Inductive SCheck (Gamma:typing) (s:state) : Prop :=
+    s_check_def:
+      CCheck Gamma (get_code s) ->
+      DCheck Gamma (get_data s) ->
+      (* --------- *)
+      SCheck Gamma s.
+
+End Typesystem.
+
 Module Races.
   Import Lang.
   Import Semantics.
@@ -187,7 +289,7 @@ Module FutNotations.
   Notation "\\" := (Lambda) (at level 35).
   Notation "!" := (Deref) (at level 20).
   Infix "<~" := Assign (at level 25, left associativity).
-  Definition vlam (f:exp->exp) : value := \\ (fun x => f (^ ($ x))).
+  Definition vlam (f:f_exp->f_exp) : f_value := \\ (fun x => f (^ ($ x))).
   Notation "\" := vlam (at level 30).
   Definition seq e e' := ((^ (\ (fun x => e'))) @@ e).
   Infix ";" := seq (at level 25, left associativity).
@@ -262,7 +364,7 @@ Module Examples.
           assumption.
   Qed.
   
-  Goal c2 CtxHole @ (^ ($ y)) = ^ (\ (fun x : exp => x <~ Future (Get (! x)))) @@ ^ ($ y).
+  Goal c2 CtxHole @ (^ ($ y)) = ^ (\ (fun x : f_exp => x <~ Future (Get (! x)))) @@ ^ ($ y).
     auto.
   Qed.
 
