@@ -391,15 +391,23 @@ Module Dependencies.
 
   (** A deadlocked state has a cycle in the [Trans_Blocked] relation. *)
 
-  Definition Deadlocked s := reflexive _ (Trans_Blocked (get_code s)).
+  Inductive Deadlocked s : Prop :=
+    deadlocked_def:
+      forall x,
+      Trans_Blocked (get_code s) x x ->
+      Deadlocked s.
 
   (** Defines the [Depends] relation as the transitive closure of [Dep]. *)
 
   Definition Depends s := clos_trans _ (Dep s).
 
-  (** The relation [Trans_Blocked] is the transitive closure of [Blocked]. *) 
+  (** A state is tainted if there is a cycle in the [Depends] relation.  *) 
 
-  Definition Tainted s := reflexive _ (Depends s).
+  Inductive Tainted s : Prop :=
+    tainted_def:
+      forall x,
+      Depends s x x ->
+      Tainted s.
 
   (* XXX: move to Aniceto *)
   Lemma clos_trans_impl:
@@ -423,7 +431,9 @@ Module Dependencies.
     Tainted s.
   Proof.
     intros.
-    unfold Deadlocked, Tainted, Trans_Blocked, reflexive, Depends in *.
+    inversion H.
+    apply tainted_def with (x).
+    unfold Trans_Blocked, reflexive, Depends in *.
     eauto using clos_trans_impl, dep_blocked.
   Qed.
 
