@@ -1,3 +1,5 @@
+(* begin hide *)
+
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FSetAVL.
@@ -36,6 +38,16 @@ Qed.
 Set Implicit Arguments.
 
 Module Lang.
+
+(* end hide *)
+
+(** * Language *)
+
+  (**
+  Our language is a trivial extension of the $\lambda$-calculus, extended with memory cells
+  (whose syntax is inspired by ML) and futures.
+  *)
+
   Inductive f_value :=
   | Var: name -> f_value
   | Unit
@@ -49,27 +61,61 @@ Module Lang.
   | Assign: f_exp -> f_exp -> f_exp
   | Deref: f_exp -> f_exp.
   
+  (** A store maps from names into values. *)
+
   Definition store := Map_NAME.t f_value.
+  
+  (** Let [mk_store] create an empty store. *)
+
   Definition mk_store := @Map_NAME.empty f_value.
+
+  (** A taskmap ranges from names into expressions. *)
+
   Definition taskmap := Map_NAME.t f_exp.
+
+  (**
+  Function [mk_taskmap] creates a taskmap with a singleton expression [e] labelled
+  by name [h]. 
+  *)
+
   Definition mk_taskmap h e := (Map_NAME.add h e (@Map_NAME.empty f_exp)).
+
+  (** A state simply pairs a store and a taskmap. *)
 
   Structure state := mk_state {
     get_data: store;
     get_code: taskmap
   }.
 
+  (** The [load] function creates the initial state, running expression [e] with name [h]. *)
+
   Definition load (h:name) (e:f_exp) := mk_state mk_store (mk_taskmap h e).
+
+  (** Functions [set_code] and  [set_data] work as expected. *)
 
   Definition set_code (s:state) m :=
     mk_state (get_data s) m.
 
   Definition set_data (s:state) m :=
   mk_state m (get_code s).
+
+(* begin hide*)
 End Lang.
+(* end hide *)
+
+(* begin hide  *)
 
 Module Semantics.
   Import Lang.
+
+(* end hide *)
+  (** * Small-step operational semantics *)
+
+  (**
+  We define expression contexts, where we note that
+  we do not allow evaluating the body of futures and
+  define call-by-value semantics.
+  *)
 
   Inductive ctx :=
   | CtxAppLeft : ctx -> f_exp -> ctx
@@ -80,6 +126,11 @@ Module Semantics.
   | CtxAssignRight: f_value -> ctx -> ctx
   | CtxDeref: ctx -> ctx
   | CtxHole.
+
+  (**
+  Function [plug], notation $@$, replaces the whole in
+  a context with the given expression.
+  *)
 
   Fixpoint plug (c:ctx) (e:f_exp) : f_exp :=
   match c with
@@ -95,11 +146,23 @@ Module Semantics.
 
   Infix "@" := plug (no associativity, at level 60).
 
+  (* begin hide *)
+
   Import Map_NAME.
+
+  (* end hide *)
+
+  (** We define two predicates to inquire if a name is labelling some data or labelling some
+  code. *)
 
   Definition DataIn h s : Prop := Map_NAME.In h (get_data s).
 
   Definition CodeIn h s : Prop := Map_NAME.In h (get_code s).
+
+  (**
+  We also define a predicate [In] that holds if the given name  is  labelling some
+  code or some data.
+  *)
 
   Inductive In h s : Prop :=
     | in_code:
@@ -109,18 +172,24 @@ Module Semantics.
       CodeIn h s ->
       In h s.
   
-  (** Simple abbreviations of map-related functions. *)
+  (**
+  We define the predicate and function to get/put some pair label-expression in
+  the given code/data of the state.
+  *)
 
   Definition GetCode (h:name) (e:f_exp) (s:state) : Prop := (MapsTo h e (get_code s)).
-  Definition GetData (h:name) (v:f_value) (s:state) : Prop := (MapsTo h v (get_data s)).
   Definition put_code (s:state) (h:name) (e:f_exp) := set_code s (add h e (get_code s)).
+
+  Definition GetData (h:name) (v:f_value) (s:state) : Prop := (MapsTo h v (get_data s)).
   Definition put_data (s:state) (h:name) (v:f_value) := set_data s (add h v (get_data s)).
+
+  (**
+  Next, we define the operational semantics of our language.
+  *)
 
   Inductive Reduces (s:state) : state -> Prop :=
   | red_app:
     forall E h x f,
-    (* The only thing that can be passed to a lambda is a variable, we can still encode
-       with the aid of a future+get. Actually our lambdas do not need variables. *)
     GetCode h (E @ (App (Value (Lambda f)) (Value (Var x)))) s ->
     Reduces s (put_code s h (E @ (f x)))
 
@@ -131,7 +200,7 @@ Module Semantics.
     Reduces s
     (put_code
     (put_code s h (E @ (Value (Var h'))))
-    h' e)
+                h' e)
   
   | red_get:
     forall E h h' v,
@@ -161,13 +230,17 @@ Module Semantics.
     forall h h' E v,
     GetCode h (E @ (Deref (Value (Var h')))) s ->
     GetData h' v s ->
-    Reduces s
-      (put_code s h (E @ (Value v))).
+    Reduces s (put_code s h (E @ (Value v))).
 
+(* begin hide *)
 End Semantics.
 
 Module Typesystem.
   Import Lang.
+
+(* end  hide *)
+(** printing Gamma $\Gamma$ *)
+(** *  Type system *)
 
   Inductive f_type :=
     | TUnit
@@ -183,17 +256,14 @@ Module Typesystem.
     | v_check_var:
       forall x t,
       Map_NAME.MapsTo x t Gamma ->
-      (* ---------------- *)
       VCheck Gamma (Var x) t
 
     | v_check_unit:
-      (* ----------------- *)
       VCheck Gamma Unit TUnit
 
     | v_check_lambda:
       forall x t1 t2 f,
       ECheck (Map_NAME.add x t1 Gamma) (f x) t2 ->
-      (* -------------------------------- *)
       VCheck Gamma (Lambda f) (TArrow t1 t2)
 
   (** Typing rules for expressions: *)
@@ -208,38 +278,32 @@ Module Typesystem.
       forall e1 e2 t1 t2,
       ECheck Gamma e1 (TArrow t1 t2) ->
       ECheck Gamma e2 t1 ->
-      (* --------------------- *)
       ECheck Gamma (App e1 e2) t2
     
     | e_check_mkref:
       forall e t,
       ECheck Gamma e t ->
-      (* -------------------------- *)
       ECheck Gamma (Mkref e) (TRef t)
 
     | e_check_deref:
       forall  e t,
       ECheck Gamma e (TRef t) ->
-      (* ------------------ *)
       ECheck Gamma (Deref e) t
 
     | e_check_assign:
       forall e1 e2 t,
       ECheck Gamma e1 (TRef t) ->
       ECheck Gamma e2 t ->
-      (* ----------------------------*)
       ECheck Gamma (Assign e1 e2) TUnit
 
     | e_check_future:
       forall e t,
       ECheck Gamma e t ->
-      (* ---------------------------*)
       ECheck Gamma (Future e) (TThr t)
    
     | e_check_get:
       forall e t,
       ECheck Gamma e (TRef t) ->
-      (* ----------- *)
       ECheck Gamma e t.
 
 
@@ -263,14 +327,19 @@ Module Typesystem.
     s_check_def:
       CCheck Gamma (get_code s) ->
       DCheck Gamma (get_data s) ->
-      (* --------- *)
       SCheck Gamma s.
+
+(** * Races & Dependencies *)
+
+(* begin hide *)
 
 End Typesystem.
 
 Module Races.
   Import Lang.
   Import Semantics.
+
+(* end hide *)
 
   Inductive Racy (s:state) : Prop :=
     racy_def:
@@ -279,12 +348,15 @@ Module Races.
       GetCode h (c @ Assign (Value (Var x)) e) s ->
       Racy s.
 
+(* begin hide *)
 End Races.
 
 Module Dependencies.
   Import Map_NAME.
   Import Lang.
   Import Semantics.
+
+(* end hide *)
 
   (** Points-to dependency: a variable points to another variable in the store. *)
 
@@ -354,6 +426,9 @@ Module Dependencies.
     unfold Deadlocked, Tainted, Trans_Blocked, reflexive, Depends in *.
     eauto using clos_trans_impl, dep_blocked.
   Qed.
+
+(* begin hide *)
+
 End Dependencies.
 
 
@@ -361,6 +436,8 @@ Module Deadlocks.
   Import Semantics.
   Import Races.
   Import Dependencies.
+
+(* end hide *)
 
   (** Tainted states are introduced by states. *)
 
@@ -379,6 +456,8 @@ Module Deadlocks.
     Reduces s1 s2 ->
     ~ Racy s2.
 
+(* begin hide *)
+
 End Deadlocks.
 
 
@@ -388,6 +467,10 @@ Module Determinism.
 
   Import Semantics.
   Import Races.
+
+(* end hide *)
+
+(** * Determinism *)
 
   Definition StarReduces := clos_refl_trans _ Reduces.
 
@@ -403,6 +486,8 @@ Module Determinism.
         Reduces s s2 ->
         exists s', (StarReduces s1 s' /\ StarReduces s2 s')) ->
       Deterministic s.
+
+(* begin  hide *)
 
 End Determinism.
 
@@ -573,6 +658,6 @@ Module Examples.
                   (h3 % (Get (! (^ ($ y)))) :0)
                  )
               ).
-  Print s5.
 End Examples.
 
+(* end hide *)
