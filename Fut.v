@@ -116,19 +116,19 @@ Module Semantics.
   Definition put_code (s:state) (h:name) (e:f_exp) := set_code s (add h e (get_code s)).
   Definition put_data (s:state) (h:name) (v:f_value) := set_data s (add h v (get_data s)).
 
-  Inductive Reduction (s:state) : state -> Prop :=
+  Inductive Reduces (s:state) : state -> Prop :=
   | red_app:
     forall E h x f,
     (* The only thing that can be passed to a lambda is a variable, we can still encode
        with the aid of a future+get. Actually our lambdas do not need variables. *)
     GetCode h (E @ (App (Value (Lambda f)) (Value (Var x)))) s ->
-    Reduction s (put_code s h (E @ (f x)))
+    Reduces s (put_code s h (E @ (f x)))
 
   | red_future:
     forall E h e h',
     GetCode h (E @ (Future e)) s ->
     ~ In h' s ->
-    Reduction s
+    Reduces s
     (put_code
     (put_code s h (E @ (Value (Var h'))))
     h' e)
@@ -137,13 +137,13 @@ Module Semantics.
     forall E h h' v,
     GetCode h (E @ (Get (Value (Var h')))) s ->
     GetCode h' (Value v) s ->
-    Reduction s (put_code s h (E @ (Value v)))
+    Reduces s (put_code s h (E @ (Value v)))
   
   | red_mkref:
     forall h h' E v,
     GetCode h (E @ (Mkref (Value v))) s ->
     ~ In h' s ->
-    Reduction s
+    Reduces s
       (put_code
       (put_data s h' v)
       h (E @ (Value (Var h'))))
@@ -152,7 +152,7 @@ Module Semantics.
     forall h h' E v,
     GetCode h (E @ (Assign (Value (Var h')) (Value v))) s ->
     DataIn h' s -> 
-    Reduction s
+    Reduces s
       (put_code
       (put_data s h' v)
       h (E @ (Value Unit)))
@@ -161,7 +161,7 @@ Module Semantics.
     forall h h' E v,
     GetCode h (E @ (Deref (Value (Var h')))) s ->
     GetData h' v s ->
-    Reduction s
+    Reduces s
       (put_code s h (E @ (Value v))).
 
 End Semantics.
@@ -314,11 +314,100 @@ Module Dependencies.
 
   Require Import Coq.Relations.Relation_Operators.
 
+
+  Definition Trans_Blocked c := clos_trans _ (Blocked c).
+
+  (** A deadlocked state has a cycle in the [Trans_Blocked] relation. *)
+
+  Definition Deadlocked s := reflexive _ (Trans_Blocked (get_code s)).
+
   (** Defines the [Depends] relation as the transitive closure of [Dep]. *)
 
   Definition Depends s := clos_trans _ (Dep s).
 
+  (** The relation [Trans_Blocked] is the transitive closure of [Blocked]. *) 
+
+  Definition Tainted s := reflexive _ (Depends s).
+
+  (* XXX: move to Aniceto *)
+  Lemma clos_trans_impl:
+    forall {A:Type} (P Q: relation A),
+    (forall x y, P x y -> Q x y) ->
+    forall x y,
+    clos_trans A P x y ->
+    clos_trans A Q x y.
+  Proof.
+    intros.
+    induction H0.
+    - auto using t_step.
+    - eauto using t_trans.
+  Qed.
+
+  (** A deadlocked state is a special case of a tainted state. *)
+
+  Lemma deadlocked_to_tainted:
+    forall s,
+    Deadlocked s ->
+    Tainted s.
+  Proof.
+    intros.
+    unfold Deadlocked, Tainted, Trans_Blocked, reflexive, Depends in *.
+    eauto using clos_trans_impl, dep_blocked.
+  Qed.
 End Dependencies.
+
+
+Module Deadlocks.
+  Import Semantics.
+  Import Races.
+  Import Dependencies.
+
+  (** Tainted states are introduced by states. *)
+
+  Axiom races_impl_tainted:
+    forall s1 s2,
+    Reduces s1 s2 ->
+    ~ Tainted s1 ->
+    Tainted s2 ->
+    Racy s1.
+  (* TODO *)
+
+  Axiom reduces_preserves_tainted:
+    forall s1 s2,
+    Tainted s1 ->
+    ~ Racy s1 ->
+    Reduces s1 s2 ->
+    ~ Racy s2.
+
+End Deadlocks.
+
+
+Module Determinism.
+
+  Require Import Coq.Relations.Relation_Operators.
+
+  Import Semantics.
+  Import Races.
+
+  Definition StarReduces := clos_refl_trans _ Reduces.
+
+  Inductive Racefree s : Prop :=
+    racefree_def:
+      (forall s', StarReduces s s' -> ~ Racy s) ->
+      Racefree s.
+
+  Inductive Deterministic s : Prop :=
+    deterministic_def:
+      (forall s1 s2,
+        Reduces s s1 ->
+        Reduces s s2 ->
+        exists s', (StarReduces s1 s' /\ StarReduces s2 s')) ->
+      Deterministic s.
+
+End Determinism.
+
+
+(* --- examples ---- *)
 
 Module FutNotations.
   Import Lang.
@@ -361,7 +450,7 @@ Module Examples.
   (* simplifies the definitions *)
   Ltac f_simpl := unfold GetCode, get_code, load, mk_taskmap, GetData, get_data, seq, vlet, vlam, DataIn, CodeIn in *.
   Goal
-   Reduction s1 (put_code (put_code s1 h1 (c1 @ (^ ($ h2)))) h2 (^ Unit)).
+   Reduces s1 (put_code (put_code s1 h1 (c1 @ (^ ($ h2)))) h2 (^ Unit)).
   Proof.
     unfold s1.
     f_simpl.
@@ -381,7 +470,7 @@ Module Examples.
 
   Let y := 2.
   Let s2 := (put_code (load h1 (c2 CtxHole @ (Mkref (^ ($ h2))))) h2 (^ Unit)).
-  Goal Reduction s2
+  Goal Reduces s2
     (put_code
       (put_data s2 y ($ h2))
       h1 (c2 CtxHole @ ^ ($ y))).
@@ -428,7 +517,7 @@ Module Examples.
     auto.
   Qed.
 
-  Goal Reduction s3 (put_code s3 h1 (CtxHole @ (fun x => x <~ Future (Get (! x))) (^ ($ y)) )).
+  Goal Reduces s3 (put_code s3 h1 (CtxHole @ (fun x => x <~ Future (Get (! x))) (^ ($ y)) )).
     unfold s3.
     simpl in *.
     apply (@red_app _ CtxHole _ _ (
@@ -448,7 +537,7 @@ Module Examples.
        (h2 % (^ Unit) :0)).
   Let h3 := 3.
 
-  Goal Reduction s4
+  Goal Reduces s4
     (put_code (put_code s4 h1 (c3 @ ^ ($ h3))) h3
        (Get (! (^ ($ y))))).
     simpl.
