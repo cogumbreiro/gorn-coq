@@ -251,60 +251,70 @@ Module Typesystem.
   Definition typing := Map_NAME.t f_type.
 
   (** Typing rules for values: *)
+(* begin hide *)
+  Reserved Notation "x |-" (at level 60).
+  Reserved Notation "x |-v" (at level 60).
+  Reserved Notation "x |-c" (at level 60).
+  Reserved Notation "x |-d" (at level 60).
+  Reserved Notation "x |-s" (at level 60).
+(* end hide *)
 
   Inductive VCheck (Gamma:typing) : f_value -> f_type -> Prop :=
     | v_check_var:
       forall x t,
       Map_NAME.MapsTo x t Gamma ->
-      VCheck Gamma (Var x) t
+      Gamma |-v (Var x) t
 
     | v_check_unit:
-      VCheck Gamma Unit TUnit
+      Gamma |-v Unit TUnit
 
     | v_check_lambda:
       forall x t1 t2 f,
-      ECheck (Map_NAME.add x t1 Gamma) (f x) t2 ->
-      VCheck Gamma (Lambda f) (TArrow t1 t2)
+      (Map_NAME.add x t1 Gamma) |- (f x) t2 ->
+      Gamma |-v (Lambda f) (TArrow t1 t2)
 
   (** Typing rules for expressions: *)
 
   with ECheck (Gamma:typing) : f_exp -> f_type -> Prop :=
     | e_check_value:
       forall v t,
-      VCheck Gamma v t ->
-      ECheck Gamma (Value v) t
+      Gamma |-v v t ->
+      Gamma |- (Value v) t
 
     | e_check_app:
       forall e1 e2 t1 t2,
-      ECheck Gamma e1 (TArrow t1 t2) ->
-      ECheck Gamma e2 t1 ->
-      ECheck Gamma (App e1 e2) t2
+      Gamma |- e1 (TArrow t1 t2) ->
+      Gamma |- e2 t1 ->
+      Gamma |- (App e1 e2) t2
     
     | e_check_mkref:
       forall e t,
-      ECheck Gamma e t ->
-      ECheck Gamma (Mkref e) (TRef t)
+      Gamma |- e t ->
+      Gamma |- (Mkref e) (TRef t)
 
     | e_check_deref:
       forall  e t,
-      ECheck Gamma e (TRef t) ->
-      ECheck Gamma (Deref e) t
+      Gamma |- e (TRef t) ->
+      Gamma |- (Deref e) t
 
     | e_check_assign:
       forall e1 e2 t,
-      ECheck Gamma e1 (TRef t) ->
-      ECheck Gamma e2 t ->
-      ECheck Gamma (Assign e1 e2) TUnit
+      Gamma |- e1 (TRef t) ->
+      Gamma |- e2 t ->
+      Gamma |- (Assign e1 e2) TUnit
 
     | e_check_future:
       forall e t,
-      ECheck Gamma e t ->
-      ECheck Gamma (Future e) (TThr t)
+      Gamma |- e t ->
+      Gamma |- (Future e) (TThr t)
    
     | e_check_get:
       forall e t,
-      ECheck Gamma e (TRef t) ->
-      ECheck Gamma e t.
+      Gamma |- e (TRef t) ->
+      Gamma |- e t
+
+  where "Gamma |-" := (ECheck Gamma) and 
+        "Gamma |-v" := (VCheck Gamma).
 
 
   (** Typing rules for code: *)
@@ -312,22 +322,25 @@ Module Typesystem.
   Inductive CCheck (Gamma:typing) (c:taskmap) : Prop :=
     c_check_def:
       (forall x e, Map_NAME.MapsTo x e c -> exists t, ECheck Gamma e (TThr t)) ->
-      CCheck Gamma c.
+      Gamma |-c c
+  where "Gamma |-c" := (CCheck Gamma).
 
   (** Typing rules for data: *)
 
   Inductive DCheck (Gamma:typing) (d:store) : Prop :=
     d_check_def:
       (forall x v, Map_NAME.MapsTo x v d -> exists t, VCheck Gamma v (TRef t)) ->
-      DCheck Gamma d.
+      Gamma |-d d
+  where "Gamma |-d" := (DCheck Gamma).
 
   (** Typing rules for states: *)
 
   Inductive SCheck (Gamma:typing) (s:state) : Prop :=
     s_check_def:
-      CCheck Gamma (get_code s) ->
-      DCheck Gamma (get_data s) ->
-      SCheck Gamma s.
+      Gamma |-c (get_code s) ->
+      Gamma |-d (get_data s) ->
+      Gamma |-s s
+  where "Gamma |-s" := (SCheck Gamma).
 
 (** * Races & Dependencies *)
 
@@ -384,8 +397,9 @@ Module Dependencies.
       Blocked (get_code s) x y ->
       Dep s x y.
 
+  (* begin hide *)
   Require Import Coq.Relations.Relation_Operators.
-
+  (* end hide *)
 
   Definition Trans_Blocked c := clos_trans _ (Blocked c).
 
@@ -451,13 +465,17 @@ Module Deadlocks.
 
   (** Tainted states are introduced by states. *)
 
-  Axiom races_impl_tainted:
+  Lemma races_impl_tainted:
     forall s1 s2,
     Reduces s1 s2 ->
     ~ Tainted s1 ->
     Tainted s2 ->
     Racy s1.
-  (* TODO *)
+  Proof.
+    intros.
+    inversion H.
+    - 
+  Admitted.
 
   Axiom reduces_preserves_tainted:
     forall s1 s2,
