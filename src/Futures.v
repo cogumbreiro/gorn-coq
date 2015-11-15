@@ -467,13 +467,12 @@ Module Deadlocks.
 
   Lemma races_impl_tainted:
     forall s1 s2,
-    Reduces s1 s2 ->
     ~ Tainted s1 ->
     Tainted s2 ->
+    Reduces s1 s2 ->
     Racy s1.
   Proof.
     intros.
-    inversion H.
     - 
   Admitted.
 
