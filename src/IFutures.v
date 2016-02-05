@@ -40,19 +40,19 @@ Module Lang.
 (** * Language *)
 
   (**
-    Our language is a trivial extension of TAL, extended with futures and shared memory.
+    Our language is a simple Typed Assembly Language (TAL) with futures and shared memory.
   *)
 
-  Notation register := name.
+Notation register := name.
 
   (** As for words we have numbers, and three kinds of handles: task identifiers,
     heap pointers, and function names. *)
 
   Inductive word :=
   | Num: nat -> word    (* number *)
-  | Task : name -> word  (* task-id *)
-  | Heap : name -> word  (* heap-id *)
-  | Code : name -> word. (* code-id *)
+  | TaskLabel : name -> word  (* task-id *)
+  | HeapLabel : name -> word  (* heap-id *)
+  | CodeLabel : name -> word. (* code-id *)
 
   (** A value, in TAL lingo, is either a register number or a word. It only has
     meaning in the context of a register-store. *)
@@ -61,50 +61,60 @@ Module Lang.
   | Reg: name -> value   (* register *)
   | Word: word -> value.
 
-  (**
-    TAL exposes a rudimentary expression-based language, for illustration
-    purposes we only define addition, but other operations (like multiplication)
-    can easily be included in this definition.
-    *)
-
-  Inductive exp := 
-  | Add : register -> value -> exp (* [r' + v] *)
-  | Value: value -> exp.           (* [v] *)
-
   Inductive inst :=
 
   (** TAL operations *)
 
-  | Move : register -> exp -> inst           (* [r := e] *)
-  | BranchNotZero: register -> value -> inst (* [if r <> 0 jmp v] *)
+  | MOV: register -> value -> inst          (* [r := v] *)
+  | ADD: register -> register -> value -> inst            (* [r1 := r2 + v] *)
+  | BNZ: register -> value -> inst (* [if r <> 0 jmp v] *)
 
   (**
-    Future operations. lhs operand is the target register,
-    rhs operand is the function name in the first case and the task id in
-    the second case.
+    **Future operations.**
+    Instruction [FUTURE] expects a target register and source value.
+    The instruction creates a new task and assigns its task label to
+    the target register.
+    The new task runs the code in the source value, so it expects that
+    there is a code label.
    *)
 
-  | Future: register -> value -> inst    (* [r := future v] *)
-  | Get: register -> value -> inst       (* [r := get v] *)
+  | FUTURE: register -> value -> inst    (* [r := future v] *)
 
-  (** Shared memory operations.
-    [Mkref] expects the target register and the value to initialize the memory cell.
-    [Assign] expects the memory cell reference on the rhs and the value to assign in the lhs.
-    [Deref] expects the target register in the lhs and the memory cell on the lhs. *)
-
-  | Mkref: register -> value -> inst     (* [r := ref v] *)
-  | Assign: register -> value -> inst    (* [r := &v] *) 
-  | Deref: register -> value -> inst. (* [r := *v] *)
 
   (**
-   Standard TAL operations for instruction execution. [Ret v] defines the value
-   that is communicated to a future.
+    Instruction [FORCE] expects a target register and a source value.
+    The instruction blocks until the task (pointed by the source value) promises
+    a value, that is copied to the target register.
    *)
+
+  | FORCE: register -> value -> inst     (* [r := force v] *)
+
+  (**
+    [ALLOC] creates a memory cell and assigns
+    the memory location to the register (in the operand).
+   *)
+
+  | ALLOC: register -> inst
+
+  (** [LDR] the loaded data (in the left-hand side) is placed into the register. *)
+
+  | LDR: register -> value -> inst          (* [r := &v] *)
+  
+  (** [STR] the data found in the left-hand side register is stored
+    into memory. *)
+  
+  | STR: register -> value -> inst.          (* [ *r := v] *)
 
   Inductive code :=
-  | Seq : inst -> code -> code
-  | Ret : value -> code
-  | Jump: value -> code.
+  | SEQ : inst -> code -> code
+  | BX: value -> code
+
+  (**
+     Tasks terminate their execution by fulfilling their promise of a future value.
+     The promise is read by another tasks that executes [FORCE].
+   *)
+
+  | PROMISE : value -> code.
 
   (** A store maps from names/registers into values. *)
 
@@ -113,6 +123,10 @@ Module Lang.
   (** Let [mk_store] create an empty store. *)
 
   Definition mk_store := @Map_NAME.empty word.
+
+  Definition heap := Map_NAME.t (option word).
+
+  Definition mk_heap := @Map_NAME.empty (option word).
 
   (** A taskmap ranges from names into expressions. *)
 
@@ -137,13 +151,13 @@ Module Lang.
   (** A state simply pairs a store and a taskmap. *)
 
   Structure state := mk_state {
-    get_data: store;
+    get_data: heap;
     get_tasks: taskmap
   }.
 
   (** The [load] function creates the initial state, running expression [e] with name [h]. *)
 
-  Definition load (h:name) (e:code) := mk_state mk_store (Map_NAME.add h (mk_task mk_store e) mk_taskmap).
+  Definition load (h:name) (e:code) := mk_state mk_heap (Map_NAME.add h (mk_task mk_store e) mk_taskmap).
 
   (** Functions [set_code] and  [set_data] work as expected. *)
 
@@ -173,27 +187,14 @@ Module Semantics.
 
   (** Converts a value to a word given a store. *)
 
-  Inductive Load : value -> word -> store -> Prop :=
+  Inductive Load (t:task) : value -> word -> Prop :=
   | load_reg:
-    forall r w s,
-    Map_NAME.MapsTo r w s ->
-    Load (Reg r) w s
+    forall r w,
+    Map_NAME.MapsTo r w (get_registers t) ->
+    Load t (Reg r) w
   | load_word:
-    forall w s,
-    Load (Word w) w s.
-
-  (** [Eval] takes an expression and yields a word. *)
-
-  Inductive Eval : exp -> word -> store -> Prop :=
-  | eval_add:
-    forall r v n1 n2 s,
-    Load (Reg r) (Num n1) s ->
-    Load v (Num n2) s ->
-    Eval (Add r v) (Num (n1 + n2)) s
-  | eval_load:
-    forall v w s,
-    Load v w s ->
-    Eval (Value v) w s.
+    forall w,
+    Load t (Word w) w.
 
   (**
     The code fragment is a parameter of the semantics that holds
@@ -204,33 +205,37 @@ Module Semantics.
 
   (** For simplicity we abbreviate [Load] relative to a task's registers. *)
 
-  Notation TLoad v w t := (Load v w (get_registers t)).
-
   (** We define a standard register-machine reduction *)
 
   Inductive IReduces (t:task) : task -> Prop :=
   | i_reduces_mov:
-    forall dst e v c,
-    get_code t = Seq (Move dst e) c ->
-    Eval e v (get_registers t) ->
-    IReduces t (put_register dst v (set_code c t))
+    forall dst v w c,
+    get_code t = SEQ (MOV dst v) c ->
+    (Load t) v w ->
+    IReduces t (put_register dst w (set_code c t))
+  | i_reduces_add:
+    forall dst l r n1 n2 c,
+    get_code t = SEQ (ADD dst l r) c ->
+    Load t (Reg l) (Num n1) ->
+    Load t r (Num n2) ->
+    IReduces t (put_register dst (Num (n1 + n2)) (set_code c t))
   | i_reduces_bnz_skip:
     forall r v h c,
-    get_code t = Seq (BranchNotZero r v) c ->
-    TLoad (Reg r) (Code h) t ->
-    TLoad v (Num 0) t ->
+    get_code t = SEQ (BNZ r v) c ->
+    Load t (Reg r) (CodeLabel h) ->
+    Load t v (Num 0) ->
     IReduces t (set_code c t)
   | i_reduces_bnz_jmp:
     forall r v h c n c',
-    get_code t = Seq (BranchNotZero r v) c ->
-    TLoad (Reg r) (Code h) t ->
-    TLoad v (Num (S n)) t ->
+    get_code t = SEQ (BNZ r v) c ->
+    Load t (Reg r) (CodeLabel h) ->
+    Load t v (Num (S n)) ->
     Map_NAME.MapsTo h c' code_fragment ->
     IReduces t (set_code c' t)
   | i_reduces_jmp:
     forall c l v,
-    get_code t = Jump v ->
-    TLoad v (Code l) t ->
+    get_code t = BX v ->
+    Load t v (CodeLabel l) ->
     Map_NAME.MapsTo l c code_fragment ->
     IReduces t (set_code c t).
 
@@ -239,24 +244,29 @@ Module Semantics.
     that has access to a main memory [s].
    *)
 
-  Inductive TReduces (s:store) (t:task) : store -> task -> Prop :=
+  Inductive TReduces (m:heap) (t:task) : heap -> task -> Prop :=
   | t_reduces_i:
     forall t',
     IReduces t t' ->
-    TReduces s t s t'
-  | t_reduces_assign:
-    forall v v' c h r,
-    get_code t = Seq (Assign r v) c ->
-    TLoad (Reg r) (Heap h) t ->
-    Map_NAME.In h s ->
-    TLoad v v' t ->
-    TReduces s t (Map_NAME.add h v' s) (set_code c t)
-  | t_reduces_deref:
-    forall src dst c h v,
-    get_code t = Seq (Deref dst src) c ->
-    TLoad src (Heap h) t ->
-    Map_NAME.MapsTo h v s ->
-    TReduces s t s (put_register dst v (set_code c t)).
+    TReduces m t m t'
+  | t_reduces_alloc:
+    forall c h r,
+    get_code t = SEQ (ALLOC r) c ->
+    ~ Map_NAME.In h m ->
+    TReduces m t (Map_NAME.add h None m) (set_code c t)
+  | t_reduces_store_reg:
+    forall r v c h w,
+    get_code t = SEQ (STR r v) c ->
+    Load t (Reg r) w ->
+    Load t v (HeapLabel h) ->
+    Map_NAME.In h m ->
+    TReduces m t (Map_NAME.add h (Some w) m) (set_code c t)
+  | t_reduces_load_reg:
+    forall w c h r v,
+    get_code t = SEQ (LDR r v) c ->
+    Load t v (HeapLabel h) ->
+    Map_NAME.MapsTo h (Some w) m ->
+    TReduces m t m (put_register r w (set_code c t)).
 
   (**
     We abbreviate when a task name maps to a task in a given state.
@@ -278,21 +288,21 @@ Module Semantics.
   | reduces_future:
     forall dst c c' h h' t v l,
     GetTask h t s ->
-    get_code t = Seq (Future dst v) c ->
-    TLoad v (Code l) t ->
+    get_code t = SEQ (FUTURE dst v) c ->
+    Load t v (CodeLabel l) ->
     Map_NAME.MapsTo l c' code_fragment ->
     ~ Map_NAME.In h' (get_tasks s) ->
     Reduces s
-      (put_task h (put_register dst (Task h') (set_code c t))
+      (put_task h (put_register dst (TaskLabel h') (set_code c t))
         (put_task h' (set_code c' t) s))
   | reduces_get:
     forall r c h h' t t' v x y,
     GetTask h t s ->
-    get_code t = Seq (Get r x) c ->
-    TLoad x (Task h') t ->
+    get_code t = SEQ (FORCE r x) c ->
+    Load t x (TaskLabel h') ->
     GetTask h' t' s ->
-    get_code t' = Ret y ->
-    TLoad y v t' ->
+    get_code t' = PROMISE y ->
+    Load t' y v ->
     let new_t := put_register r v (set_code c t) in
     Reduces s (put_task h new_t s).
 
@@ -320,23 +330,25 @@ Module Races.
 
   (** Holds when some task is reading from a heap reference. *) 
 
-  Inductive Read s h x : Prop :=
+  Inductive Read s : tid -> mid -> Prop :=
     read_def:
-    forall t dst v c,
-    GetTask (from_tid h) t s ->
-    get_code t = Seq (Deref dst v) c ->
-    TLoad v (Heap (from_mid x)) t ->
-    Read s h x.
+    forall t h x v r c,
+    GetTask h t s ->
+    get_code t = SEQ (LDR r v) c ->
+    Load t v (HeapLabel x) ->
+    Map_NAME.In x (get_data s) ->
+    Read s (taskid h) (memid x).
 
   (** Holds when some task is writing to a heap reference. *) 
 
-  Inductive Write s h x : Prop :=
+  Inductive Write s : tid -> mid -> Prop :=
     write_def:
-    forall t v r c,
-    GetTask (from_tid h) t s ->
-    get_code t = Seq (Assign r v) c ->
-    TLoad (Reg r) (Heap (from_mid x)) t ->
-    Write s h x.
+    forall t r v c x h,
+    GetTask h t s ->
+    get_code t = SEQ (STR r v) c ->
+    Load t v (HeapLabel x) ->
+    Map_NAME.In x (get_data s) ->
+    Write s (taskid h) (memid x).
 
   Inductive Racy (s:state) : Prop :=
     racy_def:
@@ -368,25 +380,37 @@ Module Dependencies.
 
   (** Points-to dependency: a variable points to another variable in the store. *)
 
-  Inductive PointsTo d: mid -> dep -> Prop :=
+  Inductive PointsTo (h:heap) : mid -> dep -> Prop :=
   | points_to_tid:
     forall x y,
-    MapsTo (from_mid x) (Task (from_tid y)) d ->
-    PointsTo d x (inr y)
+    MapsTo x (Some (TaskLabel y)) h ->
+    PointsTo h (memid x) (inr (taskid y))
   | points_to_mem:
     forall x y,
-    MapsTo (from_mid x) (Heap (from_mid y)) d ->
-    PointsTo d x (inl y).
-    
+    MapsTo x (Some (HeapLabel y)) h ->
+    PointsTo h (memid x) (inl (memid y)).
+
+  (**
+    A refers-to dependency is goes from a task to a memory location through the
+    register of the task. *)
+
+  Inductive RefersTo (s:state) : tid -> mid -> Prop :=
+  | refers_to_def:
+    forall r t x y,
+    MapsTo x t (get_tasks s) ->
+    MapsTo r (HeapLabel y) (get_registers t) ->
+    RefersTo s (taskid x) (memid y).
+
+
   (** Blocked dependency: a task is blocked on a future in the taskmap. *)
 
-  Inductive Blocked m (x:tid) (y:tid) : Prop :=
-    blocked_def:
-      forall r t v c,
-      MapsTo (from_tid x) t m ->
-      get_code t = Seq (Get r v) c ->
-      TLoad v (Task (from_tid y)) t ->
-      Blocked m x y.
+  Inductive Blocked (s:state) : tid -> tid -> Prop :=
+  | blocked_def:
+    forall r t v c x y,
+    MapsTo x t (get_tasks s) ->
+    get_code t = SEQ (FORCE r v) c ->
+    Load t v (TaskLabel y) ->
+    Blocked s (taskid x) (taskid y).
 
   (** Dependencies between two names in a state wraps up blocked and points-to
      dependencies. *)
@@ -398,11 +422,15 @@ Module Dependencies.
       Dep s (inl x) y
     | dep_blocked:
       forall x y,
-      Blocked (get_tasks s) x y ->
+      Blocked s x y ->
       Dep s (inr x) (inr y)
     | dep_read:
       forall x y,
       Races.Read s x y ->
+      Dep s (inr x) (inl y)
+    | dep_reg:
+      forall x y,
+      RefersTo s x y ->
       Dep s (inr x) (inl y).
 
   (* begin hide *)
@@ -416,7 +444,7 @@ Module Dependencies.
   Inductive Deadlocked s : Prop :=
     deadlocked_def:
       forall x,
-      Trans_Blocked (get_tasks s) x x ->
+      Trans_Blocked s x x ->
       Deadlocked s.
 
   (** Defines the [Depends] relation as the transitive closure of [Dep]. *)
