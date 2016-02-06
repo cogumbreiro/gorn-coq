@@ -14,9 +14,9 @@ Module Set_NAME := FSetAVL.Make NAME.
 Module Set_NAME_Props := FSetProperties.Properties Set_NAME.
 (*Module Set_NAME_Extra := SetUtil Set_NAME.*)
 Module Set_NAME_Dep := FSetBridge.DepOfNodep Set_NAME.
-Module Map_NAME := FMapAVL.Make NAME.
-Module Map_NAME_Facts := FMapFacts.Facts Map_NAME.
-Module Map_NAME_Props := FMapFacts.Properties Map_NAME.
+Module MN := FMapAVL.Make NAME.
+Module MN_Facts := FMapFacts.Facts MN.
+Module MN_Props := FMapFacts.Properties MN.
 (*Module Map_ID_Extra := MapUtil Map_ID.*)
 
 Definition name := NAME.t.
@@ -190,9 +190,13 @@ Module Lang.
 
   Infix ";;" := SEQ (at level 62, right associativity).
 
-  (** * The abstract machine *)
+  (** ** Task-level reduction *)
 
-  (** A store maps from names/registers into values. *)
+  (**
+    A task consists of a store, where data of the local registers reside, and
+    a program to execute.
+    A store maps registers into words. Here [MR.t] a parametric type of a map
+    where the keys are registers. *)
 
   Definition store := MR.t word.
 
@@ -200,22 +204,15 @@ Module Lang.
 
   Definition mk_store := @MR.empty word.
 
-  Definition heap := Map_NAME.t (option word).
-
-  Definition mk_heap := @Map_NAME.empty (option word).
-
-  (** A taskmap ranges from names into expressions. *)
+  (** We are now ready to define a task. *)
 
   Notation task := (store * program) % type. 
 
-  (**
-  Let $\Gamma(t)$ be a notation for [get_registers t].
-   *)
 
+(* begin hide*)
   Definition get_registers := @fst store program.
   Definition get_code := @snd store program.
 
-(* begin hide*)
 End Lang.
 (* end hide *)
 
@@ -225,9 +222,8 @@ Module Semantics.
   Import Lang.
 
 (* end hide *)
-  (** * Small-step operational semantics *)
 
-  (** Converts a value to a word given a store. *)
+  (** Proposition [Load] evaluates a value into a word. *)
 
   Inductive Load (m:store) : value -> word -> Prop :=
   | load_reg:
@@ -240,7 +236,7 @@ Module Semantics.
 
 
   (**
-  Let [Load] $\Gamma$ [v w] be a notation for $\Gamma(v) \mapsto w$.
+  Let  $\Gamma(v) \mapsto w$ be a notation for [Load] $\Gamma$ [v w].
   The inductive definition of [Load] is typeset below.
   %
   $$
@@ -259,15 +255,11 @@ Module Semantics.
   *)
 
   (**
-    The code fragment is a parameter of the semantics that holds
-    the code declarations.
+    The code fragment is a parameter of the semantics and contains all
+    the programs associated to each code label.
    *)
 
-  Variable CF : Map_NAME.t program.
-
-  (** For simplicity we abbreviate [Load] relative to a task's registers. *)
-
-  (** ** Task-level reduction *)
+  Variable CF : MN.t program.
 
   (** We define a standard register-machine reduction *)
 
@@ -289,12 +281,12 @@ Module Semantics.
     forall r v h p n p' s,
     Load s (Reg r) (CodeLabel h) ->
     Load s v (Num (S n)) ->
-    Map_NAME.MapsTo h p' CF ->
+    MN.MapsTo h p' CF ->
     IReduces (s, BNZ r v ;; p) (s, p')
   | i_reduces_jmp:
     forall p h v s,
     Load s v (CodeLabel h) ->
-    Map_NAME.MapsTo h p CF ->
+    MN.MapsTo h p CF ->
     IReduces (s, BX v) (s, p).
 
 
@@ -364,8 +356,19 @@ Module Semantics.
   (** ** Memory-level reduction *)
 
   (**
-    The next reduction rules define register machine (a task)
-    that has access to a main memory [m].
+  %
+    \newcommand{\Undef}{\mathtt{undef}}
+  %
+    The heap represents the main memory and is a map
+    from names (memory addresses) into optional words. An undefined word is
+      represented by [None], which is typeset as $\Undef$. *)
+
+  Definition heap := MN.t (option word).
+
+  Definition mk_heap := @MN.empty (option word).
+
+  (**
+    Next, are reduction rules for instructions that affect a heap [m].
    *)
 
   Inductive TReduces (m:heap) : task -> heap -> task -> Prop :=
@@ -375,24 +378,23 @@ Module Semantics.
     TReduces m t m t'
   | t_reduces_alloc:
     forall p h s r,
-    ~ Map_NAME.In h m ->
-    TReduces m (s,ALLOC r ;; p) (Map_NAME.add h None m) (MR.add r (HeapLabel h) s, p)
+    ~ MN.In h m ->
+    TReduces m (s,ALLOC r ;; p) (MN.add h None m) (MR.add r (HeapLabel h) s, p)
   | t_reduces_store_reg:
     forall r v p h w s,
     Load s (Reg r) w ->
     Load s v (HeapLabel h) ->
-    Map_NAME.In h m ->
-    TReduces m (s, STR r v;; p)  (Map_NAME.add h (Some w) m) (s, p)
+    MN.In h m ->
+    TReduces m (s, STR r v;; p)  (MN.add h (Some w) m) (s, p)
   | t_reduces_load_reg:
     forall w s p h r v,
     Load s v (HeapLabel h) ->
-    Map_NAME.MapsTo h (Some w) m ->
+    MN.MapsTo h (Some w) m ->
     TReduces m (s, LDR r v;; p) m (MR.add r w s, p).
 
   (**
    %
     \newcommand{\TReduces}{\rightarrow_{\mathtt{t}}}
-    \newcommand{\Undef}{\mathtt{undef}}
    Or in a more familiar typesetting.
    $$
    \frac{
@@ -431,72 +433,46 @@ Module Semantics.
 
   (** ** State-level reduction *)
 
-
-(*  Definition set_code (c:instseq) (t:task) := mk_task (get_registers t) c. 
-*)
-  Definition taskmap := Map_NAME.t task.
-
   (**
-  Function [mk_taskmap] creates a taskmap with a singleton expression [e] labelled
-  by name [h]. 
-  *)
+    The state of an abstract machine corresponds to a heap and a task map.
+    Type [taskmap] is a map from names into tasks.
+   *)
+   
+  Definition taskmap := MN.t task.
+  Definition mk_taskmap := @MN.empty task.
 
-  Definition mk_taskmap := @Map_NAME.empty task.
-
-  (** A state simply pairs a store and a taskmap. *)
+  (** A state pairs a store and a taskmap. *)
 
   Definition state := (heap * taskmap) % type.
   Definition get_data := @fst heap taskmap.
   Definition get_tasks := @snd heap taskmap.
 
-  (** The [load] function creates the initial state, running expression [e] with name [h]. *)
-
-  Definition load (h:name) (p:program) := (mk_heap, (Map_NAME.add h (mk_store, p) mk_taskmap)).
-(*
-  (** Functions [set_code] and  [set_data] work as expected. *)
-
-  Definition set_tasks m (s:state) :=
-    mk_state (get_data s) m.
-
-  Definition put_task h t (s:state) :=
-    set_tasks (Map_NAME.add h t (get_tasks s)) s.
-
-  Definition set_data d (s:state) :=
-    mk_state d (get_tasks s).
-
-  Definition put_data h v (s:state) :=
-    set_data (Map_NAME.add h v (get_data s)) s.
-*)
-  (**
-    We abbreviate when a task name maps to a task in a given state.
-   *)
-
-  (** Finally we define future manipulation *)
+  (** The reduction rules at the state level are mainly for the manipulation of
+    future-related instructions. *)
 
   Inductive Reduces : state -> state -> Prop :=
   | reduces_t:
     forall hm hm' tm h t t',
-    Map_NAME.MapsTo h t tm ->
+    MN.MapsTo h t tm ->
     TReduces hm t hm' t' ->
-    Reduces (hm, tm) (hm, Map_NAME.add h t' tm)
+    Reduces (hm, tm) (hm, MN.add h t' tm)
   | reduces_future:
     forall r h h' v l hm tm s p p',
-    Map_NAME.MapsTo h (s, FUTURE r v;; p) tm ->
+    MN.MapsTo h (s, FUTURE r v;; p) tm ->
     Load s v (CodeLabel l) ->
-    Map_NAME.MapsTo l p' CF ->
-    ~ Map_NAME.In h' tm ->
+    MN.MapsTo l p' CF ->
+    ~ MN.In h' tm ->
     let t1 := (s, p') in
     let t2 := (MR.add r (TaskLabel h') s, p) in
-    Reduces (hm, tm)
-      (hm, Map_NAME.add h' t1 (Map_NAME.add h t2 tm))
+    Reduces (hm, tm) (hm, MN.add h' t1 (MN.add h t2 tm))
   | reduces_force:
     forall r p h h' v v' w hm tm s s',
-    Map_NAME.MapsTo h (s, FORCE r v;;p) tm ->
+    MN.MapsTo h (s, FORCE r v;;p) tm ->
     Load s v (TaskLabel h') ->
-    Map_NAME.MapsTo h' (s', PROMISE v') tm ->
+    MN.MapsTo h' (s', PROMISE v') tm ->
     Load s' v' w ->
     let new_t := (MR.add r w s, p) in
-    Reduces (hm, tm) (hm, Map_NAME.add h new_t tm).
+    Reduces (hm, tm) (hm, MN.add h new_t tm).
 
   (**
    %
@@ -565,9 +541,9 @@ Module Races.
   Inductive Read: state -> tid -> mid -> Prop :=
   | read_def:
     forall h s x v r p tm hm,
-    Map_NAME.MapsTo h (s, LDR r v;; p) tm ->
+    MN.MapsTo h (s, LDR r v;; p) tm ->
     Load s v (HeapLabel x) ->
-    Map_NAME.In x hm ->
+    MN.In x hm ->
     Read (hm,tm) (taskid h) (memid x).
 
   (** Holds when some task is writing to a heap reference. *) 
@@ -575,9 +551,9 @@ Module Races.
   Inductive Write: state -> tid -> mid -> Prop :=
   | write_def:
     forall h s x v r p tm hm,
-    Map_NAME.MapsTo h (s, STR r v;; p) tm ->
+    MN.MapsTo h (s, STR r v;; p) tm ->
     Load s v (HeapLabel x) ->
-    Map_NAME.In x hm ->
+    MN.In x hm ->
     Write (hm,tm) (taskid h) (memid x).
 
   Inductive Racy (s:state) : Prop :=
@@ -596,7 +572,7 @@ Require Import Aniceto.Set.
 *)
 
 Module Dependencies.
-  Import Map_NAME.
+  Import MN.
   Import Lang.
   Import Semantics.
 
@@ -682,7 +658,7 @@ Module Dependencies.
 
   Inductive DependsRel s m : Prop :=
   | depends_spec_def:
-    (forall x y, Map_NAME.MapsTo (from_dep x) (from_dep y) m <-> Depends s x y) ->
+    (forall x y, MN.MapsTo (from_dep x) (from_dep y) m <-> Depends s x y) ->
     DependsRel s m.
 
   (** A state is tainted if there is a cycle in the [Depends] relation.  *) 
@@ -701,7 +677,7 @@ Module Dependencies.
   Lemma taintless_to_not_tainted:
     forall d s,
     DependsRel s d ->
-    ~ Map_NAME.Empty d ->
+    ~ MN.Empty d ->
     Taintless s ->
     ~ Tainted s.
   Proof.
@@ -719,7 +695,7 @@ Module Dependencies.
   Proof.
     intros.
     inversion H.
-    apply Map_NAME_Facts.add_mapsto_iff in H0.
+    apply MN_Facts.add_mapsto_iff in H0.
     destruct H0 as [(?,?)|(?,?)].
     - subst.
       left; exists C.
