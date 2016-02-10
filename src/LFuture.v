@@ -187,11 +187,11 @@ Module Lang.
   Definition mk_store := @MR.empty word.
 
   Inductive inst :=
-  | CALL: register -> value -> store -> inst
+  | CALL: register -> value -> list value -> inst
   | LOAD: register -> value -> inst          (* [r := &v] *)
   | STORE: value -> value -> inst          (* [ *r := v] *)
   | MALLOC: register -> inst                (* [r := alloc] *)
-  | FUTURE: register -> value -> store -> inst
+  | FUTURE: register -> value -> list value -> inst
   | FORCE: register -> value -> inst.        (* [r := force v] *)
 
   Inductive program :=
@@ -209,13 +209,13 @@ End Lang.
 Module Semantics.
   Import Lang.
 
-  Notation env := (store * program) % type. 
+  Notation frame := (store * program) % type. 
 
   (** ** Task-level reduction *)
 
   (** We are now ready to define a task. *)
 
-  Notation task := (list env).
+  Notation task := (list frame).
 
 (* end hide *)
 
@@ -230,6 +230,16 @@ Module Semantics.
     forall w,
     Load m (Word w) w.
 
+  Variable args : MN.t (list register).
+
+  Inductive BindArgs (m:store): list register -> list value -> store -> Prop :=
+  | bind_args_nil:
+    BindArgs m nil nil mk_store
+  | bind_args_cons:
+    forall rs vs r v w m',
+    BindArgs m rs vs m' ->
+    Load m v w ->
+    BindArgs m (r::rs) (v::vs) (MR.add r w m').
 
   (**
     The code fragment is a parameter of the semantics and contains all
@@ -238,20 +248,28 @@ Module Semantics.
 
   Variable CF : MN.t program.
 
+  Inductive LoadFrame (m:store) (v:value) (vs:list value) : frame -> Prop := 
+  | call_frame_def:
+    forall f m' p rs,
+    Load m v (TaskLabel f) ->
+    MN.MapsTo f rs args ->
+    BindArgs m rs vs m' ->
+    MN.MapsTo f p CF ->
+    LoadFrame m v vs (m',p).
+
   (** Call-stack reduction has to do with the rules that control
     the call-stack, [CALL] and [RET. *)
 
-  Inductive IReduces : task -> task -> Prop :=
-  | i_reduces_call:
-    forall r v h p p' s s' l,
-    Load s v (CodeLabel h) ->
-    MN.MapsTo h p' CF ->
-    IReduces ((s, CALL r v s' ;; p)::l) ((s', p')::(s, CALL r v s' ;; p)::l)
-  | i_reduces_ret:
-    forall r v p s s' w l v',
+  Inductive TReduces : task -> task -> Prop :=
+  | t_reduces_call:
+    forall r v vs p s t c,
+    LoadFrame s v vs c ->
+    TReduces ((s, CALL r v vs ;; p)::t) (c::(s, CALL r v vs ;; p)::t)
+  | t_reduces_ret:
+    forall r v p s s' vs w t v',
     Load s v w ->
     ~ MR.In r s' ->
-    IReduces ((s, RET v) :: (s', CALL r v' s' ;; p) :: l) ((MR.add r w s', p)::l).
+    TReduces ((s, RET v) :: (s', CALL r v' vs ;; p) :: t) ((MR.add r w s', p)::t).
 
 
   (** ** Memory-level reduction *)
@@ -269,25 +287,24 @@ Module Semantics.
     Next, are reduction rules for instructions that affect a heap [m].
    *)
 
-  Inductive TReduces (m:heap) : env -> heap -> env -> Prop :=
-  | t_reduces_alloc:
-    forall p h s r,
+  Inductive MReduces : (heap * frame) -> (heap * frame) -> Prop :=
+  | m_reduces_alloc:
+    forall m p h s r,
     ~ MN.In h m ->
     ~ MR.In r s ->
-    TReduces m (s,MALLOC r ;; p) (MN.add h None m) (MR.add r (HeapLabel h) s, p)
-  | t_reduces_store_reg:
-    forall v1 v2 p h w s,
+    MReduces (m, (s,MALLOC r ;; p)) ((MN.add h None m), (MR.add r (HeapLabel h) s, p))
+  | m_reduces_store_reg:
+    forall v1 v2 p h w s m,
     Load s v1 w ->
     Load s v2 (HeapLabel h) ->
     MN.In h m ->
-    TReduces m (s, STORE v1 v2;; p)  (MN.add h (Some w) m) (s, p)
-  | t_reduces_load_reg:
-    forall w s p h r v,
+    MReduces (m, (s, STORE v1 v2;; p))  ((MN.add h (Some w) m), (s, p))
+  | m_reduces_load_reg:
+    forall w s p h r v m,
     Load s v (HeapLabel h) ->
     MN.MapsTo h (Some w) m ->
     ~ MR.In r s ->
-    TReduces m (s, LOAD r v;; p) m (MR.add r w s, p).
-
+    MReduces (m, (s, LOAD r v;; p)) (m, (MR.add r w s, p)).
 
   (** ** State-level reduction *)
 
@@ -304,6 +321,26 @@ Module Semantics.
 
   (* end hide *)
 
+
+  Inductive FReduces: taskmap -> taskmap -> Prop :=
+  | f_reduces_future:
+    forall r h h' c v l tm s vs p,
+    MN.MapsTo h ((s, FUTURE r v vs;; p)::l) tm ->
+    LoadFrame s v vs c ->
+    ~ MN.In h' tm ->
+    ~ MR.In r s ->
+    let t1 := (MR.add r (TaskLabel h') s, p)::l in
+    let t2 := c::nil in
+    FReduces tm (MN.add h' t2 (MN.add h t1 tm))
+  | f_reduces_force:
+    forall r p h h' l v v' w tm s s',
+    MN.MapsTo h ((s, FORCE r v;;p)::l) tm ->
+    Load s v (TaskLabel h') ->
+    MN.MapsTo h' ((s', RET v')::nil) tm ->
+    Load s' v' w ->
+    let new_t := (MR.add r w s, p)::l in
+    FReduces tm (MN.add h new_t tm).
+
   (** A state pairs a store and a taskmap. *)
 
   Definition state := (heap * taskmap) % type.
@@ -315,31 +352,17 @@ Module Semantics.
   | reduces_i:
     forall hm tm h t t',
     MN.MapsTo h t tm ->
-    IReduces t t' ->
+    TReduces t t' ->
     Reduces (hm, tm) (hm, MN.add h t' tm)
   | reduces_t:
     forall hm hm' tm h e l e',
     MN.MapsTo h (e::l) tm ->
-    TReduces hm e hm' e' ->
+    MReduces (hm, e) (hm', e') ->
     Reduces (hm, tm) (hm, MN.add h (e::l) tm)
-  | reduces_future:
-    forall r h h' c v l hm tm s s' p p',
-    ~ MR.In r s ->
-    MN.MapsTo h ((s, FUTURE r v s';; p)::l) tm ->
-    Load s v (CodeLabel c) ->
-    MN.MapsTo c p' CF ->
-    ~ MN.In h' tm ->
-    let t1 := (MR.add r (TaskLabel h') s, p)::l in
-    let t2 := (s', p')::nil in
-    Reduces (hm, tm) (hm, MN.add h' t2 (MN.add h t1 tm))
-  | reduces_force:
-    forall r p h h' l v v' w hm tm s s',
-    MN.MapsTo h ((s, FORCE r v;;p)::l) tm ->
-    Load s v (TaskLabel h') ->
-    MN.MapsTo h' ((s', RET v')::nil) tm ->
-    Load s' v' w ->
-    let new_t := (MR.add r w s, p)::l in
-    Reduces (hm, tm) (hm, MN.add h new_t tm).
+  | reduces_f:
+    forall hm tm tm',
+    FReduces tm tm' ->
+    Reduces (hm, tm) (hm, tm').
 
 
 End Semantics.

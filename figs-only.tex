@@ -8,16 +8,11 @@
 \newcommand{\Stack}{t}
 \newcommand{\Heap}{h}
 \newcommand{\Undef}{\mathtt{undef}}
-\newcommand{\IReduces}{\rightarrow_{\mathtt{i}}}
-\newcommand{\TReduces}{\rightarrow_{\mathtt{t}}}
-\newcommand{\FReduces}{\rightarrow_{\mathtt{f}}}
 \newcommand{\CodeFrag}{CF}
-\newcommand{\Put}[2]{\{{#1}:={#2}\}}
 \newcommand{\HeapMap}{H}
 \newcommand{\HeapMapy}{H'}
 \newcommand{\TaskMap}{T}
 \newcommand{\TaskMapy}{T'}
-\newcommand{\Reduces}{\rightarrow}
 \newcommand{\Task}{t}
 \newcommand{\Tasky}{t'}
 \newcommand{\TName}{l}
@@ -27,6 +22,12 @@
 \newcommand{\Env}{c}
 \newcommand{\Envy}{c'}
 \newcommand{\State}{S}
+
+\newcommand{\IReduces}{\rightarrow_{\mathtt{i}}}
+\newcommand{\MReduces}{\rightarrow_{\mathtt{m}}}
+\newcommand{\FReduces}{\rightarrow_{\mathtt{f}}}
+\newcommand{\Reduces}{\rightarrow}
+\newcommand{\Put}[2]{\{{#1}:={#2}\}}
 
 \newcommand{\CALL}[3][\Reg]{{#1}=\mathtt{call}\ {#2}({#3})}
 \newcommand{\LOAD}[2][\Reg]{{#1}=\mathtt{load}\ {#2}}
@@ -39,7 +40,7 @@
 \newcommand{\Args}{A}
 \newcommand{\Bind}[2][\FName]{\mathrm{bind}({#1},{#2})}
 
-\title{LLVM$_{f}$: an imperative calculus with futures}
+\title{LLVM$_{fut}$: an imperative calculus with futures}
 \date{}
 
 \begin{document}
@@ -65,6 +66,8 @@
   \frac{
     \Gamma(\Val) \mapsto \FName
     \qquad
+    \CodeFrag(\FName) = \Prog
+    \qquad
     \Args(\FName) = \Reg_1, \dots,\Reg_n
     \qquad
     \forall i \in \{1,\dots,n\} : \Gamma(\Val_i) \mapsto \Word_i
@@ -74,7 +77,7 @@
   $$
   %
    %
-   \textbf{Rules for call-stack:}\quad\fbox{$\Task\IReduces \Task$ }
+   \textbf{Rules for tasks (internal state):}\quad\fbox{$\Task\IReduces \Task$ }
   $$
   \frac{
     \Gamma( \Val (\vec\Val)) \mapsto \Env
@@ -96,12 +99,14 @@
    }
    $$
    %
-   \textbf{Rules for memory:}\quad\fbox{$(\HeapMap,\Env)\TReduces(\HeapMap,\Env)$}
+   \textbf{Rules for memory:}\quad\fbox{$(\HeapMap,\Env)\MReduces(\HeapMap,\Env)$}
    $$
    \frac{
      \Heap \notin \HeapMap
+     \qquad
+     \Reg \notin \Gamma
    }{
-     (\HeapMap, (\Gamma,\MALLOC;; \Prog)) \TReduces (M\Put{\Heap}{\Undef}, (\Gamma\Put{\Reg}{\Heap}, \Prog))
+     (\HeapMap, (\Gamma,\MALLOC;; \Prog)) \MReduces (M\Put{\Heap}{\Undef}, (\Gamma\Put{\Reg}{\Heap}, \Prog))
    }
    $$
    $$
@@ -112,15 +117,18 @@
      \qquad
      \Heap \in \HeapMap
    }{
-     (\HeapMap, (\Gamma,\STORE \Valy;; p)) \TReduces (M\Put\Heap\Word, (\Gamma, \Prog))
+     (\HeapMap, (\Gamma,\STORE \Valy;; p)) \MReduces (M\Put\Heap\Word, (\Gamma, \Prog))
    }
-   \qquad
+   $$
+   $$
    \frac{
      \Gamma(\Val) \mapsto \Heap
      \qquad
      \HeapMap(\Heap) = \Word
+     \qquad
+     \Reg \notin \Gamma
    }{
-     (\HeapMap, (\Gamma,\LOAD \Val;;\Prog)) \TReduces (\HeapMap, (\Gamma\Put\Reg\Word, \Prog))
+     (\HeapMap, (\Gamma,\LOAD \Val;;\Prog)) \MReduces (\HeapMap, (\Gamma\Put\Reg\Word, \Prog))
    }
    $$
    %
@@ -132,6 +140,8 @@
      \Gamma(\Val (\vec\Val)) \mapsto \Env
      \qquad
      \TNamey \notin \TaskMap
+     \qquad
+     \Reg \notin \Gamma
    }{
      \TaskMap
      \FReduces
@@ -149,6 +159,8 @@
      \TaskMap(\TNamey) = (\Gamma', \RET[\Valy])
      \qquad
      \Gamma'(v') \mapsto \Word
+     \qquad
+     \Reg \notin \Gamma
    }{
      \TaskMap
      \FReduces
@@ -169,7 +181,7 @@
    \frac{
      \TaskMap(\TName) = \Env::\Stack
      \qquad
-     (\HeapMap,\Env) \TReduces (\HeapMapy, \Envy)
+     (\HeapMap,\Env) \MReduces (\HeapMapy, \Envy)
    }{
      (\HeapMap,\TaskMap) \Reduces (\HeapMapy, \TaskMap\Put\TName{\Envy::\Task})
    }
