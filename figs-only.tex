@@ -1,0 +1,184 @@
+\documentclass{article}
+\newcommand{\Prog}{p}
+\newcommand{\Progy}{p'}
+\newcommand{\Reg}{x}
+\newcommand{\Word}{w}
+\newcommand{\Val}{v}
+\newcommand{\Valy}{v'}
+\newcommand{\Stack}{t}
+\newcommand{\Heap}{h}
+\newcommand{\Undef}{\mathtt{undef}}
+\newcommand{\IReduces}{\rightarrow_{\mathtt{i}}}
+\newcommand{\TReduces}{\rightarrow_{\mathtt{t}}}
+\newcommand{\FReduces}{\rightarrow_{\mathtt{f}}}
+\newcommand{\CodeFrag}{CF}
+\newcommand{\Put}[2]{\{{#1}:={#2}\}}
+\newcommand{\HeapMap}{H}
+\newcommand{\HeapMapy}{H'}
+\newcommand{\TaskMap}{T}
+\newcommand{\TaskMapy}{T'}
+\newcommand{\Reduces}{\rightarrow}
+\newcommand{\Task}{t}
+\newcommand{\Tasky}{t'}
+\newcommand{\TName}{l}
+\newcommand{\TNamey}{l'}
+\newcommand{\FName}{f}
+\newcommand{\HName}{h}
+\newcommand{\Env}{c}
+\newcommand{\Envy}{c'}
+\newcommand{\State}{S}
+
+\newcommand{\CALL}[3][\Reg]{{#1}=\mathtt{call}\ {#2}({#3})}
+\newcommand{\LOAD}[2][\Reg]{{#1}=\mathtt{load}\ {#2}}
+\newcommand{\STORE}[2][\Val]{\mathtt{store}\ {#1}\ {#2}}
+\newcommand{\MALLOC}[1][\Reg]{{#1} = \mathtt{malloc}}
+\newcommand{\FUTURE}[3][\Reg]{{#1} = \mathtt{future}\ {#2}({#3})}
+\newcommand{\FORCE}[2][\Val]{\mathtt{force}\ {#1}}
+\newcommand{\RET}[1][\Val]{\mathtt{ret}\ {#1}}
+\newcommand{\Nil}{\mathtt{nil}}
+\newcommand{\Args}{A}
+\newcommand{\Bind}[2][\FName]{\mathrm{bind}({#1},{#2})}
+
+\title{LLVM$_{f}$: an imperative calculus with futures}
+\date{}
+
+\begin{document}
+\maketitle
+\noindent
+\textbf{Rules for load:}\quad\fbox{$\Gamma(\Val)\mapsto\Word$}
+  %
+  $$
+  \frac{
+    \Gamma(\Reg) = \Word
+  }{
+    \Gamma(\Reg) \mapsto \Word
+  }
+  \qquad
+  \frac{
+  }{
+    \Gamma(\Word) \mapsto \Word
+  }
+  $$
+  %
+  \textbf{Call-frame load:}\quad\fbox{$\Gamma(\Val(\vec\Val)) \mapsto \Env$}
+  $$
+  \frac{
+    \Gamma(\Val) \mapsto \FName
+    \qquad
+    \Args(\FName) = \Reg_1, \dots,\Reg_n
+    \qquad
+    \forall i \in \{1,\dots,n\} : \Gamma(\Val_i) \mapsto \Word_i
+  }{
+    \Gamma, \Val(\Val_1,\dots,\Val_n)  \mapsto (\{ \Reg_1\colon \Word_1, \dots, \Reg_n \colon \Word_n \},\Prog)
+  }
+  $$
+  %
+   %
+   \textbf{Rules for call-stack:}\quad\fbox{$\Task\IReduces \Task$ }
+  $$
+  \frac{
+    \Gamma( \Val (\vec\Val)) \mapsto \Env
+  }{
+    (\Gamma,\CALL \Val {\vec \Val};;\Prog)::\Stack
+    \IReduces
+    \Env::(\Gamma, \CALL \Val { \vec \Val};;\Prog)::\Stack
+  }
+   $$
+   $$
+   \frac{
+     \Gamma(\Val) \mapsto \Word
+     \qquad
+     \Reg \notin \Gamma'
+   }{
+     (\Gamma,\RET)::(\Gamma', \CALL \_ \_;;p)::\Stack
+     \IReduces
+     (\Gamma'\Put \Reg \Word, \Prog)::\Stack
+   }
+   $$
+   %
+   \textbf{Rules for memory:}\quad\fbox{$(\HeapMap,\Env)\TReduces(\HeapMap,\Env)$}
+   $$
+   \frac{
+     \Heap \notin \HeapMap
+   }{
+     (\HeapMap, (\Gamma,\MALLOC;; \Prog)) \TReduces (M\Put{\Heap}{\Undef}, (\Gamma\Put{\Reg}{\Heap}, \Prog))
+   }
+   $$
+   $$
+   \frac{
+     \Gamma(\Val) \mapsto \Word
+     \qquad
+     \Gamma(\Valy) \mapsto \HName
+     \qquad
+     \Heap \in \HeapMap
+   }{
+     (\HeapMap, (\Gamma,\STORE \Valy;; p)) \TReduces (M\Put\Heap\Word, (\Gamma, \Prog))
+   }
+   \qquad
+   \frac{
+     \Gamma(\Val) \mapsto \Heap
+     \qquad
+     \HeapMap(\Heap) = \Word
+   }{
+     (\HeapMap, (\Gamma,\LOAD \Val;;\Prog)) \TReduces (\HeapMap, (\Gamma\Put\Reg\Word, \Prog))
+   }
+   $$
+   %
+   \textbf{Rules for futures:}\quad\fbox{$\TaskMap\FReduces\TaskMap$}
+   $$
+   \frac{
+     \TaskMap(\TName) = (\Gamma,\FUTURE \Val {\vec \Val};; \Prog)::\Stack
+     \qquad
+     \Gamma(\Val (\vec\Val)) \mapsto \Env
+     \qquad
+     \TNamey \notin \TaskMap
+   }{
+     \TaskMap
+     \FReduces
+     \TaskMap
+     \Put{\TName}{(\Gamma\Put{\Reg}{\TNamey},\Prog)::\Stack}
+     \Put\TNamey{\Env::\Nil}
+   }
+   $$
+   $$
+   \frac{
+     \TaskMap(\TName) = (\Gamma,\FORCE;; \Prog)::\Stack
+     \qquad
+     \Gamma(\Val) \mapsto {\TNamey}
+     \qquad
+     \TaskMap(\TNamey) = (\Gamma', \RET[\Valy])
+     \qquad
+     \Gamma'(v') \mapsto \Word
+   }{
+     \TaskMap
+     \FReduces
+     \TaskMap\Put\TName{(\Gamma\Put{\Reg}{\Word},\Prog)::\Stack}
+   }
+   $$
+   \textbf{Rules for states:}\quad\fbox{$\State\Reduces\State$}
+   %
+   $$
+   \frac{
+     \TaskMap(\TName) = \Task
+     \qquad
+     \Task \IReduces \Tasky
+   }{
+     (\HeapMap,\TaskMap) \Reduces (\HeapMap, \TaskMap\Put\Heap{\Tasky})
+   }
+   \qquad
+   \frac{
+     \TaskMap(\TName) = \Env::\Stack
+     \qquad
+     (\HeapMap,\Env) \TReduces (\HeapMapy, \Envy)
+   }{
+     (\HeapMap,\TaskMap) \Reduces (\HeapMapy, \TaskMap\Put\TName{\Envy::\Task})
+   }
+   \qquad
+   \frac{
+     \TaskMap \FReduces \TaskMapy
+   }{
+     (\HeapMap,\TaskMap) \Reduces (\HeapMap, \TaskMapy)
+   }
+   $$
+
+\end{document}
