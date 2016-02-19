@@ -1,99 +1,8 @@
 (* begin hide *)
-
-Require Import Coq.Structures.OrderedType.
-Require Import Coq.Structures.OrderedTypeEx.
-Require Import Coq.FSets.FSetAVL.
-Require Import Coq.FSets.FMapAVL.
-Require Coq.FSets.FMapFacts.
-Require Coq.FSets.FSetProperties.
-Require Coq.FSets.FSetBridge.
-
-Module NAME := Nat_as_OT.
-Module NAME_Facts := OrderedTypeFacts NAME.
-Module Set_NAME := FSetAVL.Make NAME.
-Module Set_NAME_Props := FSetProperties.Properties Set_NAME.
-(*Module Set_NAME_Extra := SetUtil Set_NAME.*)
-Module Set_NAME_Dep := FSetBridge.DepOfNodep Set_NAME.
-Module MN := FMapAVL.Make NAME.
-Module MN_Facts := FMapFacts.Facts MN.
-Module MN_Props := FMapFacts.Properties MN.
-(*Module Map_ID_Extra := MapUtil Map_ID.*)
-
-Definition name := NAME.t.
-Definition set_name := Set_NAME.t.
-
-Lemma name_eq_rw:
-  forall k k' : name, k = k' <-> k = k'.
-Proof.
-  intros.
-  auto with *.
-Qed.
-
-Inductive register := reg : nat -> register.
-
-Definition register_num r := match r with | reg n => n end.
-
-Module REG <: UsualOrderedType.
-  Definition t := register.
-  Definition eq := @eq register.
-  Definition lt x y := lt (register_num x) (register_num y).
-  Definition eq_refl := @eq_refl t.
-  Definition eq_sym := @eq_sym t.
-  Definition eq_trans := @eq_trans t.
-  Lemma lt_trans: forall x y z : t, lt x y -> lt y z -> lt x z.
-  Proof.
-    intros.
-    unfold lt in *.
-    destruct x, y, z.
-    simpl in *.
-    eauto.
-  Qed.
-
-  Lemma lt_not_eq : forall x y : t, lt x y -> ~ eq x y.
-  Proof.
-    unfold lt in *.
-    intros.
-    destruct x, y.
-    simpl in *.
-    unfold not; intros.
-    inversion H0.
-    subst.
-    apply Lt.lt_irrefl in H.
-    inversion H.
-  Qed.
-
-  Require Import Coq.Arith.Compare_dec.
-  Lemma compare:
-    forall x y, Compare lt eq x y.
-  Proof.
-    intros.
-    destruct x, y.
-    destruct (Nat_as_OT.compare n n0);
-    eauto using LT, GT.
-    apply EQ.
-    unfold Nat_as_OT.eq in *.
-    subst.
-    intuition.
-  Qed.
-
-  Require Import Coq.Arith.Peano_dec.
-
-  Lemma eq_dec : forall x y : t, {eq x y} + {~ eq x y}.
-  Proof.
-    intros.
-    unfold eq.
-    destruct x, y.
-    destruct (eq_nat_dec n n0).
-    - subst; eauto.
-    - right.
-      unfold not.
-      intros.
-      contradiction n1.
-      inversion H; auto.
-  Qed.
-End REG.
-
-Module MR := FMapAVL.Make REG.
+Require Import Coq.Lists.List.
+Require Import Coq.Relations.Relation_Definitions.
+Require Import HJ.Preamble.
+Require Import HJ.Register.
 
 (* ----- end of boiler-plate code ---- *)
 
@@ -368,21 +277,8 @@ Module Semantics.
 End Semantics.
 
 
-(** * Races %\&% Dependencies *)
-
-  Inductive tid :=
-  | taskid: name -> tid.
-
-  Definition from_tid t := match t with taskid x => x end.
-
-  Inductive mid :=
-  | memid: name -> mid.
-
-  Definition from_mid t := match t with memid x => x end.
-
-
-
 Module Races.
+  Require Import HJ.Races.
   Import Lang.
   Import Semantics.
 
@@ -406,42 +302,20 @@ Module Races.
     MN.In x hm ->
     Write (hm,tm) (taskid h) (memid x).
 
-  Inductive Racy (s:state) : Prop :=
-  | racy_def:
-    forall t t' x,
-    Read s t x ->
-    Write s t' x ->
-    Racy s.
-
-End Races.
-
-(*
-Require Import Aniceto.Map.
-Require Import Aniceto.Set.
-*)
-
-Module Dependencies.
-  Import MN.
   Import Lang.
   Import Semantics.
 
-  (** Defines a dependency node, that can be either a task name or a memory location. *)
-
-  Notation dep := (mid + tid)%type.
-
-  Definition from_dep d := match d with | inl l => from_mid l | inr t => from_tid t end.
-
   (** Points-to dependency: a variable points to another variable in the store. *)
 
-  Inductive PointsTo (h:heap) : mid -> dep -> Prop :=
+  Inductive PointsTo (s:state) : mid -> dep -> Prop :=
   | points_to_tid:
     forall x y,
-    MapsTo x (Some (TaskLabel y)) h ->
-    PointsTo h (memid x) (inr (taskid y))
+    MN.MapsTo x (Some (TaskLabel y)) (fst s) ->
+    PointsTo s (memid x) (inr (taskid y))
   | points_to_mem:
     forall x y,
-    MapsTo x (Some (HeapLabel y)) h ->
-    PointsTo h (memid x) (inl (memid y)).
+    MN.MapsTo x (Some (HeapLabel y)) (fst s) ->
+    PointsTo s (memid x) (inl (memid y)).
 
   (**
     A refers-to dependency is goes from a task to a memory location through the
@@ -454,186 +328,166 @@ Module Dependencies.
     MR.MapsTo r (HeapLabel y) s ->
     RefersTo (hm,tm) (taskid x) (memid y).
 
+  Definition get_forced p :=
+  match p with
+  | FORCE r v;; p => Some v
+  | _ => None
+  end.
 
   (** Blocked dependency: a task is blocked on a future in the taskmap. *)
-
-  Inductive Blocked : state -> tid -> tid -> Prop :=
-  | blocked_def:
-    forall s hm tm r v p x y l,
-    MN.MapsTo x ((s, FORCE r v;; p)::l) tm ->
+  Inductive Force : name -> frame -> Prop :=
+  | force_def:
+    forall y s r v p,
     Load s v (TaskLabel y) ->
-    Blocked (hm, tm) (taskid x) (taskid y).
+    Force y (s, FORCE r v;; p).
 
-  (** Dependencies between two names in a state wraps up blocked and points-to
-     dependencies. *)
+  Inductive Blocked: taskmap -> tid -> tid -> Prop :=
+  | blocked_def:
+    forall x c l y m,
+    MN.MapsTo x (c::l) m->
+    Force y c ->
+    Blocked m (taskid x) (taskid y).
 
-  Inductive Dep (s:state) : dep -> dep -> Prop :=
-    | dep_points_to:
-      forall x y,
-      PointsTo (fst s) x y ->
-      Dep s (inl x) y
-    | dep_blocked:
-      forall x y,
-      Blocked s x y ->
-      Dep s (inr x) (inr y)
-    | dep_read:
-      forall x y,
-      Races.Read s x y ->
-      Dep s (inr x) (inl y)
-    | dep_reg:
-      forall x y,
-      RefersTo s x y ->
-      Dep s (inr x) (inl y).
+  Let D s : DependenciesSpec :=
+    Build_DependenciesSpec (Read s) (Write s)
+      (PointsTo s) (RefersTo s) (Blocked (snd s)).
 
-  (* begin hide *)
-  Require Import Coq.Relations.Relation_Operators.
-  (* end hide *)
+  Section Results.
 
-  Definition Trans_Blocked c := clos_trans _ (Blocked c).
+    Let blocked_add_2:
+      forall x y z t m,
+      z <> x ->
+      Blocked m (taskid x) y ->
+      Blocked (MN.add z t m) (taskid x) y.
+    Proof.
+      intros.
+      inversion H0; subst.
+      eauto using blocked_def, MN.add_2.
+    Qed.
 
-  (** A deadlocked state has a cycle in the [Trans_Blocked] relation. *)
-
-  Inductive Deadlocked s : Prop :=
-    deadlocked_def:
-      forall x,
-      Trans_Blocked s x x ->
-      Deadlocked s.
-
-  (** Defines the [Depends] relation as the transitive closure of [Dep]. *)
-
-  Definition Depends s := clos_trans _ (Dep s).
-
-  Inductive DependsRel s m : Prop :=
-  | depends_spec_def:
-    (forall x y, MN.MapsTo (from_dep x) (from_dep y) m <-> Depends s x y) ->
-    DependsRel s m.
-
-  (** A state is tainted if there is a cycle in the [Depends] relation.  *) 
-
-  Inductive Tainted s : Prop :=
-    tainted_def:
-      forall x,
-      Depends s x x ->
-      Tainted s.
-
-  Inductive Taintless s : Prop :=
-    taintless_def:
-      (forall x, ~ Depends s x x) ->
-      Taintless s.
-
-  Lemma taintless_to_not_tainted:
-    forall d s,
-    DependsRel s d ->
-    ~ MN.Empty d ->
-    Taintless s ->
-    ~ Tainted s.
-  Proof.
-    intros.
-    destruct H.
-    unfold not; intros.
-    destruct H0.
-  Admitted.
-(*
-  Lemma blocked_inv_add:
-    forall h e c x y,
-    Blocked (add h e c) x y ->
-    (exists C, h = x /\
-     e = C @ Get (Value (Var y))) \/ Blocked c x y.
-  Proof.
-    intros.
-    inversion H.
-    apply MN_Facts.add_mapsto_iff in H0.
-    destruct H0 as [(?,?)|(?,?)].
-    - subst.
-      left; exists C.
-      intuition.
-    - right.
-      eauto using blocked_def.
-  Qed.
-
-  Lemma dep_inv_put_code:
-    forall s h e x y,
-    Dep (put_code s h e) x y ->
-    Dep s x y \/ (exists C, h = x /\ e = C @ Get (Value (Var y))).
-  Proof.
-    intros.
-    inversion H.
-    - left.
-      auto using dep_points_to.
-    - simpl in H0.
-      apply blocked_inv_add in H0.
-      destruct H0 as [(C,(?,?))|?].
-      + right.
-        exists C.
-        intuition.
-      + left.
-        auto using dep_blocked.
-  Qed.
-*)
-  Import Operators_Properties.
-
-  Lemma dep_to_depends:
-    forall s x y,
-    Dep s x y ->
-    Depends s x y.
-  Proof.
-    intros.
-    unfold Depends.
-    eauto using t_step.
-  Qed.
-(*
-  Lemma tainted_inv:
-    forall s h e,
-    Tainted (put_code s h e) ->
-    Tainted s \/ (exists C, e = C @ Get (Value (Var h))).
-  Proof.
-    intros.
-    inversion H; clear H; rename H0 into H.
-    unfold Depends in *.
-    inversion H.
-    - apply dep_inv_put_code in H0.
-      destruct H0 as [?|(C,(?,?))].
-      + left.
-        eauto using tainted_def, dep_to_depends.
-      + right.
-        exists C.
+    Let deadlocked_impl_t_reduces:
+      forall h t t' hm tm,
+      MN.MapsTo h t tm ->
+      TReduces t t' ->
+      Deadlocked (D (hm, tm)) ->
+      Reduces (hm, tm) (hm, MN.add h t' tm) ->
+      Deadlocked (D (hm, MN.add h t' tm)).
+    Proof.
+      intros.
+      apply deadlocked_impl with (D:= D (hm,tm)); eauto.
+      intros.
+      destruct x as (x).
+      apply blocked_add_2; auto.
+      unfold not; intros;
+      inversion H0; subst.
+      - inversion H3; subst; clear H3.
+        simpl in *.
+        assert (c0 = (s, CALL r v vs;; p)). {
+          assert (He: c0::l = (s, CALL r v vs;; p) :: t0). {
+            eauto using MN_Facts.MapsTo_fun.
+          }
+          inversion He; subst.
+          intuition.
+        }
         subst.
-        trivial.
-    - subst. 
-  Qed.
-*)
+        inversion H8; subst.
+      - assert (Hx := H3).
+        inversion H3; subst; clear H3.
+        simpl in *.
+        assert (X: c = (s, RET v)). {
+          assert (c::l = ((s, RET v) :: (s', CALL r v' vs;; p) :: t0)). {
+            eauto using MN_Facts.MapsTo_fun.
+          }
+          inversion H3; subst.
+          intuition.
+        }
+        subst.
+        inversion H9; subst.
+    Qed.
 
-  (* XXX: move to Aniceto *)
-  Lemma clos_trans_impl:
-    forall {A:Type} (P Q: relation A),
-    (forall x y, P x y -> Q x y) ->
-    forall x y,
-    clos_trans A P x y ->
-    clos_trans A Q x y.
-  Proof.
-    intros.
-    induction H0.
-    - auto using t_step.
-    - eauto using t_trans.
-  Qed.
+    Let deadlocked_impl_m_reduces:
+      forall h e l tm hm hm' e',
+      MN.MapsTo h (e :: l) tm ->
+      MReduces (hm, e) (hm', e') ->
+      Deadlocked (D (hm, tm)) ->
+      Reduces (hm, tm) (hm, MN.add h (e :: l) tm) ->
+      Deadlocked (D (hm, MN.add h (e :: l) tm)).
+    Proof.
+      intros.
+      apply deadlocked_impl with (D:= D (hm,tm)); eauto.
+      intros.
+      destruct x as (x).
+      apply blocked_add_2; auto.
+      unfold not; intros; subst.
+      inversion H3; clear H3.
+      inversion H0; subst; simpl in *.
+      - assert (X: c = (s,  MALLOC r;; p)). {
+          assert (c::l0 = ((s,  MALLOC r;; p) :: l)). {
+            eauto using MN_Facts.MapsTo_fun.
+          }
+          inversion H3; subst.
+          intuition.
+        }
+        subst.
+        inversion H7.
+      - assert (X: c = (s, STORE v1 v2;; p)). {
+          assert (c::l0 = ((s, STORE v1 v2;; p) :: l)). {
+            eauto using MN_Facts.MapsTo_fun.
+          }
+          inversion H3; subst.
+          intuition.
+        }
+        subst.
+        inversion H7.
+      - assert (X: c = (s, LOAD r v;; p)). {
+          assert (c::l0 = ((s, LOAD r v;; p) :: l)). {
+            eauto using MN_Facts.MapsTo_fun.
+          }
+          inversion H3; subst.
+          intuition.
+        }
+        subst.
+        inversion H7.
+    Qed.
 
-  (** A deadlocked state is a special case of a tainted state. *)
+    Lemma deadlock_stable:
+      forall s1 s2,
+      Deadlocked (D s1) ->
+      Reduces s1 s2 ->
+      Deadlocked (D s2).
+    Proof.
+      intros.
+      inversion H0; subst; eauto.
+    Qed.
 
-  Axiom deadlocked_to_tainted:
-    forall s,
-    Deadlocked s ->
-    Tainted s.
-(*  Proof.
-    intros.
-    inversion H.
-    apply tainted_def with (x:=inl (tid x)).
-    unfold Trans_Blocked, reflexive, Depends in *.
-    eauto using clos_trans_impl, dep_blocked.
-  Qed.
-*)
-(* begin hide *)
+    Lemma race_free_preserves_untainted:
+      forall (s1:state) (s2:state),
+      RaceFree (D s1) ->
+      Untainted (D s1) ->
+      Reduces s1 s2 ->
+      Untainted (D s2).
+    Proof.
+      intros.
+      inversion H1; subst.
+      - inversion H3.
+        + 
+    Qed.
 
-End Dependencies.
+    Lemma race_free_preserves:
+      forall (s1:state) (s2:state),
+      RaceFree (D s1) ->
+      Untainted (D s1) ->
+      Reduces s1 s2 ->
+      DeadlockFree (D s2).
+    Proof.
+      intros.
+      inversion H1; subst.
+      - 
+    Qed.
+    
+    
+
+End Race.
 
 
 Module Deadlocks.

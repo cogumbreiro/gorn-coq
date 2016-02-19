@@ -1,4 +1,7 @@
 -R src HJ
 
+src/Preamble.v
+src/Register.v
+src/Races.v
 src/LFuture.v
 
