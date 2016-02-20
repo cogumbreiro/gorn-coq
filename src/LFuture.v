@@ -450,6 +450,93 @@ Module Races.
         inversion H7.
     Qed.
 
+    Lemma load_fun:
+      forall s v w w',
+      Load s v w ->
+      Load s v w' ->
+      w' = w.
+    Proof.
+      intros.
+      inversion H; subst.
+      - inversion H0; subst.
+        eauto using MR_Facts.MapsTo_fun.
+      - inversion H0; auto.
+    Qed.
+
+    Lemma blocked_inv_forced:
+      forall x y c t m,
+      MN.MapsTo x (c :: t) m ->
+      Blocked m (taskid x) (taskid y) ->
+      Force y c.
+    Proof.
+      intros.
+      inversion H0.
+      subst.
+      assert (c0 = c). {
+        assert (He: c0 :: l = c :: t)
+        by eauto using MN_Facts.MapsTo_fun.
+        inversion He; subst; trivial.
+      }
+      subst.
+      trivial.
+    Qed.
+
+    Let deadlock_impl_f_reduces:
+      forall tm tm' hm,
+      FReduces tm tm' ->
+      Deadlocked (D (hm, tm)) ->
+      Reduces (hm, tm) (hm, tm') ->
+      Deadlocked (D (hm, tm')).
+    Proof.
+      intros.
+      inversion H; subst.
+      - apply deadlocked_impl with (D:=D (hm,tm)); eauto.
+        intros.
+        destruct x as (x).
+        apply blocked_add_2; auto.
+        + unfold not; intros; rewrite H7 in *; clear H7.
+          inversion H6; clear H6; subst.
+          contradiction H4.
+          eauto using MN_Extra.mapsto_to_in.
+        + apply blocked_add_2; auto.
+          unfold not; intros.
+          rewrite H7 in *; clear H7.
+          inversion H6; simpl in *; subst.
+          assert (c0 = (s, FUTURE r v vs;; p)). {
+            assert (He: (c0 :: l0) = ((s, FUTURE r v vs;; p) :: l))
+            by eauto using MN_Facts.MapsTo_fun.
+            inversion He; subst.
+            trivial.
+          }
+          subst; inversion H10.
+      - apply deadlocked_impl_ex with (D:= D (hm,tm)); eauto.
+        intros.
+        destruct x as (x).
+        destruct y as (y).
+        destruct (NAME.eq_dec h x). {
+          subst.
+          inversion H7; subst; simpl in *; clear H7.
+          inversion H12; subst.
+          assert (He: s0 = s /\ v0 = v). {
+            assert (He: (s0, FORCE r0 v0;; p0) :: l0 = (s, FORCE r v;; p) :: l)
+            by eauto using MN_Facts.MapsTo_fun.
+            inversion He; subst.
+            auto.
+          }
+          destruct He; subst.
+          assert (h' = y). {
+            assert (He : TaskLabel h' = TaskLabel y)
+            by (eapply load_fun; eauto).
+            inversion He; subst; trivial.
+          }
+          subst.
+          destruct z as (z).
+          assert (HF: Force z (s', RET v')) by eauto using blocked_inv_forced.
+          inversion HF.
+        }
+        apply blocked_add_2; auto.
+    Qed.
+
     Lemma deadlock_stable:
       forall s1 s2,
       Deadlocked (D s1) ->

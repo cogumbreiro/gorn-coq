@@ -67,3 +67,4 @@ Module REG <: UsualOrderedType.
 End REG.
 
 Module MR := FMapAVL.Make REG.
+Module MR_Facts := FMapFacts.Facts MR.

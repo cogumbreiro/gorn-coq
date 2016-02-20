@@ -409,32 +409,7 @@ Section Defs.
 
   (* XXX: move to Aniceto *)
   Require Import Coq.Relations.Relation_Definitions.
-
-  Lemma clos_trans_impl:
-    forall {A:Type} (P Q: relation A),
-    (forall x y, P x y -> Q x y) ->
-    forall x y,
-    clos_trans A P x y ->
-    clos_trans A Q x y.
-  Proof.
-    intros.
-    induction H0.
-    - auto using t_step.
-    - eauto using t_trans.
-  Qed.
-
-  Lemma clos_trans_impl_ex:
-    forall {A B:Type} f (P: relation A) (Q: relation B),
-    (forall x y, P x y -> Q (f x) (f y)) ->
-    forall x y,
-    clos_trans A P x y ->
-    clos_trans B Q (f x) (f y).
-  Proof.
-    intros.
-    induction H0.
-    - auto using t_step.
-    - eauto using t_trans.
-  Qed.
+  Require Import Aniceto.Graphs.Graph.
 
   (** A deadlocked state is a special case of a tainted state. *)
 
@@ -474,6 +449,18 @@ Section Defs.
 End Defs.
 
 Section Props.
+  Lemma deadlocked_impl_ex:
+    forall D E,
+    (forall x y z, Blocked D y z -> Blocked D x y -> Blocked E x y) ->
+    Deadlocked D -> Deadlocked E.
+  Proof.
+    intros ? ? Hi Hd.
+    inversion Hd.
+    apply deadlocked_def with (x:=x).
+    unfold Trans_Blocked in *.
+    apply clos_trans_cycle_succ_impl with (P:=Blocked D); eauto.
+  Qed.
+
   Lemma deadlocked_impl:
     forall D E,
     (forall x y, Blocked D x y -> Blocked E x y) ->
