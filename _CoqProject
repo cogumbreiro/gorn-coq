@@ -1,7 +1,9 @@
 -R src HJ
 
-src/Preamble.v
-src/Register.v
+src/Var.v
+src/Mid.v
+src/Tid.v
+src/Cid.v
 src/Races.v
 src/LFuture.v
 

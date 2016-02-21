@@ -2,11 +2,15 @@
 Require Import Coq.Lists.List.
 Require Import Coq.Relations.Relation_Definitions.
 Require Import HJ.Preamble.
-Require Import HJ.Register.
+Require Import HJ.Tid.
+Require Import HJ.Mid.
+Require Import HJ.Cid.
+Require Import HJ.Var.
 
 (* ----- end of boiler-plate code ---- *)
 
 Set Implicit Arguments.
+
 
 Module Lang.
 
@@ -27,9 +31,9 @@ Module Lang.
 
   Inductive word :=
   | Num: nat -> word    (* number *)
-  | TaskLabel : name -> word  (* task-id *)
-  | HeapLabel : name -> word  (* heap-id *)
-  | CodeLabel : name -> word. (* code-id *)
+  | TaskLabel : tid -> word  (* task-id *)
+  | HeapLabel : mid -> word  (* heap-id *)
+  | CodeLabel : cid -> word. (* code-id *)
 
 (* begin hide *)
 
@@ -49,7 +53,7 @@ Module Lang.
     *)
 
   Inductive value :=
-  | Reg: register -> value   (* register *)
+  | Var: var -> value
   | Word: word -> value.
 
   (** 
@@ -89,19 +93,19 @@ Module Lang.
     A store maps registers into words. Here [MR.t] a parametric type of a map
     where the keys are registers. *)
 
-  Definition store := MR.t word.
+  Definition store := MV.t word.
 
   (** Let [mk_store] create an empty store. *)
 
-  Definition mk_store := @MR.empty word.
+  Definition mk_store := @MV.empty word.
 
   Inductive inst :=
-  | CALL: register -> value -> list value -> inst
-  | LOAD: register -> value -> inst          (* [r := &v] *)
+  | CALL: var -> value -> list value -> inst
+  | LOAD: var -> value -> inst          (* [r := &v] *)
   | STORE: value -> value -> inst          (* [ *r := v] *)
-  | MALLOC: register -> inst                (* [r := alloc] *)
-  | FUTURE: register -> value -> list value -> inst
-  | FORCE: register -> value -> inst.        (* [r := force v] *)
+  | MALLOC: var -> inst                (* [r := alloc] *)
+  | FUTURE: var -> value -> list value -> inst
+  | FORCE: var -> value -> inst.        (* [r := force v] *)
 
   Inductive program :=
   | RET: value -> program
@@ -132,38 +136,38 @@ Module Semantics.
 
   Inductive Load (m:store) : value -> word -> Prop :=
   | load_reg:
-    forall r w,
-    MR.MapsTo r w m ->
-    Load m (Reg r) w
+    forall x w,
+    MV.MapsTo x w m ->
+    Load m (Var x) w
   | load_word:
     forall w,
     Load m (Word w) w.
 
-  Variable args : MN.t (list register).
+  Variable ARGS : MC.t (list var).
 
-  Inductive BindArgs (m:store): list register -> list value -> store -> Prop :=
+  Inductive BindArgs (m:store): list var -> list value -> store -> Prop :=
   | bind_args_nil:
     BindArgs m nil nil mk_store
   | bind_args_cons:
-    forall rs vs r v w m',
-    BindArgs m rs vs m' ->
+    forall xs vs x v w m',
+    BindArgs m xs vs m' ->
     Load m v w ->
-    BindArgs m (r::rs) (v::vs) (MR.add r w m').
+    BindArgs m (x::xs) (v::vs) (MV.add x w m').
 
   (**
     The code fragment is a parameter of the semantics and contains all
     the programs associated to each code label.
    *)
 
-  Variable CF : MN.t program.
+  Variable CF : MC.t program.
 
   Inductive LoadFrame (m:store) (v:value) (vs:list value) : frame -> Prop := 
   | call_frame_def:
     forall f m' p rs,
-    Load m v (TaskLabel f) ->
-    MN.MapsTo f rs args ->
+    Load m v (CodeLabel f) ->
+    MC.MapsTo f rs ARGS ->
     BindArgs m rs vs m' ->
-    MN.MapsTo f p CF ->
+    MC.MapsTo f p CF ->
     LoadFrame m v vs (m',p).
 
   (** Call-stack reduction has to do with the rules that control
@@ -171,14 +175,14 @@ Module Semantics.
 
   Inductive TReduces : task -> task -> Prop :=
   | t_reduces_call:
-    forall r v vs p s t c,
-    LoadFrame s v vs c ->
-    TReduces ((s, CALL r v vs ;; p)::t) (c::(s, CALL r v vs ;; p)::t)
+    forall x f vs p s t c,
+    LoadFrame s f vs c ->
+    TReduces ((s, CALL x f vs ;; p)::t) (c::(s, CALL x f vs ;; p)::t)
   | t_reduces_ret:
-    forall r v p s s' vs w t v',
+    forall x v p s s' vs w t v',
     Load s v w ->
-    ~ MR.In r s' ->
-    TReduces ((s, RET v) :: (s', CALL r v' vs ;; p) :: t) ((MR.add r w s', p)::t).
+    ~ MV.In x s' ->
+    TReduces ((s, RET v) :: (s', CALL x v' vs ;; p) :: t) ((MV.add x w s', p)::t).
 
 
   (** ** Memory-level reduction *)
@@ -188,9 +192,9 @@ Module Semantics.
     from names (memory addresses) into optional words. An undefined word is
       represented by [None]. *)
 
-  Definition heap := MN.t (option word).
+  Definition heap := MM.t (option word).
 
-  Definition mk_heap := @MN.empty (option word).
+  Definition mk_heap := @MM.empty (option word).
 
   (**
     Next, are reduction rules for instructions that affect a heap [m].
@@ -198,22 +202,22 @@ Module Semantics.
 
   Inductive MReduces : (heap * frame) -> (heap * frame) -> Prop :=
   | m_reduces_alloc:
-    forall m p h s r,
-    ~ MN.In h m ->
-    ~ MR.In r s ->
-    MReduces (m, (s,MALLOC r ;; p)) ((MN.add h None m), (MR.add r (HeapLabel h) s, p))
+    forall m p h s x,
+    ~ MM.In h m ->
+    ~ MV.In x s ->
+    MReduces (m, (s,MALLOC x ;; p)) ((MM.add h None m), (MV.add x (HeapLabel h) s, p))
   | m_reduces_store_reg:
     forall v1 v2 p h w s m,
     Load s v1 w ->
     Load s v2 (HeapLabel h) ->
-    MN.In h m ->
-    MReduces (m, (s, STORE v1 v2;; p))  ((MN.add h (Some w) m), (s, p))
+    MM.In h m ->
+    MReduces (m, (s, STORE v1 v2;; p))  ((MM.add h (Some w) m), (s, p))
   | m_reduces_load_reg:
-    forall w s p h r v m,
+    forall w s p h x v m,
     Load s v (HeapLabel h) ->
-    MN.MapsTo h (Some w) m ->
-    ~ MR.In r s ->
-    MReduces (m, (s, LOAD r v;; p)) (m, (MR.add r w s, p)).
+    MM.MapsTo h (Some w) m ->
+    ~ MV.In x s ->
+    MReduces (m, (s, LOAD x v;; p)) (m, (MV.add x w s, p)).
 
   (** ** State-level reduction *)
 
@@ -222,33 +226,33 @@ Module Semantics.
     Type [taskmap] is a map from names into tasks.
    *)
    
-  Definition taskmap := MN.t task.
+  Definition taskmap := MT.t task.
   
   (* begin hide *)
   
-  Definition mk_taskmap := @MN.empty task.
+  Definition mk_taskmap := @MT.empty task.
 
   (* end hide *)
 
 
   Inductive FReduces: taskmap -> taskmap -> Prop :=
   | f_reduces_future:
-    forall r h h' c v l tm s vs p,
-    MN.MapsTo h ((s, FUTURE r v vs;; p)::l) tm ->
+    forall x h h' c v l tm s vs p,
+    MT.MapsTo h ((s, FUTURE x v vs;; p)::l) tm ->
     LoadFrame s v vs c ->
-    ~ MN.In h' tm ->
-    ~ MR.In r s ->
-    let t1 := (MR.add r (TaskLabel h') s, p)::l in
+    ~ MT.In h' tm ->
+    ~ MV.In x s ->
+    let t1 := (MV.add x (TaskLabel h') s, p)::l in
     let t2 := c::nil in
-    FReduces tm (MN.add h' t2 (MN.add h t1 tm))
+    FReduces tm (MT.add h' t2 (MT.add h t1 tm))
   | f_reduces_force:
-    forall r p h h' l v v' w tm s s',
-    MN.MapsTo h ((s, FORCE r v;;p)::l) tm ->
+    forall x p h h' l v v' w tm s s',
+    MT.MapsTo h ((s, FORCE x v;;p)::l) tm ->
     Load s v (TaskLabel h') ->
-    MN.MapsTo h' ((s', RET v')::nil) tm ->
+    MT.MapsTo h' ((s', RET v')::nil) tm ->
     Load s' v' w ->
-    let new_t := (MR.add r w s, p)::l in
-    FReduces tm (MN.add h new_t tm).
+    let new_t := (MV.add x w s, p)::l in
+    FReduces tm (MT.add h new_t tm).
 
   (** A state pairs a store and a taskmap. *)
 
@@ -260,19 +264,18 @@ Module Semantics.
   Inductive Reduces : state -> state -> Prop :=
   | reduces_i:
     forall hm tm h t t',
-    MN.MapsTo h t tm ->
+    MT.MapsTo h t tm ->
     TReduces t t' ->
-    Reduces (hm, tm) (hm, MN.add h t' tm)
+    Reduces (hm, tm) (hm, MT.add h t' tm)
   | reduces_t:
     forall hm hm' tm h e l e',
-    MN.MapsTo h (e::l) tm ->
+    MT.MapsTo h (e::l) tm ->
     MReduces (hm, e) (hm', e') ->
-    Reduces (hm, tm) (hm, MN.add h (e::l) tm)
+    Reduces (hm, tm) (hm, MT.add h (e::l) tm)
   | reduces_f:
     forall hm tm tm',
     FReduces tm tm' ->
     Reduces (hm, tm) (hm, tm').
-
 
 End Semantics.
 
@@ -287,20 +290,20 @@ Module Races.
   Inductive Read: state -> tid -> mid -> Prop :=
   | read_def:
     forall h s x v r p tm hm l,
-    MN.MapsTo h ((s, LOAD r v;; p)::l) tm ->
+    MT.MapsTo h ((s, LOAD r v;; p)::l) tm ->
     Load s v (HeapLabel x) ->
-    MN.In x hm ->
-    Read (hm,tm) (taskid h) (memid x).
+    MM.In x hm ->
+    Read (hm,tm) h x.
 
   (** Holds when some task is writing to a heap reference. *)
 
   Inductive Write: state -> tid -> mid -> Prop :=
   | write_def:
     forall h s x v v' p tm hm l,
-    MN.MapsTo h ((s, STORE v v';; p)::l) tm ->
+    MT.MapsTo h ((s, STORE v v';; p)::l) tm ->
     Load s v' (HeapLabel x) ->
-    MN.In x hm ->
-    Write (hm,tm) (taskid h) (memid x).
+    MM.In x hm ->
+    Write (hm,tm) h x.
 
   Import Lang.
   Import Semantics.
@@ -310,12 +313,12 @@ Module Races.
   Inductive PointsTo (s:state) : mid -> dep -> Prop :=
   | points_to_tid:
     forall x y,
-    MN.MapsTo x (Some (TaskLabel y)) (fst s) ->
-    PointsTo s (memid x) (inr (taskid y))
+    MM.MapsTo x (Some (TaskLabel y)) (fst s) ->
+    PointsTo s x (d_tid y)
   | points_to_mem:
     forall x y,
-    MN.MapsTo x (Some (HeapLabel y)) (fst s) ->
-    PointsTo s (memid x) (inl (memid y)).
+    MM.MapsTo x (Some (HeapLabel y)) (fst s) ->
+    PointsTo s x (d_mid y).
 
   (**
     A refers-to dependency is goes from a task to a memory location through the
@@ -323,10 +326,10 @@ Module Races.
 
   Inductive RefersTo: state -> tid -> mid -> Prop :=
   | refers_to_def:
-    forall r x y hm tm s p l,
-    MN.MapsTo x ((s,p)::l) tm ->
-    MR.MapsTo r (HeapLabel y) s ->
-    RefersTo (hm,tm) (taskid x) (memid y).
+    forall v x y hm tm s p l,
+    MT.MapsTo x ((s,p)::l) tm ->
+    MV.MapsTo v (HeapLabel y) s ->
+    RefersTo (hm,tm) x y.
 
   Definition get_forced p :=
   match p with
@@ -335,18 +338,18 @@ Module Races.
   end.
 
   (** Blocked dependency: a task is blocked on a future in the taskmap. *)
-  Inductive Force : name -> frame -> Prop :=
+  Inductive Force : tid -> frame -> Prop :=
   | force_def:
-    forall y s r v p,
+    forall y s x v p,
     Load s v (TaskLabel y) ->
-    Force y (s, FORCE r v;; p).
+    Force y (s, FORCE x v;; p).
 
   Inductive Blocked: taskmap -> tid -> tid -> Prop :=
   | blocked_def:
     forall x c l y m,
-    MN.MapsTo x (c::l) m->
+    MT.MapsTo x (c::l) m->
     Force y c ->
-    Blocked m (taskid x) (taskid y).
+    Blocked m x y.
 
   Let D s : DependenciesSpec :=
     Build_DependenciesSpec (Read s) (Write s)
@@ -357,61 +360,60 @@ Module Races.
     Let blocked_add_2:
       forall x y z t m,
       z <> x ->
-      Blocked m (taskid x) y ->
-      Blocked (MN.add z t m) (taskid x) y.
+      Blocked m x y ->
+      Blocked (MT.add z t m) x y.
     Proof.
       intros.
       inversion H0; subst.
-      eauto using blocked_def, MN.add_2.
+      eauto using blocked_def, MT.add_2.
     Qed.
 
     Let deadlocked_impl_t_reduces:
       forall h t t' hm tm,
-      MN.MapsTo h t tm ->
+      MT.MapsTo h t tm ->
       TReduces t t' ->
       Deadlocked (D (hm, tm)) ->
-      Reduces (hm, tm) (hm, MN.add h t' tm) ->
-      Deadlocked (D (hm, MN.add h t' tm)).
+      Reduces (hm, tm) (hm, MT.add h t' tm) ->
+      Deadlocked (D (hm, MT.add h t' tm)).
     Proof.
       intros.
       apply deadlocked_impl with (D:= D (hm,tm)); eauto.
       intros.
-      destruct x as (x).
       apply blocked_add_2; auto.
       unfold not; intros;
       inversion H0; subst.
       - inversion H3; subst; clear H3.
         simpl in *.
-        assert (c0 = (s, CALL r v vs;; p)). {
-          assert (He: c0::l = (s, CALL r v vs;; p) :: t0). {
-            eauto using MN_Facts.MapsTo_fun.
+        assert (c0 = (s, CALL x0 f vs;; p)). {
+          assert (He: c0::l = (s, CALL x0 f vs;; p) :: t0). {
+            eauto using MT_Facts.MapsTo_fun.
           }
           inversion He; subst.
           intuition.
         }
         subst.
-        inversion H8; subst.
+        inversion H6.
       - assert (Hx := H3).
         inversion H3; subst; clear H3.
         simpl in *.
         assert (X: c = (s, RET v)). {
-          assert (c::l = ((s, RET v) :: (s', CALL r v' vs;; p) :: t0)). {
-            eauto using MN_Facts.MapsTo_fun.
+          assert (c::l = ((s, RET v) :: (s', CALL x0 v' vs;; p) :: t0)). {
+            eauto using MT_Facts.MapsTo_fun.
           }
           inversion H3; subst.
           intuition.
         }
         subst.
-        inversion H9; subst.
+        inversion H7.
     Qed.
 
     Let deadlocked_impl_m_reduces:
       forall h e l tm hm hm' e',
-      MN.MapsTo h (e :: l) tm ->
+      MT.MapsTo h (e :: l) tm ->
       MReduces (hm, e) (hm', e') ->
       Deadlocked (D (hm, tm)) ->
-      Reduces (hm, tm) (hm, MN.add h (e :: l) tm) ->
-      Deadlocked (D (hm, MN.add h (e :: l) tm)).
+      Reduces (hm, tm) (hm, MT.add h (e :: l) tm) ->
+      Deadlocked (D (hm, MT.add h (e :: l) tm)).
     Proof.
       intros.
       apply deadlocked_impl with (D:= D (hm,tm)); eauto.
@@ -421,33 +423,33 @@ Module Races.
       unfold not; intros; subst.
       inversion H3; clear H3.
       inversion H0; subst; simpl in *.
-      - assert (X: c = (s,  MALLOC r;; p)). {
-          assert (c::l0 = ((s,  MALLOC r;; p) :: l)). {
-            eauto using MN_Facts.MapsTo_fun.
+      - assert (X: c = (s,  MALLOC x1;; p)). {
+          assert (c::l0 = ((s,  MALLOC x1;; p) :: l)). {
+            eauto using MT_Facts.MapsTo_fun.
           }
           inversion H3; subst.
           intuition.
         }
         subst.
-        inversion H7.
+        inversion H5.
       - assert (X: c = (s, STORE v1 v2;; p)). {
           assert (c::l0 = ((s, STORE v1 v2;; p) :: l)). {
-            eauto using MN_Facts.MapsTo_fun.
+            eauto using MT_Facts.MapsTo_fun.
           }
           inversion H3; subst.
           intuition.
         }
         subst.
-        inversion H7.
-      - assert (X: c = (s, LOAD r v;; p)). {
-          assert (c::l0 = ((s, LOAD r v;; p) :: l)). {
-            eauto using MN_Facts.MapsTo_fun.
+        inversion H5.
+      - assert (X: c = (s, LOAD x1 v;; p)). {
+          assert (c::l0 = ((s, LOAD x1 v;; p) :: l)). {
+            eauto using MT_Facts.MapsTo_fun.
           }
           inversion H3; subst.
           intuition.
         }
         subst.
-        inversion H7.
+        inversion H5.
     Qed.
 
     Lemma load_fun:
@@ -459,14 +461,14 @@ Module Races.
       intros.
       inversion H; subst.
       - inversion H0; subst.
-        eauto using MR_Facts.MapsTo_fun.
+        eauto using MV_Facts.MapsTo_fun.
       - inversion H0; auto.
     Qed.
 
     Lemma blocked_inv_forced:
       forall x y c t m,
-      MN.MapsTo x (c :: t) m ->
-      Blocked m (taskid x) (taskid y) ->
+      MT.MapsTo x (c :: t) m ->
+      Blocked m x y ->
       Force y c.
     Proof.
       intros.
@@ -474,7 +476,7 @@ Module Races.
       subst.
       assert (c0 = c). {
         assert (He: c0 :: l = c :: t)
-        by eauto using MN_Facts.MapsTo_fun.
+        by eauto using MT_Facts.MapsTo_fun.
         inversion He; subst; trivial.
       }
       subst.
@@ -492,34 +494,31 @@ Module Races.
       inversion H; subst.
       - apply deadlocked_impl with (D:=D (hm,tm)); eauto.
         intros.
-        destruct x as (x).
         apply blocked_add_2; auto.
         + unfold not; intros; rewrite H7 in *; clear H7.
           inversion H6; clear H6; subst.
           contradiction H4.
-          eauto using MN_Extra.mapsto_to_in.
+          eauto using MT_Extra.mapsto_to_in.
         + apply blocked_add_2; auto.
           unfold not; intros.
           rewrite H7 in *; clear H7.
           inversion H6; simpl in *; subst.
-          assert (c0 = (s, FUTURE r v vs;; p)). {
-            assert (He: (c0 :: l0) = ((s, FUTURE r v vs;; p) :: l))
-            by eauto using MN_Facts.MapsTo_fun.
+          assert (c0 = (s, FUTURE x v vs;; p)). {
+            assert (He: (c0 :: l0) = ((s, FUTURE x v vs;; p) :: l))
+            by eauto using MT_Facts.MapsTo_fun.
             inversion He; subst.
             trivial.
           }
-          subst; inversion H10.
+          subst; inversion H8.
       - apply deadlocked_impl_ex with (D:= D (hm,tm)); eauto.
         intros.
-        destruct x as (x).
-        destruct y as (y).
-        destruct (NAME.eq_dec h x). {
-          subst.
+        destruct (TID.eq_dec h x0). {
+          rewrite tid_eq_rw in *; subst.
           inversion H7; subst; simpl in *; clear H7.
-          inversion H12; subst.
+          inversion H9; subst.
           assert (He: s0 = s /\ v0 = v). {
-            assert (He: (s0, FORCE r0 v0;; p0) :: l0 = (s, FORCE r v;; p) :: l)
-            by eauto using MN_Facts.MapsTo_fun.
+            assert (He: (s0, FORCE x1 v0;; p0) :: l0 = (s, FORCE x v;; p) :: l)
+            by eauto using MT_Facts.MapsTo_fun.
             inversion He; subst.
             auto.
           }
@@ -530,7 +529,6 @@ Module Races.
             inversion He; subst; trivial.
           }
           subst.
-          destruct z as (z).
           assert (HF: Force z (s', RET v')) by eauto using blocked_inv_forced.
           inversion HF.
         }
@@ -547,6 +545,17 @@ Module Races.
       inversion H0; subst; eauto.
     Qed.
 
+    Lemma untainted_to_tainted_impl_race:
+      forall (s1:state) (s2:state),
+      Untainted (D s1) ->
+      Reduces s1 s2 ->
+      Tainted (D s2) ->
+      Racy (D s1).
+    Proof.
+      intros.
+      
+    Qed.
+
     Lemma race_free_preserves_untainted:
       forall (s1:state) (s2:state),
       RaceFree (D s1) ->
@@ -554,6 +563,17 @@ Module Races.
       Reduces s1 s2 ->
       Untainted (D s2).
     Proof.
+      intros.
+      apply untainted_impl with (D:=D s1); auto.
+      intros.
+      inversion H1; subst.
+      - 
+      apply untainted_def.
+      intros.
+      intuition.
+      inversion H1; subst.
+      - 
+      apply untainted_impl with (D:=D s1); auto.
       intros.
       inversion H1; subst.
       - inversion H3.

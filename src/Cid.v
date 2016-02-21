@@ -1,15 +1,17 @@
-Inductive register := reg : nat -> register.
-
-Definition register_num r := match r with | reg n => n end.
-
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.Structures.OrderedTypeEx.
-Require Import HJ.Preamble.
+Require Import Coq.FSets.FMapAVL.
+Require Coq.FSets.FMapFacts.
+Require Import Coq.Arith.Peano_dec.
 
-Module REG <: UsualOrderedType.
-  Definition t := register.
-  Definition eq := @eq register.
-  Definition lt x y := lt (register_num x) (register_num y).
+Inductive cid := codeid : nat -> cid.
+
+Definition cid_nat r := match r with | codeid n => n end.
+
+Module CID <: UsualOrderedType.
+  Definition t := cid.
+  Definition eq := @eq cid.
+  Definition lt x y := lt (cid_nat x) (cid_nat y).
   Definition eq_refl := @eq_refl t.
   Definition eq_sym := @eq_sym t.
   Definition eq_trans := @eq_trans t.
@@ -19,7 +21,7 @@ Module REG <: UsualOrderedType.
     unfold lt in *.
     destruct x, y, z.
     simpl in *.
-    eauto.
+    omega.
   Qed.
 
   Lemma lt_not_eq : forall x y : t, lt x y -> ~ eq x y.
@@ -49,8 +51,6 @@ Module REG <: UsualOrderedType.
     intuition.
   Qed.
 
-  Require Import Coq.Arith.Peano_dec.
-
   Lemma eq_dec : forall x y : t, {eq x y} + {~ eq x y}.
   Proof.
     intros.
@@ -64,7 +64,8 @@ Module REG <: UsualOrderedType.
       contradiction n1.
       inversion H; auto.
   Qed.
-End REG.
+End CID.
 
-Module MR := FMapAVL.Make REG.
-Module MR_Facts := FMapFacts.Facts MR.
+
+Module MC := FMapAVL.Make CID.
+Module MC_Facts := FMapFacts.Facts MC.

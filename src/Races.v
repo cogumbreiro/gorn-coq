@@ -144,17 +144,10 @@ Section DoDec2.
 
 End DoDec2.
 
+Require Import HJ.Mid.
+Require Import HJ.Tid.
+
   (** * Races %\&% Dependencies *)
-
-  Inductive tid :=
-  | taskid: name -> tid.
-
-  Definition from_tid t := match t with taskid x => x end.
-
-  Inductive mid :=
-  | memid: name -> mid.
-
-  Definition from_mid t := match t with memid x => x end.
 
   (** Points-to dependency: a variable points to another variable in the store. *)
 
@@ -162,15 +155,11 @@ End DoDec2.
 
   Notation dep := (mid + tid)%type.
 
-  Notation in_mid := (@inl mid tid).
+  Notation d_mid := (@inl mid tid).
 
-  Notation in_tid := (@inr mid tid).
+  Notation d_tid := (@inr mid tid).
 
-  Definition d_mid x := (in_mid (memid x)).
-
-  Definition d_tid x := (in_tid (taskid x)).
-
-  Definition from_dep d := match d with | inl l => from_mid l | inr t => from_tid t end.
+(*  Definition from_dep d := match d with | inl l => from_mid l | inr t => from_tid t end.*)
 
 Structure DependenciesSpec := {
   (** Holds when some task is reading from a heap reference. *) 
@@ -346,11 +335,11 @@ Section Defs.
   Inductive Tainted : Prop :=
     tainted_def:
       forall x,
-      Depends (in_tid x) (in_tid x) ->
+      Depends (d_tid x) (d_tid x) ->
       Tainted.
 
   Let tainted_alt:
-    Tainted <-> exists x, Depends (in_tid x) (in_tid x).
+    Tainted <-> exists x, Depends (d_tid x) (d_tid x).
   Proof.
     split; intros.
     - inversion H; eauto.
@@ -359,18 +348,18 @@ Section Defs.
 
   Inductive Untainted : Prop :=
     untainted_def:
-      (forall x, ~ Depends (in_tid x) (in_tid x)) ->
+      (forall x, ~ Depends (d_tid x) (d_tid x)) ->
       Untainted.
 
   Let untainted_alt:
-    Untainted <-> (forall x, ~ (Depends (in_tid x) (in_tid x))).
+    Untainted <-> (forall x, ~ (Depends (d_tid x) (d_tid x))).
   Proof.
     split; intros.
     - inversion H; eauto.
     - eauto using untainted_def.
   Qed.
 
-  Let T x := Depends (in_tid x) (in_tid x).
+  Let T x := Depends (d_tid x) (d_tid x).
 
   Lemma not_tainted_iff:
     ~ Tainted <-> Untainted.
@@ -416,7 +405,7 @@ Section Defs.
   Let trans_blocked_to_depends:
     forall x,
     Trans_Blocked x x ->
-    Depends (in_tid x) (in_tid x).
+    Depends (d_tid x) (d_tid x).
   Proof.
     unfold Trans_Blocked, reflexive, Depends in *.
     eauto using clos_trans_impl_ex, dep_blocked.
@@ -489,15 +478,37 @@ Section Props.
     eauto using clos_trans_impl.
   Qed.
 
+  Lemma untainted_impl:
+    forall D E,
+    (forall x y, Dep E x y -> Dep D x y) ->
+    Untainted D -> Untainted E.
+  Proof.
+    intros ? ? Hi Hd.
+    inversion Hd.
+    apply untainted_def.
+    intros.
+    unfold not; intros.
+    unfold Depends in *.
+    assert (Hx := H x).
+    contradiction Hx.
+    eauto using clos_trans_impl.
+  Qed.
+
 End Props.
 
 Section DefsFin.
   (** Finite definitions of deadlocked and of *)
   Variable D:DependenciesSpec.
 
+  Inductive BlockedOf m : Prop :=
+    blocked_of:
+      (forall x y, MT.MapsTo x y m <-> Blocked D x y) ->
+      BlockedOf m.
+  
+(*
   Inductive DeadlockedOf m : Prop :=
     deadlock_of:
       (forall x y, MN.MapsTo x y m <-> Blocked D (taskid x) (taskid y)) ->
       DeadlockedOf m.
-
+      *)
 End DefsFin.
