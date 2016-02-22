@@ -1,8 +1,10 @@
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FMapAVL.
-Require Coq.FSets.FMapFacts.
+Require Import Coq.FSets.FSetAVL.
 Require Import Coq.Arith.Peano_dec.
+
+Require Coq.FSets.FMapFacts.
 
 Inductive mid := memid : nat -> mid.
 
@@ -69,3 +71,5 @@ End MID.
 
 Module MM := FMapAVL.Make MID.
 Module MM_Facts := FMapFacts.Facts MM.
+Module SM := FSetAVL.Make MID.
+Definition set_mid := SM.t.

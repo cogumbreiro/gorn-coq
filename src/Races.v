@@ -1,4 +1,4 @@
-Require Import HJ.Preamble.
+Require Import Coq.Setoids.Setoid.
 
 Set Implicit Arguments.
 
@@ -170,9 +170,9 @@ Structure DependenciesSpec := {
 
   Write: tid -> mid -> Prop;
 
-  (** Memory reference points to another reference *)
+  (** Blocked dependency: a task is blocked on a future in the taskmap. *)
 
-  PointsTo: mid -> dep -> Prop;
+  Blocked: tid -> tid -> Prop;
 
   (**
     A dependency that goes from a task to a memory location through the
@@ -180,10 +180,9 @@ Structure DependenciesSpec := {
 
   LocalRef: tid -> mid -> Prop;
 
+  (** Memory reference points to another reference *)
 
-  (** Blocked dependency: a task is blocked on a future in the taskmap. *)
-
-  Blocked: tid -> tid -> Prop
+  GlobalRef: mid -> dep -> Prop
 }.
 
 Section Defs.
@@ -253,7 +252,7 @@ Section Defs.
   Inductive Dep : dep -> dep -> Prop :=
     | dep_points_to:
       forall x y,
-      PointsTo D x y ->
+      GlobalRef D x y ->
       Dep (inl x) y
     | dep_blocked:
       forall x y,
@@ -496,19 +495,103 @@ Section Props.
 
 End Props.
 
-Section DefsFin.
-  (** Finite definitions of deadlocked and of *)
-  Variable D:DependenciesSpec.
+Module DependencyState.
 
-  Inductive BlockedOf m : Prop :=
-    blocked_of:
-      (forall x y, MT.MapsTo x y m <-> Blocked D x y) ->
-      BlockedOf m.
-  
-(*
-  Inductive DeadlockedOf m : Prop :=
-    deadlock_of:
-      (forall x y, MN.MapsTo x y m <-> Blocked D (taskid x) (taskid y)) ->
-      DeadlockedOf m.
-      *)
+Section DefsFin.
+
+  (** A finite representation of memory state and task state *)
+
+  Inductive task_state :=
+  | BLOCKED: tid -> task_state
+  | READ: mid -> task_state
+  | WRITE: mid -> task_state.
+
+  Inductive Read ts t m  :  Prop :=
+  | read_def:
+    MT.MapsTo t (READ m) ts ->
+    Read ts t m.
+
+  Inductive Write ts t m : Prop :=
+  | write_def:
+    MT.MapsTo t (WRITE m) ts ->
+    Write ts t m.
+
+  Inductive Blocked ts t t' : Prop :=
+  | blocked_def:
+    MT.MapsTo t (BLOCKED t') ts ->
+    Blocked ts t t'.
+
+  Inductive LocalRef (ms:MT.t set_mid) t (m:mid) : Prop :=
+  | local_ref_def:
+    forall s,
+    MT.MapsTo t s ms ->
+    SM.In m s ->
+    LocalRef ms t m.
+
+  Inductive GlobalRef (ms:MM.t dep) t d : Prop :=
+  | global_ref_def:
+    MM.MapsTo t d ms ->
+    GlobalRef ms t d.
+
+  Notation local_memory_t := (MT.t set_mid).
+
+  Notation global_memory_t := (MM.t dep).
+
+  Structure dependency_state := {
+    local_memory : local_memory_t;
+    global_memory : global_memory_t;
+    tasks : MT.t task_state
+  }.
+
+  Definition as_dependency_spec (ds:dependency_state) : DependenciesSpec :=
+    Build_DependenciesSpec
+      (Read (tasks ds))
+      (Write (tasks ds))
+      (Blocked (tasks ds))
+      (LocalRef (local_memory ds))
+      (GlobalRef (global_memory ds)).
+
+  Let update_tasks f ds :=
+    Build_dependency_state (local_memory ds) (global_memory ds) (f (tasks ds)).
+
+  Let update_local_memory f ds :=
+    Build_dependency_state (f (local_memory ds)) (global_memory ds) (tasks ds).
+
+  Let update_global_memory f ds :=
+    Build_dependency_state (local_memory ds) (f (global_memory ds)) (tasks ds).
+
+  Definition put_read (t:tid) (m:mid) : dependency_state ->  dependency_state :=
+    update_tasks (fun ts => MT.add t (READ m) ts).
+
+  Definition put_write t m :=
+    update_tasks (fun ts => MT.add t (WRITE m) ts).
+
+  Definition put_blocked t t' :=
+    update_tasks (fun ts => MT.add t (BLOCKED t') ts).
+
+  Definition remove_task t :=
+    update_tasks (fun ts => MT.remove t ts).
+
+  Definition update_local_ref t f :=
+    update_local_memory (fun lm => 
+      match MT.find t lm with
+      | Some s => MT.add t (f s) lm
+      | _ => lm
+      end
+    ).
+
+  Definition add_local_ref t m :=
+    update_local_ref t (SM.add m).
+
+  Definition remove_local_ref t m :=
+    update_local_ref t (SM.remove m).
+
+  Definition put_global_ref t d :=
+    update_global_memory (fun gm => MM.add t d gm).
+
+  Definition remove_global_ref t :=
+    update_global_memory (fun gm => MM.remove t gm).
+
 End DefsFin.
+
+End DependencyState.

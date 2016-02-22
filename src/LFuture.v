@@ -1,7 +1,6 @@
 (* begin hide *)
 Require Import Coq.Lists.List.
 Require Import Coq.Relations.Relation_Definitions.
-Require Import HJ.Preamble.
 Require Import HJ.Tid.
 Require Import HJ.Mid.
 Require Import HJ.Cid.
@@ -353,7 +352,9 @@ Module Races.
 
   Let D s : DependenciesSpec :=
     Build_DependenciesSpec (Read s) (Write s)
-      (PointsTo s) (RefersTo s) (Blocked (snd s)).
+      (Blocked (snd s))
+      (RefersTo s)
+      (PointsTo s).
 
   Section Results.
 
