@@ -1,4 +1,5 @@
 Require Import Coq.Setoids.Setoid.
+Require Import Coq.Relations.Relation_Operators.
 
 Set Implicit Arguments.
 
@@ -146,53 +147,154 @@ End DoDec2.
 
 Require Import HJ.Mid.
 Require Import HJ.Tid.
-
-  (** * Races %\&% Dependencies *)
+Require Import HJ.Dep.
 
   (** Points-to dependency: a variable points to another variable in the store. *)
 
-  (** Defines a dependency node, that can be either a task name or a memory location. *)
 
-  Notation dep := (mid + tid)%type.
 
-  Notation d_mid := (@inl mid tid).
 
-  Notation d_tid := (@inr mid tid).
+Section Memory.
 
-(*  Definition from_dep d := match d with | inl l => from_mid l | inr t => from_tid t end.*)
+  Structure Memory := {
+    (**
+      A dependency that goes from a task to a memory location through the
+      local memory of the task.
+    *)
+ 
+   LocalRef: tid -> dep -> Prop;
+ 
+   (** Memory reference points to another reference *)
 
-Structure DependenciesSpec := {
-  (** Holds when some task is reading from a heap reference. *) 
+   GlobalRef: mid -> dep -> Prop
+  }.
 
-  Read: tid -> mid -> Prop;
 
-  (** Holds when some task is writing to a heap reference. *)
+  Inductive task_op :=
+  | BLOCKED: tid -> task_op
+  | READ: mid -> task_op
+  | WRITE: mid -> task_op.
 
-  Write: tid -> mid -> Prop;
+  Definition as_dep (o:task_op) :=
+  match o with
+  | BLOCKED x => d_tid x
+  | READ x => d_mid x
+  | WRITE x => d_mid x
+  end.
 
-  (** Blocked dependency: a task is blocked on a future in the taskmap. *)
+  Variable M:Memory.
 
-  Blocked: tid -> tid -> Prop;
+  Inductive Dep : dep -> dep -> Prop :=
+    | dep_global_ref:
+      forall x y,
+      GlobalRef M x y ->
+      Dep (d_mid x) y
+    | dep_local_ref:
+      forall x y,
+      LocalRef M x y ->
+      Dep (d_tid x) y.
 
-  (**
-    A dependency that goes from a task to a memory location through the
-    local memory of the task. *)
+  Definition Depends := clos_trans _ Dep.
 
-  LocalRef: tid -> mid -> Prop;
+  (** A state is tainted if there is a cycle in the [Depends] relation.  *) 
 
-  (** Memory reference points to another reference *)
+  Inductive Tainted : Prop :=
+    tainted_def:
+      forall x,
+      Depends (d_tid x) (d_tid x) ->
+      Tainted.
 
-  GlobalRef: mid -> dep -> Prop
-}.
+  Let tainted_alt:
+    Tainted <-> exists x, Depends (d_tid x) (d_tid x).
+  Proof.
+    split; intros.
+    - inversion H; eauto.
+    - destruct H; eauto using tainted_def.
+  Qed.
 
-Section Defs.
-  Variable D:DependenciesSpec.
+  Inductive Untainted : Prop :=
+    untainted_def:
+      (forall x, ~ Depends (d_tid x) (d_tid x)) ->
+      Untainted.
+
+  Let untainted_alt:
+    Untainted <-> (forall x, ~ (Depends (d_tid x) (d_tid x))).
+  Proof.
+    split; intros.
+    - inversion H; eauto.
+    - eauto using untainted_def.
+  Qed.
+
+  Let D x := Depends (d_tid x) (d_tid x).
+
+  Lemma not_tainted_iff:
+    ~ Tainted <-> Untainted.
+  Proof.
+    apply not_exists_iff_alt with (P:=D);
+    auto using untainted_alt, tainted_alt.
+  Qed.
+
+  Lemma not_untainted_iff:
+     { Tainted } + { ~ Tainted } ->
+     (~ Untainted <-> Tainted).
+  Proof.
+    apply not_nforall_iff_alt with (P:=D);
+    auto using tainted_alt, untainted_alt.
+  Qed.
+
+  Lemma tainted_untainted_dec:
+     { Tainted } + { ~ Tainted } ->
+     { Tainted } + { Untainted }.
+  Proof.
+    apply exists_nforall_dec_alt with (P:=D);
+    auto using tainted_alt, untainted_alt.
+  Qed.
+
+  Lemma untainted_back_edges:
+    (forall x y, { Depends x y } + { ~ Depends x y}) ->
+    forall x y,
+    Untainted ->
+    Dep (d_tid x) y ->
+    ~ Depends y (d_tid x).
+  Proof.
+    intros.
+    destruct (H y (d_tid x)).
+    - assert (Hx: ~ Depends (d_tid x) (d_tid x)) by (inversion H0; eauto).
+      unfold Depends in *.
+      contradiction Hx.
+      eauto using t_trans, t_step.
+    - assumption.
+  Qed.
+
+  Import Operators_Properties.
+
+  Lemma dep_to_depends:
+    forall x y,
+    Dep x y ->
+    Depends x y.
+  Proof.
+    intros.
+    unfold Depends.
+    eauto using t_step.
+  Qed.
+End Memory.
+
+Section Tasks.
+
+  Structure TaskState := {
+   TaskMemory : Memory;
+   Task: tid -> task_op -> Prop;
+
+   task_spec: forall x y, Task x y -> LocalRef TaskMemory x (as_dep y)
+  }.
+
+  Variable T: TaskState.
 
   Inductive Race x : Prop :=
   | race_def:
     forall t t',
-    Read D t x ->
-    Write D t' x ->
+    Task T t (READ x) ->
+    Task T t' (WRITE x) ->
     Race x.
 
   Inductive Racy : Prop :=
@@ -249,29 +351,10 @@ Section Defs.
   (** Dependencies between two names in a state wraps up blocked and points-to
      dependencies. *)
 
-  Inductive Dep : dep -> dep -> Prop :=
-    | dep_points_to:
-      forall x y,
-      GlobalRef D x y ->
-      Dep (inl x) y
-    | dep_blocked:
-      forall x y,
-      Blocked D x y ->
-      Dep (inr x) (inr y)
-    | dep_read:
-      forall x y,
-      Read D x y ->
-      Dep (inr x) (inl y)
-    | dep_reg:
-      forall x y,
-      LocalRef D x y ->
-      Dep (inr x) (inl y).
 
-  (* begin hide *)
-  Require Import Coq.Relations.Relation_Operators.
-  (* end hide *)
+  Definition Blocked x y := Task T x (BLOCKED y).
 
-  Definition Trans_Blocked := clos_trans _ (Blocked D).
+  Definition Trans_Blocked := clos_trans _ Blocked.
 
   (** A deadlocked state has a cycle in the [Trans_Blocked] relation. *)
 
@@ -327,73 +410,7 @@ Section Defs.
 
   (** Defines the [Depends] relation as the transitive closure of [Dep]. *)
 
-  Definition Depends := clos_trans _ Dep.
 
-  (** A state is tainted if there is a cycle in the [Depends] relation.  *) 
-
-  Inductive Tainted : Prop :=
-    tainted_def:
-      forall x,
-      Depends (d_tid x) (d_tid x) ->
-      Tainted.
-
-  Let tainted_alt:
-    Tainted <-> exists x, Depends (d_tid x) (d_tid x).
-  Proof.
-    split; intros.
-    - inversion H; eauto.
-    - destruct H; eauto using tainted_def.
-  Qed.
-
-  Inductive Untainted : Prop :=
-    untainted_def:
-      (forall x, ~ Depends (d_tid x) (d_tid x)) ->
-      Untainted.
-
-  Let untainted_alt:
-    Untainted <-> (forall x, ~ (Depends (d_tid x) (d_tid x))).
-  Proof.
-    split; intros.
-    - inversion H; eauto.
-    - eauto using untainted_def.
-  Qed.
-
-  Let T x := Depends (d_tid x) (d_tid x).
-
-  Lemma not_tainted_iff:
-    ~ Tainted <-> Untainted.
-  Proof.
-    apply not_exists_iff_alt with (P:=T);
-    auto using untainted_alt, tainted_alt.
-  Qed.
-
-  Lemma not_untainted_iff:
-     { Tainted } + { ~ Tainted } ->
-     (~ Untainted <-> Tainted).
-  Proof.
-    apply not_nforall_iff_alt with (P:=T);
-    auto using tainted_alt, untainted_alt.
-  Qed.
-
-  Lemma tainted_untainted_dec:
-     { Tainted } + { ~ Tainted } ->
-     { Tainted } + { Untainted }.
-  Proof.
-    apply exists_nforall_dec_alt with (P:=T);
-    auto using tainted_alt, untainted_alt.
-  Qed.
-
-  Import Operators_Properties.
-
-  Lemma dep_to_depends:
-    forall x y,
-    Dep x y ->
-    Depends x y.
-  Proof.
-    intros.
-    unfold Depends.
-    eauto using t_step.
-  Qed.
 
   (* XXX: move to Aniceto *)
   Require Import Coq.Relations.Relation_Definitions.
@@ -401,18 +418,26 @@ Section Defs.
 
   (** A deadlocked state is a special case of a tainted state. *)
 
+  Let M := TaskMemory T.
+
   Let trans_blocked_to_depends:
     forall x,
     Trans_Blocked x x ->
-    Depends (d_tid x) (d_tid x).
+    Depends M (d_tid x) (d_tid x).
   Proof.
     unfold Trans_Blocked, reflexive, Depends in *.
-    eauto using clos_trans_impl_ex, dep_blocked.
+    intros.
+    apply clos_trans_impl_ex with (P:=Blocked); auto.
+    intros.
+    apply task_spec in H0.
+    apply dep_local_ref.
+    simpl in *.
+    auto.
   Qed.
 
   Lemma deadlocked_to_tainted:
     Deadlocked ->
-    Tainted.
+    Tainted M.
   Proof.
     intros.
     inversion H.
@@ -420,7 +445,7 @@ Section Defs.
   Qed.
 
   Lemma untainted_to_deadlockfree:
-    Untainted ->
+    Untainted M ->
     DeadlockFree.
   Proof.
     intros.
@@ -434,7 +459,7 @@ Section Defs.
 
 (* begin hide *)
 
-End Defs.
+End Tasks.
 
 Section Props.
   Lemma deadlocked_impl_ex:
@@ -499,6 +524,43 @@ Module DependencyState.
 
 Section DefsFin.
 
+  Notation local_refs := (MT.t set_dep).
+
+  Notation global_refs := (MM.t dep).
+
+  Structure memory := {
+    local_memory: local_refs;
+    global_memory: global_refs
+  }.
+
+  Let update_local_memory f m :=
+    Build_memory (f (local_memory m)) (global_memory m).
+
+  Let update_global_memory f m :=
+    Build_memory (local_memory m) (f (global_memory m)).
+
+  Definition update_local_ref t f :=
+    update_local_memory (fun lm => 
+      match MT.find t lm with
+      | Some s => MT.add t (f s) lm
+      | _ => lm
+      end
+    ).
+
+  Definition add_local_ref t d :=
+    update_local_ref t (SD.add d).
+
+  Definition remove_local_ref t d :=
+    update_local_ref t (SD.remove d).
+
+  Definition put_global_ref t d :=
+    update_global_memory (fun gm => MM.add t d gm).
+
+  Definition remove_global_ref t :=
+    update_global_memory (fun gm => MM.remove t gm).
+(*
+  
+
   (** A finite representation of memory state and task state *)
 
   Inductive task_state :=
@@ -521,44 +583,90 @@ Section DefsFin.
     MT.MapsTo t (BLOCKED t') ts ->
     Blocked ts t t'.
 
-  Inductive LocalRef (ms:MT.t set_mid) t (m:mid) : Prop :=
+  Inductive LocalRef (ms:MT.t set_dep) t (d:dep) : Prop :=
   | local_ref_def:
     forall s,
     MT.MapsTo t s ms ->
-    SM.In m s ->
-    LocalRef ms t m.
+    SD.In d s ->
+    LocalRef ms t d.
 
   Inductive GlobalRef (ms:MM.t dep) t d : Prop :=
   | global_ref_def:
     MM.MapsTo t d ms ->
     GlobalRef ms t d.
 
-  Notation local_memory_t := (MT.t set_mid).
+  Notation local_memory := (MT.t set_dep).
 
-  Notation global_memory_t := (MM.t dep).
+  Notation global_memory := (MM.t dep).
 
   Structure dependency_state := {
-    local_memory : local_memory_t;
-    global_memory : global_memory_t;
-    tasks : MT.t task_state
+    ds_local_memory: local_memory;
+    ds_global_memory: global_memory;
+    ds_task_state: MT.t task_state;
+    ds_read_spec:
+      forall x y,
+      MT.MapsTo x (READ y) ds_task_state ->
+      LocalRef ds_local_memory x (d_mid y);
+    ds_write_spec:
+      forall x y,
+      MT.MapsTo x (WRITE y) ds_task_state ->
+      LocalRef ds_local_memory x (d_mid y);
+    ds_blocked_spec:
+      forall x y,
+      MT.MapsTo x (BLOCKED y) ds_task_state ->
+      LocalRef ds_local_memory x (d_tid y)
   }.
+
+  Lemma read_spec ds:
+    forall x y,
+    Read (ds_task_state ds) x y ->
+    LocalRef (ds_local_memory ds) x (d_mid y).
+  Proof.
+    intros.
+    inversion H.
+    auto using ds_read_spec.
+  Qed.
+
+  Lemma write_spec ds:
+    forall x y,
+    Write (ds_task_state ds) x y ->
+    LocalRef (ds_local_memory ds) x (d_mid y).
+  Proof.
+    intros.
+    inversion H.
+    auto using ds_write_spec.
+  Qed.
+
+  Lemma blocked_spec ds:
+    forall x y,
+    Blocked (ds_task_state ds) x y ->
+    LocalRef (ds_local_memory ds) x (d_tid y).
+  Proof.
+    intros.
+    inversion H.
+    auto using ds_blocked_spec.
+  Qed.
 
   Definition as_dependency_spec (ds:dependency_state) : DependenciesSpec :=
     Build_DependenciesSpec
-      (Read (tasks ds))
-      (Write (tasks ds))
-      (Blocked (tasks ds))
-      (LocalRef (local_memory ds))
-      (GlobalRef (global_memory ds)).
+      (Read (ds_task_state ds))
+      (Write (ds_task_state ds))
+      (Blocked (ds_task_state ds))
+      (LocalRef (ds_local_memory ds))
+      (GlobalRef (ds_global_memory ds))
+      (read_spec ds)
+      (write_spec ds)
+      (blocked_spec ds).
 
-  Let update_tasks f ds :=
-    Build_dependency_state (local_memory ds) (global_memory ds) (f (tasks ds)).
-
-  Let update_local_memory f ds :=
-    Build_dependency_state (f (local_memory ds)) (global_memory ds) (tasks ds).
-
-  Let update_global_memory f ds :=
-    Build_dependency_state (local_memory ds) (f (global_memory ds)) (tasks ds).
+  Let update_tasks (f:fun ts => (ds:dependency_state) : dependency_state.
+    
+    @Build_dependency_state
+      (ds_local_memory ds)
+      (ds_global_memory ds)
+      (f (ds_task_state ds))
+      (ds_read_spec ds)
+      (ds_write_spec ds)
+      (ds_blocked_spec ds).
 
   Definition put_read (t:tid) (m:mid) : dependency_state ->  dependency_state :=
     update_tasks (fun ts => MT.add t (READ m) ts).
@@ -572,6 +680,12 @@ Section DefsFin.
   Definition remove_task t :=
     update_tasks (fun ts => MT.remove t ts).
 
+  Let update_local_memory f ds :=
+    Build_dependency_state (f (ds_local_memory ds)) (ds_global_memory ds) (ds_task_state ds).
+
+  Let update_global_memory f ds :=
+    Build_dependency_state (ds_local_memory ds) (f (ds_global_memory ds)) (ds_task_state ds).
+
   Definition update_local_ref t f :=
     update_local_memory (fun lm => 
       match MT.find t lm with
@@ -580,11 +694,11 @@ Section DefsFin.
       end
     ).
 
-  Definition add_local_ref t m :=
-    update_local_ref t (SM.add m).
+  Definition add_local_ref t d :=
+    update_local_ref t (SD.add d).
 
-  Definition remove_local_ref t m :=
-    update_local_ref t (SM.remove m).
+  Definition remove_local_ref t d :=
+    update_local_ref t (SD.remove d).
 
   Definition put_global_ref t d :=
     update_global_memory (fun gm => MM.add t d gm).
@@ -592,6 +706,107 @@ Section DefsFin.
   Definition remove_global_ref t :=
     update_global_memory (fun gm => MM.remove t gm).
 
+  Let D := as_dependency_spec.
+
+  Let read_inv_add:
+    forall x y ts e t,
+    Read (MT.add t e ts) x y ->
+    (t = x /\ e = READ y) \/ (t <> x /\Read ts x y).
+  Proof.
+    intros.
+    inversion H.
+    apply MT_Facts.add_mapsto_iff in H0.
+    destruct H0 as [(?,X)|(?,?)].
+    - subst.
+      intuition.
+    - right; auto using read_def.
+  Qed.
+
+  Let write_inv_add:
+    forall x y ts e t,
+    Write (MT.add t e ts) x y ->
+    (t = x /\ e = WRITE y) \/ (t <> x /\ Write ts x y).
+  Proof.
+    intros.
+    inversion H.
+    apply MT_Facts.add_mapsto_iff in H0.
+    destruct H0 as [(?,X)|(?,?)].
+    - subst.
+      intuition.
+    - right; auto using write_def.
+  Qed.
+
+  Let blocked_inv_add:
+    forall x y ts e t,
+    Blocked (MT.add t e ts) x y ->
+    (t = x /\ e = BLOCKED y) \/ (t <> x /\Blocked ts x y).
+  Proof.
+    intros.
+    inversion H.
+    apply MT_Facts.add_mapsto_iff in H0.
+    destruct H0 as [(?,X)|(?,?)].
+    - subst.
+      intuition.
+    - right; auto using blocked_def.
+  Qed.
+
+  Let dep_inv_add_tasks:
+    forall x y ds e t,
+    Dep (D (update_tasks (fun ts => MT.add t e ts) ds)) x y ->
+    Dep (D ds) x y \/
+    (d_tid t = x /\ exists t', e = BLOCKED t' /\ d_tid t' = y).
+  Proof.
+    intros.
+    inversion H; subst; simpl in *.
+    - apply blocked_inv_add in H0.
+      destruct H0 as [(?,?)|(?,?)].
+      + subst.
+        right.
+        eauto.
+      + left.
+        auto using dep_blocked.
+    - left; auto using dep_global_ref.
+    - left; auto using dep_local_ref.
+  Qed.
+
+  Lemma dep_inv_put_read:
+    forall s t m x y,
+    Dep (D (put_read t m s)) x y ->
+    Dep (D s) x y.
+  Proof.
+    intros.
+    unfold put_read in *.
+    apply dep_inv_add_tasks in H.
+    destruct H as [?|(?,(?,(Hx,?)))]; auto.
+    inversion Hx.
+  Qed.
+
+  Lemma dep_inv_put_write:
+    forall s t m x y,
+    Dep (D (put_write t m s)) x y ->
+    Dep (D s) x y.
+  Proof.
+    intros.
+    unfold put_write in *.
+    apply dep_inv_add_tasks in H.
+    destruct H as [?|(?,(?,(Hx,?)))]; auto.
+    inversion Hx.
+  Qed.
+
+  Lemma dep_inv_put_blocked:
+    forall s t t' x y,
+    Dep (D (put_blocked t t' s)) x y ->
+    Dep (D s) x y \/ (x = d_tid t /\ y = d_tid t').
+  Proof.
+    intros.
+    unfold put_blocked in *.
+    apply dep_inv_add_tasks in H.
+    destruct H as [?|(?,(?,(Hx,?)))]; auto.
+    inversion Hx.
+    subst.
+    intuition.
+  Qed.
+*)
 End DefsFin.
 
 End DependencyState.

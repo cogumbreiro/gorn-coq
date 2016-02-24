@@ -4,6 +4,8 @@ Require Import Coq.FSets.FMapAVL.
 Require Import Coq.FSets.FSetAVL.
 Require Import Coq.Arith.Peano_dec.
 
+Require Import Aniceto.Map.
+
 Require Coq.FSets.FMapFacts.
 
 Inductive mid := memid : nat -> mid.
@@ -68,8 +70,16 @@ Module MID <: UsualOrderedType.
   Qed.
 End MID.
 
+Lemma mid_eq_rw:
+  forall x y, MID.eq x y <-> x = y.
+Proof.
+  intros.
+  auto with *.
+Qed.
 
 Module MM := FMapAVL.Make MID.
 Module MM_Facts := FMapFacts.Facts MM.
+Module MM_Extra := MapUtil MM.
+
 Module SM := FSetAVL.Make MID.
 Definition set_mid := SM.t.

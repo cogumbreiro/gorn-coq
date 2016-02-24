@@ -1,8 +1,12 @@
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FMapAVL.
-Require Coq.FSets.FMapFacts.
+Require Import Coq.FSets.FSetAVL.
 Require Import Coq.Arith.Peano_dec.
+
+Require Import Aniceto.Map.
+
+Require Coq.FSets.FMapFacts.
 
 Inductive tid := taskid : nat -> tid.
 
@@ -69,8 +73,10 @@ End TID.
 
 Module MT := FMapAVL.Make TID.
 Module MT_Facts := FMapFacts.Facts MT.
-Require Import Aniceto.Map.
 Module MT_Extra := MapUtil MT.
+Module ST := FSetAVL.Make TID.
+Definition set_tid := ST.t.
+
 Lemma tid_eq_rw:
   forall (k k':tid), TID.eq k k' <-> k = k'.
 Proof.
