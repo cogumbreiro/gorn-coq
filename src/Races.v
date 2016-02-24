@@ -279,22 +279,167 @@ Section Memory.
   Qed.
 End Memory.
 
-Section Tasks.
 
+(** Memory defined as a finite data structure *)
+
+Module MemoryState.
+
+Section DefsFin.
+
+  Notation local_refs := (MT.t set_dep).
+
+  Notation global_refs := (MM.t dep).
+
+  Inductive LocalRef (ms:local_refs) t (d:dep) : Prop :=
+  | local_ref_def:
+    forall s,
+    MT.MapsTo t s ms ->
+    SD.In d s ->
+    LocalRef ms t d.
+
+  Inductive GlobalRef (ms:global_refs) t d : Prop :=
+  | global_ref_def:
+    MM.MapsTo t d ms ->
+    GlobalRef ms t d.
+
+  Structure memory := {
+    local_memory: local_refs;
+    global_memory: global_refs
+  }.
+
+  Let update_local_memory f m :=
+    Build_memory (f (local_memory m)) (global_memory m).
+
+  Let update_global_memory f m :=
+    Build_memory (local_memory m) (f (global_memory m)).
+
+  Definition update_local_ref t f :=
+    update_local_memory (fun lm => 
+      match MT.find t lm with
+      | Some s => MT.add t (f s) lm
+      | _ => lm
+      end
+    ).
+
+  Definition add_local_ref t d :=
+    update_local_ref t (SD.add d).
+
+  Definition remove_local_ref t d :=
+    update_local_ref t (SD.remove d).
+
+  Definition put_global_ref m d :=
+    update_global_memory (fun gm => MM.add m d gm).
+
+  Definition remove_global_ref m :=
+    update_global_memory (fun gm => MM.remove m gm).
+
+  Definition M ms :=
+    Build_Memory
+    (LocalRef (local_memory ms))
+    (GlobalRef (global_memory ms)).
+
+  Lemma local_ref_inv_add:
+    forall x y t d s ms,
+    LocalRef (MT.add t (SD.add d s) ms) x y ->
+    (t = x /\ y = d) \/ (t = x /\ SD.In y s) \/ (t <> x /\ LocalRef ms x y).
+  Proof.
+    intros.
+    inversion H.
+    apply MT_Facts.add_mapsto_iff in H0.
+    destruct H0 as [(?,?)|(?,?)].
+    - subst.
+      apply SD_Facts.add_iff in H1.
+      destruct H1.
+      + apply dep_eq_rw in H0.
+        intuition.
+      + intuition.
+    - right.
+      right.
+      split; eauto using local_ref_def.
+  Qed.
+
+  Lemma dep_inv_add_local_ref:
+    forall t d ms x y,
+    Dep (M (add_local_ref t d ms)) x y ->
+    (x = d_tid t /\ d = y) \/
+    Dep (M ms) x y.
+  Proof.
+    intros.
+    inversion H; subst; simpl in *.
+    - right; auto using dep_global_ref.
+    - destruct (MT_Extra.find_rw t (local_memory ms)) as [(Hf,?)|(s,(Hf,?))].
+      + rewrite Hf in *; clear Hf.
+        right; auto using dep_local_ref.
+      + rewrite Hf in *; clear Hf.
+        apply local_ref_inv_add in H0.
+        destruct H0 as [(?,?)|[(?,?)|(?,?)]]; subst.
+        * intuition.
+        * right.
+          apply dep_local_ref.
+          simpl.
+          eauto using local_ref_def.
+        * right.
+          apply dep_local_ref.
+          simpl.
+          eauto using local_ref_def.
+  Qed.
+
+  Lemma global_ref_inv_add:
+    forall m d ms x y,
+    GlobalRef (MM.add m d ms) x y ->
+    ( m = x /\ d = y) \/ (m <> x /\ GlobalRef ms x y).
+  Proof.
+    intros.
+    inversion H.
+    apply MM_Facts.add_mapsto_iff in H0.
+    destruct H0 as [(?,X)|(?,?)].
+    - subst.
+      intuition.
+    - right.
+      split; auto using global_ref_def.
+  Qed.
+
+  Lemma dep_inv_put_global_ref:
+    forall m d ms x y,
+    Dep (M (put_global_ref m d ms)) x y ->
+    (x = d_mid m /\ d = y) \/
+    Dep (M ms) x y.
+  Proof.
+    intros.
+    inversion H; subst; simpl in *; auto.
+    - apply global_ref_inv_add in H0.
+      destruct H0 as [(?,?)|(?,?)].
+      + subst.
+        intuition.
+      + right.
+        auto using dep_global_ref.
+    - right.
+      auto using dep_local_ref.
+  Qed.
+
+  
+End DefsFin.
+
+End MemoryState.
+
+
+Section Tasks.
+(*
   Structure TaskState := {
    TaskMemory : Memory;
    Task: tid -> task_op -> Prop;
-
    task_spec: forall x y, Task x y -> LocalRef TaskMemory x (as_dep y)
   }.
 
   Variable T: TaskState.
+*)
+  Variable Task: tid -> task_op -> Prop.
 
   Inductive Race x : Prop :=
   | race_def:
     forall t t',
-    Task T t (READ x) ->
-    Task T t' (WRITE x) ->
+    Task t (READ x) ->
+    Task t' (WRITE x) ->
     Race x.
 
   Inductive Racy : Prop :=
@@ -352,7 +497,7 @@ Section Tasks.
      dependencies. *)
 
 
-  Definition Blocked x y := Task T x (BLOCKED y).
+  Definition Blocked x y := Task x (BLOCKED y).
 
   Definition Trans_Blocked := clos_trans _ Blocked.
 
@@ -418,7 +563,11 @@ Section Tasks.
 
   (** A deadlocked state is a special case of a tainted state. *)
 
-  Let M := TaskMemory T.
+  Variable M : Memory.
+
+  Variable task_spec:
+    forall x y,
+       Task x y -> LocalRef M x (as_dep y).
 
   Let trans_blocked_to_depends:
     forall x,
@@ -520,44 +669,6 @@ Section Props.
 
 End Props.
 
-Module DependencyState.
-
-Section DefsFin.
-
-  Notation local_refs := (MT.t set_dep).
-
-  Notation global_refs := (MM.t dep).
-
-  Structure memory := {
-    local_memory: local_refs;
-    global_memory: global_refs
-  }.
-
-  Let update_local_memory f m :=
-    Build_memory (f (local_memory m)) (global_memory m).
-
-  Let update_global_memory f m :=
-    Build_memory (local_memory m) (f (global_memory m)).
-
-  Definition update_local_ref t f :=
-    update_local_memory (fun lm => 
-      match MT.find t lm with
-      | Some s => MT.add t (f s) lm
-      | _ => lm
-      end
-    ).
-
-  Definition add_local_ref t d :=
-    update_local_ref t (SD.add d).
-
-  Definition remove_local_ref t d :=
-    update_local_ref t (SD.remove d).
-
-  Definition put_global_ref t d :=
-    update_global_memory (fun gm => MM.add t d gm).
-
-  Definition remove_global_ref t :=
-    update_global_memory (fun gm => MM.remove t gm).
 (*
   
 
@@ -582,18 +693,6 @@ Section DefsFin.
   | blocked_def:
     MT.MapsTo t (BLOCKED t') ts ->
     Blocked ts t t'.
-
-  Inductive LocalRef (ms:MT.t set_dep) t (d:dep) : Prop :=
-  | local_ref_def:
-    forall s,
-    MT.MapsTo t s ms ->
-    SD.In d s ->
-    LocalRef ms t d.
-
-  Inductive GlobalRef (ms:MM.t dep) t d : Prop :=
-  | global_ref_def:
-    MM.MapsTo t d ms ->
-    GlobalRef ms t d.
 
   Notation local_memory := (MT.t set_dep).
 
@@ -807,6 +906,4 @@ Section DefsFin.
     intuition.
   Qed.
 *)
-End DefsFin.
 
-End DependencyState.

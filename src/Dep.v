@@ -168,5 +168,6 @@ Proof.
 Qed.
 
 Module SD := FSetAVL.Make DEP.
+Module SD_Facts := FSetFacts.Facts SD.
 Definition set_dep := SD.t.
 
