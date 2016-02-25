@@ -315,10 +315,11 @@ Section DefsFin.
 
   Definition update_local_ref t f :=
     update_local_memory (fun lm => 
-      match MT.find t lm with
-      | Some s => MT.add t (f s) lm
-      | _ => lm
-      end
+      let s := match MT.find t lm with
+      | Some s => s
+      | _ => SD.empty
+      end in
+      MT.add t (f s) lm
     ).
 
   Definition add_local_ref t d :=
@@ -339,22 +340,17 @@ Section DefsFin.
     (GlobalRef (global_memory ms)).
 
   Lemma local_ref_inv_add:
-    forall x y t d s ms,
-    LocalRef (MT.add t (SD.add d s) ms) x y ->
-    (t = x /\ y = d) \/ (t = x /\ SD.In y s) \/ (t <> x /\ LocalRef ms x y).
+    forall x y t s ms,
+    LocalRef (MT.add t s ms) x y ->
+    (t = x /\ SD.In y s) \/ (t <> x /\ LocalRef ms x y).
   Proof.
     intros.
     inversion H.
     apply MT_Facts.add_mapsto_iff in H0.
     destruct H0 as [(?,?)|(?,?)].
     - subst.
-      apply SD_Facts.add_iff in H1.
-      destruct H1.
-      + apply dep_eq_rw in H0.
-        intuition.
-      + intuition.
+      intuition.
     - right.
-      right.
       split; eauto using local_ref_def.
   Qed.
 
@@ -367,19 +363,52 @@ Section DefsFin.
     intros.
     inversion H; subst; simpl in *.
     - right; auto using dep_global_ref.
-    - destruct (MT_Extra.find_rw t (local_memory ms)) as [(Hf,?)|(s,(Hf,?))].
-      + rewrite Hf in *; clear Hf.
-        right; auto using dep_local_ref.
-      + rewrite Hf in *; clear Hf.
-        apply local_ref_inv_add in H0.
-        destruct H0 as [(?,?)|[(?,?)|(?,?)]]; subst.
-        * intuition.
-        * right.
+    - apply local_ref_inv_add in H0.
+      destruct H0 as [(He,Hx)|(?,Hx)]. {
+        rewrite <- He in *; clear He.
+        apply SD_Facts.add_iff in Hx.
+        destruct Hx as [Hx|Hx]. {
+          apply dep_eq_rw in Hx.
+          intuition.
+        }
+        destruct (MT_Extra.find_rw t (local_memory ms)) as [(Hf,?)|(s,(Hf,?))];
+        rewrite Hf in *; clear Hf.
+        + rewrite SD_Facts.empty_iff in *.
+          inversion Hx.
+        + right.
           apply dep_local_ref.
           simpl.
           eauto using local_ref_def.
-        * right.
+      }
+      right.
+      auto using dep_local_ref.
+  Qed.
+
+  Lemma dep_inv_remove_local_ref:
+    forall t d ms x y,
+    Dep (M (remove_local_ref t d ms)) x y ->
+    Dep (M ms) x y.
+  Proof.
+    intros.
+    inversion H; subst; simpl in *.
+    - auto using dep_global_ref.
+    - destruct (MT_Extra.find_rw t (local_memory ms)) as [(Hf,?)|(s,(Hf,?))];
+      rewrite Hf in *; clear Hf.
+      + apply local_ref_inv_add in H0.
+        destruct H0 as [(?,Hr)|(?,?)].
+        * subst.
+          apply SD.remove_3 in Hr.
+          apply SD_Facts.empty_iff in Hr.
+          inversion Hr.
+        * auto using dep_local_ref.
+      + apply local_ref_inv_add in H0.
+        destruct H0 as [(?,?)|(?,?)].
+        * subst.
+          apply SD.remove_3 in H2.
           apply dep_local_ref.
+          simpl.
+          eauto using local_ref_def.
+        * apply dep_local_ref.
           simpl.
           eauto using local_ref_def.
   Qed.
@@ -417,7 +446,57 @@ Section DefsFin.
       auto using dep_local_ref.
   Qed.
 
-  
+  Lemma dep_inv_remove_global_ref:
+    forall m ms x y,
+    Dep (M (remove_global_ref m ms)) x y ->
+    Dep (M ms) x y.
+  Proof.
+    intros.
+    inversion H; subst; simpl in *.
+    - inversion H0.
+      apply MM.remove_3 in H1.
+      apply dep_global_ref.
+      simpl.
+      auto using global_ref_def.
+    - auto using dep_local_ref.
+  Qed.
+
+  Require Import Aniceto.Graphs.Graph.
+
+  Lemma remove_global_ref_preserves_untainted:
+    forall x m,
+    Untainted (M m) ->
+    Untainted (M (remove_global_ref x m)).
+  Proof.
+    intros.
+    inversion H.
+    apply untainted_def.
+    intros.
+    unfold not; intros Hd.
+    rename x0 into y.
+    assert (Hy := H0 y).
+    contradiction Hy; clear Hy.
+    unfold Depends in *.
+    eauto using dep_inv_remove_global_ref, clos_trans_impl.
+  Qed.
+
+  Lemma remove_local_ref_preserves_untainted:
+    forall t x m,
+    Untainted (M m) ->
+    Untainted (M (remove_local_ref t x m)).
+  Proof.
+    intros.
+    inversion H.
+    apply untainted_def.
+    intros.
+    unfold not; intros Hd.
+    rename x0 into y.
+    assert (Hy := H0 y).
+    contradiction Hy; clear Hy.
+    unfold Depends in *.
+    eauto using dep_inv_remove_local_ref, clos_trans_impl.
+  Qed.
+
 End DefsFin.
 
 End MemoryState.
