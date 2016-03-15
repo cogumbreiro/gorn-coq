@@ -29,11 +29,15 @@
 \newcommand{\Codey}{L'}
 \newcommand{\Store}{\sigma}
 
-\newcommand{\IReduces}{\rightarrow_{\mathtt{i}}}
-\newcommand{\MReduces}{\rightarrow_{\mathtt{m}}}
-\newcommand{\FReduces}{\rightarrow_{\mathtt{f}}}
+\newcommand{\reduces}[1][]{\xrightarrow{{#1}}}
 \newcommand{\Reduces}{\rightarrow}
+\newcommand{\MReduces}[1][\TName]{\ _{#1}\reduces}
+\newcommand{\IReduces}{\rightarrow_{\mathtt{i}}}
+\newcommand{\FReduces}{\rightarrow_{\mathtt{f}}}
 \newcommand{\Put}[2]{\{{#1}:={#2}\}}
+
+\newcommand{\putGlobal}[3]{\mathrm{putGlobal}({#1},{#2},{#3})}
+\newcommand{\addRead}[3]{\mathrm{addRead}({#1},{#2},{#3})}
 
 \newcommand{\Inst}{i}
 \newcommand{\CALL}[3][\Reg]{{#1}=\mathtt{call}\ {#2}({#3})}
@@ -51,7 +55,7 @@
 \newcommand{\Op}{o}
 \newcommand{\Var}{x}
 \newcommand{\Exp}{e}
-\newcommand{\Deref}[1][\Var]{*{#1}}
+\newcommand{\Deref}[1][\Val]{*{#1}}
 \newcommand{\Nat}{i}
 \newcommand{\Malloc}{\mathtt{malloc}}
 \newcommand{\Future}[3]{\mathtt{future}\ {#1}\ {#2}.{#3}}
@@ -198,167 +202,73 @@ $$
 
 \newpage
 
+\newcommand{\Local}[1][\State]{\vdash_{#1}}
+\newcommand{\Time}[1][\State]{\vdash_{#1}}
+\newcommand{\Program}[1][\State]{\vdash_{#1}}
+
 \noindent
-\textbf{Rules for load:}\quad\fbox{$\Store(\Val)\mapsto\Word$}
+\textbf{Get store:}\quad\fbox{$\TName \Local \Store$}
+$$
+\frac{
+  \TaskMap(\State)(\TName) \mapsto (\Nat,(\Store,\Prog))
+}{
+  \TName \Local \Store
+}
+$$
+
+\noindent
+\textbf{Current time:}\quad\fbox{$\TName \Time \Nat$}
+$$
+\frac{
+  \TaskMap(\State)(\TName) \mapsto (\Nat,\TStatus)
+}{
+  \TName \Time \Nat
+}
+$$
+
+\noindent
+\textbf{Program:}\quad\fbox{$\TName \Program \Prog$}
+$$
+\frac{
+  \TaskMap(\State)(\TName) \mapsto (\Nat,(\Store,\Prog))
+}{
+  \TName \Program \Prog
+}
+$$
+
+\newcommand{\VReduces}[2][\State]{\ _{{#1},{#2}}\Reduces}
+
+\noindent
+\textbf{Reduces value:}\quad\fbox{$\Val \VReduces \TName \Word$}
   %
   $$
   \frac{
-    \Store(\Reg) = \Word
+    \TName \Local \Store \qquad \Store(\Var) \mapsto \Word
   }{
-    \Store(\Reg) \mapsto \Word
+    \Var \VReduces \TName \Word
+  }
+  \qquad
+  \Word \VReduces \TName \Word
+  $$
+  %
+  %
+  \textbf{Reduces memory:}\quad \fbox{$(\State,\Exp) \MReduces (\State,\Val)$}
+  $$
+  \frac{
+    \Val \VReduces \TName \HName
+    \qquad
+    \HeapMap(\State)(\HName) \mapsto \Word
+    \qquad
+    \TName \Time \Nat
+  }{
+    (\State,\Deref) \MReduces (\addRead {\HName} {(\TName,\Nat)} \State,\Word)
   }
   \qquad
   \frac{
+    \HName \notin \HeapMap(\State)
   }{
-    \Store(\Word) \mapsto \Word
+    (\State,\Malloc) \MReduces (\putGlobal \HName ? \State,\HName)
   }
   $$
-  %
-  \textbf{Call-frame load:}\quad\fbox{$\Store(\Val(\vec\Val)) \mapsto \Env$}
-  $$
-  \frac{
-    \Store(\Val) \mapsto \FName
-    \qquad
-    \CodeFrag(\FName) = \Prog
-    \qquad
-    \Args(\FName) = \Reg_1, \dots,\Reg_n
-    \qquad
-    \forall i \in \{1,\dots,n\} : \Store(\Val_i) \mapsto \Word_i
-  }{
-    \Store, \Val(\Val_1,\dots,\Val_n)  \mapsto (\{ \Reg_1\colon \Word_1, \dots, \Reg_n \colon \Word_n \},\Prog)
-  }
-  $$
-  %
-   %
-   \textbf{Rules for tasks (internal state):}\quad\fbox{$\Task\IReduces \Task$ }
-  $$
-  \frac{
-    \Store( \Val (\vec\Val)) \mapsto \Env
-  }{
-    (\Store,\CALL \Val {\vec \Val};;\Prog)::\Stack
-    \IReduces
-    \Env::(\Store, \CALL \Val { \vec \Val};;\Prog)::\Stack
-  }
-   $$
-   $$
-   \frac{
-     \Store(\Val) \mapsto \Word
-     \qquad
-     \Reg \notin \Store'
-   }{
-     (\Store,\RET)::(\Store', \CALL \_ \_;;p)::\Stack
-     \IReduces
-     (\Store'\Put \Reg \Word, \Prog)::\Stack
-   }
-   $$
-   %
-   \textbf{Rules for memory:}\quad\fbox{$(\HeapMap,\Env)\MReduces(\HeapMap,\Env)$}
-   $$
-   \frac{
-     \Heap \notin \HeapMap
-     \qquad
-     \Reg \notin \Store
-   }{
-     (\HeapMap, (\Store,\MALLOC;; \Prog)) \MReduces (M\Put{\Heap}{\Undef}, (\Store\Put{\Reg}{\Heap}, \Prog))
-   }
-   $$
-   $$
-   \frac{
-     \Store(\Val) \mapsto \Word
-     \qquad
-     \Store(\Valy) \mapsto \HName
-     \qquad
-     \Heap \in \HeapMap
-   }{
-     (\HeapMap, (\Store,\STORE \Valy;; p)) \MReduces (M\Put\Heap\Word, (\Store, \Prog))
-   }
-   $$
-   $$
-   \frac{
-     \Store(\Val) \mapsto \Heap
-     \qquad
-     \HeapMap(\Heap) = \Word
-     \qquad
-     \Reg \notin \Store
-   }{
-     (\HeapMap, (\Store,\LOAD \Val;;\Prog)) \MReduces (\HeapMap, (\Store\Put\Reg\Word, \Prog))
-   }
-   $$
-   %
-   \textbf{Rules for futures:}\quad\fbox{$\TaskMap\FReduces\TaskMap$}
-   $$
-   \frac{
-     \TaskMap(\TName) = (\Store,\FUTURE \Val {\vec \Val};; \Prog)::\Stack
-     \qquad
-     \Store(\Val (\vec\Val)) \mapsto \Env
-     \qquad
-     \TNamey \notin \TaskMap
-     \qquad
-     \Reg \notin \Store
-   }{
-     \TaskMap
-     \FReduces
-     \TaskMap
-     \Put{\TName}{(\Store\Put{\Reg}{\TNamey},\Prog)::\Stack}
-     \Put\TNamey{\Env::\Nil}
-   }
-   $$
-   $$
-   \frac{
-     \TaskMap(\TName) = (\Store,\FORCE;; \Prog)::\Stack
-     \qquad
-     \Store(\Val) \mapsto {\TNamey}
-     \qquad
-     \TaskMap(\TNamey) = (\Store', \RET[\Valy])
-     \qquad
-     \Store'(v') \mapsto \Word
-     \qquad
-     \Reg \notin \Store
-   }{
-     \TaskMap
-     \FReduces
-     \TaskMap\Put\TName{(\Store\Put{\Reg}{\Word},\Prog)::\Stack}
-   }
-   $$
-   \textbf{Rules for states:}\quad\fbox{$\State\Reduces\State$}
-   %
-   $$
-   \frac{
-     \TaskMap(\TName) = \Task
-     \qquad
-     \Task \IReduces \Tasky
-   }{
-     (\HeapMap,\TaskMap) \Reduces (\HeapMap, \TaskMap\Put\Heap{\Tasky})
-   }
-   \qquad
-   \frac{
-     \TaskMap(\TName) = \Env::\Stack
-     \qquad
-     (\HeapMap,\Env) \MReduces (\HeapMapy, \Envy)
-   }{
-     (\HeapMap,\TaskMap) \Reduces (\HeapMapy, \TaskMap\Put\TName{\Envy::\Task})
-   }
-   \qquad
-   \frac{
-     \TaskMap \FReduces \TaskMapy
-   }{
-     (\HeapMap,\TaskMap) \Reduces (\HeapMap, \TaskMapy)
-   }
-   $$
-
-\newpage
-
-Ill-formed state: Because $\TName_1$ does not consume
-
-$$
-\begin{aligned}
-\FName_1 : & \LOAD y; \RET [0]\\
-\FName_2 : & \RET [0] \\
-y : & \TName_0 \\
-\TName_0: & (\emptyset, \RET[0]) \\
-\TName_1: & (\emptyset,\BR[0] {\FName_1}{\FName_2}) \\
-\TName_2: & (\emptyset,\STORE[\TName_1] y)
-\end{aligned}
-$$
 
 \end{document}
