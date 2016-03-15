@@ -42,33 +42,41 @@ Module Lang.
   Definition store := MV.t word.
   Definition mk_store := @MV.empty word.
 
-  Inductive taskstatus := 
-  | Running : store -> program -> taskstatus
-  | Stopped: word -> taskstatus.
+  Definition task := (nat * store * program) % type.
 
-  Definition task := (nat * taskstatus) % type.
+  Definition task_update_program f (t:task) : task :=
+  match t with
+  | (n, s, p) => (n, s, f p)
+  end.
 
   Definition task_set_program (p:program) (t:task) : task :=
-    match t with
-    | (n, Running s _) => (n, Running s p)
-    | _ => t
-    end.
+  task_update_program (fun _ => p) t.
 
-  Definition task_set_stopped (w:word) (t:task) : task :=
-    match t with
-    | (n, Running _ _) => (n, Stopped w)
-    | _ => t
-    end.
+  Definition task_update_instruction f (t:task) : task :=
+  task_update_program
+  (fun p=>
+    match p with
+    | Seq i p => Seq (f i) p
+    | _ => p
+    end
+  )
+  t.
+
+  Definition eval w (i:instruction) : instruction :=
+  let v := Value (Word w) in
+  match i with
+  | Assign x e => Assign x v
+  | Store x e => Store x v
+  end.
 
   Definition task_tick (t:task) : task :=
   match t with
-  | (n, x) => (S n, x)
+  | (n, s, p) => (S n, s, p)
   end.
 
   Definition task_put_var (x:var) (w:word) (t:task) : task :=
   match t with
-  | (n, Running s p) => (n, Running (MV.add x w s) p)
-  | _ => t
+  | (n, s, p) => (n, MV.add x w s, p)
   end.
 
   Definition taskmap := MT.t task.
@@ -82,9 +90,6 @@ Module Lang.
 
   Definition tm_set_program t p tm :=
   tm_update t (task_set_program p) tm.
-
-  Definition tm_set_stopped t w tm :=
-  tm_update t (task_set_stopped w) tm.
 
   Definition tm_tick t tm :=
   tm_update t task_tick tm.
@@ -173,9 +178,6 @@ Module Lang.
   Definition s_set_program t p s :=
   s_tm_update (tm_set_program t p) s.
 
-  Definition s_set_stopped t w s :=
-  s_tm_update (tm_set_stopped t w) s.
-
   Definition s_tick t tm :=
   s_tm_update (tm_tick t) tm.
 
@@ -189,7 +191,7 @@ Module Lang.
   s_heap_update (fun hs => MM.add x v hs) s.
 
   Definition s_spawn t l p s :=
-  s_tm_update (fun tm => MT.add t (0, Running l p) tm) s. 
+  s_tm_update (fun tm => MT.add t (0, l, p) tm) s. 
 
   Definition s_add_read h n s :=
   s_shadow_update (sh_add_read h n) s.
@@ -200,20 +202,28 @@ Module Lang.
   Inductive Local (s:state) t : store -> Prop :=
   | store_def:
     forall n p l,
-    MT.MapsTo t (n, Running l p) (s_tasks s) ->
+    MT.MapsTo t (n, l, p) (s_tasks s) ->
     Local s t l.
 
-  Inductive Time (s:state) (t:tid) : nat -> Prop :=
+  Inductive Time (s:state) (t:tid) : node -> Prop :=
   | time_def:
-    forall n x,
-    MT.MapsTo t (n, x) (s_tasks s) ->
-    Time s t n.
+    forall n l p,
+    MT.MapsTo t (n, l, p) (s_tasks s) ->
+    Time s t (t,n).
 
   Inductive Program s t (p:program) : Prop :=
   | program_def:
     forall n l,
-    MT.MapsTo t (n, Running l p) (s_tasks s) ->
+    MT.MapsTo t (n, l, p) (s_tasks s) ->
     Program s t p.
+
+  Inductive Expression : instruction -> expression -> Prop :=
+  | expression_assign:
+    forall x e,
+    Expression (Assign x e) e
+  | expression_store:
+    forall v e,
+    Expression (Store v e) e.
 
   Inductive VReduces (s:state) (t:tid) : value -> word -> Prop :=
   | v_reduces_var:
@@ -233,11 +243,11 @@ Module Lang.
     ~ MM.In h (s_heap s) ->
     MReduces (s, t, Malloc) (s_global_put h None s, HeapLabel h)
   | m_reduces_load:
-    forall s t v w h n,
+    forall s t v w h r,
     VReduces s t v (HeapLabel h) ->
     MM.MapsTo h (Some w) (s_heap s) ->
-    Time s t n ->
-    MReduces (s, t, Deref v) (s_add_read h (t,n) s, w).
+    Time s t r ->
+    MReduces (s, t, Deref v) (s_add_read h r s, w).
 
   Inductive Bind (s:state) (t:tid): list var -> list value -> store -> Prop :=
   | bind_nil:
@@ -248,6 +258,13 @@ Module Lang.
     VReduces s t v w ->
     Bind s t (x::xs) (v::vs) (MV.add x w m').
 
+  Inductive Stopped (s:state) (t:tid) (w:word) : Prop :=
+  | stopped_def:
+    forall v,
+    Program s t (Ret v) ->
+    VReduces s t v w ->
+    Stopped s t w.
+
   Inductive FReduces: (state*tid*expression) -> (state*word) -> Prop :=
   | f_reduces_future:
     forall xs vs t n s p t' (l':store),
@@ -255,15 +272,15 @@ Module Lang.
     Time s t n ->
     ~ MT.In t' (s_tasks s) ->
     FReduces (s,t,Future vs xs p)
-      ((s_spawn t' l' p) (s_add_edge ((t,n),(t',0)) s),
+      ((s_spawn t' l' p) (s_add_edge (n,(t',0)) s),
         TaskLabel t')
   | f_reduces_force:
-    forall v t' w t s n n',
+    forall v t' w t s r r',
     VReduces s t v (TaskLabel t') ->
-    MT.MapsTo t' (n', Stopped w) (s_tasks s) ->
-    Time s t n ->
-    Time s t' n' ->
-    FReduces (s,t,Force v) (s_add_edge ((t,n),(t',n')) s, w).
+    Stopped s t' w ->
+    Time s t r ->
+    Time s t' r' ->
+    FReduces (s,t,Force v) (s_add_edge (r,r') s, w).
 
   Inductive EReduces: (state*tid*expression) -> (state*word) -> Prop :=
   | e_reduces_f:
@@ -277,18 +294,21 @@ Module Lang.
 
   Inductive IReduces: (state * tid * instruction) -> state -> Prop :=
   | i_reduces_assign:
-    forall s s' t e w x,
-    EReduces (s,t,e) (s',w) ->
-    IReduces (s,t,Assign x e) (s_local_put t x w s')
+    forall s t w x,
+    IReduces (s,t,Assign x (Value (Word w))) (s_local_put t x w s)
   | i_reduces_store:
-    forall s s' t e w h v n,
+    forall s s' t w h v n,
     VReduces s t v (HeapLabel h) ->
-    EReduces (s,t,e) (s',w) ->
     Time s t n ->
-    IReduces (s,t,Store v e)
-      ((s_add_write h (t,n)) (s_global_put h (Some w) s')).
+    IReduces (s,t,Store v (Value (Word w)))
+      ((s_add_write h n) (s_global_put h (Some w) s')).
 
   Inductive PReduces: (state * tid * program) -> (state * program) -> Prop :=
+  | p_reduces_eval:
+    forall s s' i t e w p,
+    Expression i e ->
+    EReduces (s,t,e) (s',w) ->
+    PReduces (s,t, Seq i p) (s', Seq (eval w i) p)
   | p_reduces_seq:
     forall s t i p s',
     IReduces (s,t,i) s' ->
@@ -302,23 +322,12 @@ Module Lang.
     VReduces s t v (Num (S n)) ->
     PReduces (s,t,If v p1 p2) (s, p1).
 
-  Inductive Result (s:state) (t:tid) (w:word) : Prop :=
-  | halted_def:
-    forall v,
-    Program s t (Ret v) ->
-    VReduces s t v w ->
-    Result s t w.
-
   Inductive Reduces: state -> state -> Prop :=
   | reduces_run:
     forall s s' t p p',
     Program s t p ->
     PReduces (s,t,p) (s', p') ->
-    Reduces s (s_set_program t p' s')
-  | reduces_stop:
-    forall s t w,
-    Result s t w ->
-    Reduces s (s_set_stopped t w s).
+    Reduces s (s_set_program t p' s').
 
   Require Import Coq.Relations.Relation_Operators.
 
