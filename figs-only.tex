@@ -31,7 +31,7 @@
 
 \newcommand{\reduces}[1][]{\xrightarrow{{#1}}}
 \newcommand{\Reduces}{\rightarrow}
-\newcommand{\MReduces}[1][\TName]{\ _{#1}\reduces}
+\newcommand{\EReduces}[2][\TName]{\ _{#1}\reduces[#2]}
 \newcommand{\IReduces}{\rightarrow_{\mathtt{i}}}
 \newcommand{\FReduces}{\rightarrow_{\mathtt{f}}}
 \newcommand{\Put}[2]{\{{#1}:={#2}\}}
@@ -41,15 +41,6 @@
 
 
 \newcommand{\Inst}{i}
-\newcommand{\CALL}[3][\Reg]{{#1}=\mathtt{call}\ {#2}({#3})}
-\newcommand{\LOAD}[2][\Reg]{{#1}=\mathtt{load}\ {#2}}
-\newcommand{\STORE}[2][\Val]{\mathtt{store}\ {#1}\ {#2}}
-\newcommand{\MALLOC}[1][\Reg]{{#1} = \mathtt{malloc}}
-\newcommand{\FUTURE}[3][\Reg]{{#1} = \mathtt{future}\ {#2}({#3})}
-\newcommand{\FORCE}[2][\Val]{\mathtt{force}\ {#1}}
-\newcommand{\Ret}[1][\Val]{\mathtt{ret}\ {#1}}
-\newcommand{\BR}[3][\Val]{\mathtt{br}\ {#1}\ {#2}\ {#3}}
-\newcommand{\OP}[2][\Reg]{{#1}\ =\ {#2}}
 \newcommand{\Nil}{\mathtt{nil}}
 \newcommand{\Args}{A}
 \newcommand{\Op}{o}
@@ -61,6 +52,7 @@
 \newcommand{\Future}[3]{\mathtt{future}\ {#1}\ {#2}.{#3}}
 \newcommand{\Force}[1][\Val]{\mathtt{force}\ {#1}}
 \newcommand{\If}[3][\Val]{\mathtt{if}\ {#1}\ {#2}\ {#3}}
+\newcommand{\Ret}[1][\Val]{\mathtt{ret}\ {#1}}
 \newcommand{\TStatus}{b}
 \newcommand{\HeapVal}{u}
 \newcommand{\Node}{n}
@@ -81,6 +73,12 @@
 \newcommand{\grmor}{|}
 \newcommand{\Grmor}{\ \grmor\ }
 \newcommand{\Grmeq}{::=}
+
+\newcommand{\WRITE}[2][\TName]{\mathtt{w}({#1},{#2})}
+\newcommand{\READ}[2][\TName]{\mathtt{r}({#1},{#2})}
+\newcommand{\FUTURE}[2][\TName]{\mathtt{fut}({#1},{#2})}
+\newcommand{\FORCE}[2][\TName]{\mathtt{frc}({#1},{#2})}
+\newcommand{\TAU}{\tau}
 
 \title{Language with futures}
 \date{}
@@ -124,13 +122,18 @@ $$
 Instructions:
 
 $$
-\Inst   ::=\  \Var = \Exp \ |\ * \Val = \Val 
+\Inst   ::=\  \Var = \Exp \ |\ \Deref = \Val 
 $$
 
 Programs:
 
 $$
-\Prog ::= \Inst; \Prog \ |\ \If \Prog \Prog \ |\ \Ret
+\Prog \Grmeq \Inst; \Prog \Grmor \If \Prog \Prog \Grmor \Ret
+$$
+
+Operations:
+$$
+\Op \Grmeq \WRITE \HName \Grmor \READ \HName \Grmor \FUTURE \TName \Grmor \FORCE \TName \Grmor \TAU
 $$
 
 Local store:
@@ -218,8 +221,6 @@ $$
     \TName \Stopped \Word
   }
   $$
-  %
-
 
 \noindent
 \textbf{Bind:}\quad\fbox{$(\vec\Val,\vec\Var) \Bind \TName \Store$}
@@ -234,20 +235,20 @@ $$
   %
 
 \noindent
-  \textbf{Reduces expressions:}\quad \fbox{$(\State,\Exp) \MReduces (\State,\Val)$}
+  \textbf{Reduces expressions:}\quad \fbox{$(\State,\Exp) \EReduces \Op (\State,\Val)$}
   \begin{gather*}
   \frac{
     \Val \VReduces \TName \HName
     \qquad
     \HeapMap(\State)(\HName) \mapsto \Word
   }{
-    (\State,\Deref) \MReduces (\State,\Word)
+    (\State,\Deref) \EReduces {\READ \HName} (\State,\Word)
   }
   \qquad
   \frac{
     \HName \notin \HeapMap(\State)
   }{
-    (\State,\Malloc) \MReduces (\putGlobal \HName ? \State,\HName)
+    (\State,\Malloc) \EReduces {\TAU} (\putGlobal \HName ? \State,\HName)
   }
   \\
   \frac{
@@ -255,7 +256,7 @@ $$
     \qquad
     \TName' \notin \TaskMap(\State)
   }{
-    (\State,\Future {\vec\Val} {\vec\Var} \Prog) \MReduces (\spawn {\TName'} {\Store} {\Prog} \State,\TName')
+    (\State,\Future {\vec\Val} {\vec\Var} \Prog) \EReduces {\FUTURE {\TName'}} (\spawn {\TName'} {\Store} {\Prog} \State,\TName')
   }
   \qquad
   \frac{
@@ -263,7 +264,7 @@ $$
     \qquad
     \TName' \Stopped \Word
   }{
-    (\State,\Force) \MReduces (\State,\Word)
+    (\State,\Force) \EReduces {\FORCE {\TName'}} (\State,\Word)
   }
   \qquad
   \end{gather*}
