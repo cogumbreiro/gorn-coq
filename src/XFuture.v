@@ -38,15 +38,14 @@ Module Lang.
 
   Infix ";;" := Seq (at level 62, right associativity).
 
-
   Definition store := MV.t word.
   Definition mk_store := @MV.empty word.
 
-  Definition task := (nat * store * program) % type.
+  Definition task := (store * program) % type.
 
   Definition task_update_program f (t:task) : task :=
   match t with
-  | (n, s, p) => (n, s, f p)
+  | (s, p) => (s, f p)
   end.
 
   Definition task_set_program (p:program) (t:task) : task :=
@@ -69,14 +68,9 @@ Module Lang.
   | Store x e => Store x v
   end.
 
-  Definition task_tick (t:task) : task :=
-  match t with
-  | (n, s, p) => (S n, s, p)
-  end.
-
   Definition task_put_var (x:var) (w:word) (t:task) : task :=
   match t with
-  | (n, s, p) => (n, MV.add x w s, p)
+  | (s, p) => (MV.add x w s, p)
   end.
 
   Definition taskmap := MT.t task.
@@ -91,9 +85,6 @@ Module Lang.
   Definition tm_set_program t p tm :=
   tm_update t (task_set_program p) tm.
 
-  Definition tm_tick t tm :=
-  tm_update t task_tick tm.
-
   Definition tm_put_var t x v tm :=
   tm_update t (task_put_var x v) tm.
 
@@ -104,11 +95,204 @@ Module Lang.
 
   Definition mk_heap := @MM.empty (option word).
 
+  Definition state := (heap * taskmap) % type.
+
+  Definition s_tasks (s:state) : taskmap :=
+  match s with
+  | (_, tm) => tm
+  end.
+
+  Definition s_heap (s:state) : heap :=
+  match s with
+  | (hm, _) => hm
+  end.
+
+  Definition s_tm_update f (s:state) : state :=
+  match s with
+  | (hm, tm) => (hm, f tm)
+  end.
+
+  Definition s_heap_update f (s:state) : state :=
+  match s with
+  | (hm, tm) => (f hm, tm)
+  end.
+
+  Definition s_set_program t p s :=
+  s_tm_update (tm_set_program t p) s.
+
+  Definition s_local_put t x v tm :=
+  s_tm_update (tm_put_var t x v) tm.
+
+  Definition s_global_put x v s :=
+  s_heap_update (fun hs => MM.add x v hs) s.
+
+  Definition s_spawn t l p s :=
+  s_tm_update (fun tm => MT.add t (l, p) tm) s. 
+
+  Inductive effect := 
+  | READ: tid -> mid -> effect
+  | WRITE: tid -> mid -> effect
+  | FUTURE: tid -> tid -> effect
+  | FORCE: tid -> tid -> effect
+  | TAU: effect.
+
+  Inductive Local (s:state) t : store -> Prop :=
+  | store_def:
+    forall p l,
+    MT.MapsTo t (l, p) (s_tasks s) ->
+    Local s t l.
+
+  Inductive Program s t (p:program) : Prop :=
+  | program_def:
+    forall l,
+    MT.MapsTo t (l, p) (s_tasks s) ->
+    Program s t p.
+
+  Inductive Expression : instruction -> expression -> Prop :=
+  | expression_assign:
+    forall x e,
+    Expression (Assign x e) e
+  | expression_store:
+    forall v e,
+    Expression (Store v e) e.
+
+  Inductive VReduces (s:state) (t:tid) : value -> word -> Prop :=
+  | v_reduces_var:
+    forall x w m,
+    Local s t m ->
+    MV.MapsTo x w m ->
+    VReduces s t (Var x) w
+  | v_reduces_word:
+    forall w,
+    VReduces s t (Word w) w.
+
+  (** Reduction rules *)
+
+  Inductive MReduces : (state * tid * expression) -> effect -> (state * word) -> Prop :=
+  | m_reduces_malloc:
+    forall h t s,
+    ~ MM.In h (s_heap s) ->
+    MReduces (s, t, Malloc) TAU (s_global_put h None s, HeapLabel h)
+  | m_reduces_load:
+    forall s t v w h,
+    VReduces s t v (HeapLabel h) ->
+    MM.MapsTo h (Some w) (s_heap s) ->
+    MReduces (s, t, Deref v) (READ t h) (s, w).
+
+  Inductive Bind (s:state) (t:tid): list var -> list value -> store -> Prop :=
+  | bind_nil:
+    Bind s t nil nil mk_store
+  | bind_cons:
+    forall xs vs x v w m',
+    Bind s t xs vs m' ->
+    VReduces s t v w ->
+    Bind s t (x::xs) (v::vs) (MV.add x w m').
+
+  Inductive Stopped (s:state) (t:tid) (w:word) : Prop :=
+  | stopped_def:
+    forall v,
+    Program s t (Ret v) ->
+    VReduces s t v w ->
+    Stopped s t w.
+
+  Inductive FReduces: (state*tid*expression) -> effect -> (state*word) -> Prop :=
+  | f_reduces_future:
+    forall xs vs t s p t' (l':store),
+    Bind s t xs vs l' ->
+    ~ MT.In t' (s_tasks s) ->
+    FReduces (s,t,Future vs xs p) (FUTURE t t')
+      ((s_spawn t' l' p) s,
+        TaskLabel t')
+  | f_reduces_force:
+    forall v t' w t s,
+    VReduces s t v (TaskLabel t') ->
+    Stopped s t' w ->
+    FReduces (s,t,Force v) (FORCE t t') (s, w).
+
+  Inductive EReduces: (state*tid*expression) -> effect -> (state*word) -> Prop :=
+  | e_reduces_f:
+    forall s s' t e w o,
+    FReduces (s, t, e) o (s', w) ->
+    EReduces (s, t, e) o (s', w)
+  | e_reduces_m:
+    forall s s' t e w o,
+    MReduces (s, t, e) o (s', w) ->
+    EReduces (s, t, e) o (s', w).
+
+  Inductive IReduces: (state * tid * instruction) -> effect -> state -> Prop :=
+  | i_reduces_assign:
+    forall s t w x,
+    IReduces (s,t,Assign x (Value (Word w))) TAU (s_local_put t x w s)
+  | i_reduces_store:
+    forall s s' t w h v,
+    VReduces s t v (HeapLabel h) ->
+    IReduces (s,t,Store v (Value (Word w))) (WRITE t h)
+      (s_global_put h (Some w) s').
+
+  Inductive PReduces: (state * tid * program) -> effect -> (state * program) -> Prop :=
+  | p_reduces_eval:
+    forall s s' i t e w p o,
+    Expression i e ->
+    EReduces (s,t,e) o (s',w) ->
+    PReduces (s,t, Seq i p) o (s', Seq (eval w i) p)
+  | p_reduces_seq:
+    forall s t i p s' o,
+    IReduces (s,t,i) o s' ->
+    PReduces (s,t, Seq i p) o (s', p)
+  | i_reduces_if_zero:
+    forall s t v p1 p2,
+    VReduces s t v (Num 0) ->
+    PReduces (s,t,If v p1 p2) TAU (s, p2)
+  | i_reduces_if_succ:
+    forall s t v n p1 p2,
+    VReduces s t v (Num (S n)) ->
+    PReduces (s,t,If v p1 p2) TAU (s, p1).
+
+  Inductive Reduces: state -> effect -> state -> Prop :=
+  | reduces_run:
+    forall s s' t p p' o,
+    Program s t p ->
+    PReduces (s,t,p) o (s', p') ->
+    Reduces s o (s_set_program t p' s').
+End Lang.
+
+Module Races.
   Definition node := (tid*nat) % type.
 
   Definition edge := (node * node) % type.
 
   Definition edges := list edge.
+
+  Definition time := MT.t nat.
+
+  Definition ts_tick t ts :=
+  match MT.find t ts with
+  | Some n => MT.add t (S n) ts
+  | _ => ts
+  end.
+
+  Definition ts_spawn t ts :=
+  MT.add t 0 ts.
+
+  Definition ts_node t ts : option node :=
+  match MT.find t ts with
+  | Some n => Some (t, n)
+  | None => None
+  end.
+
+  Definition ts_new_node (t:tid) : node := (t, 0).
+
+  Definition computation_graph := (time * edges) % type.
+
+  Definition cg_time (cg:computation_graph) : time :=
+  match cg with
+  | (ts, _) => ts
+  end.
+
+  Definition cg_edges (cg:computation_graph) : edges :=
+  match cg with
+  | (_,es) => es
+  end.
 
   Structure access := {
     write_access: list node;
@@ -133,219 +317,74 @@ Module Lang.
   Definition sh_add_write h n sh : shadow :=
   sh_update h (a_add_write n) sh.
 
-  Definition state := (heap * edges * shadow * taskmap) % type.
+  Definition race_state := (Lang.state * computation_graph * shadow) % type.
 
-  Definition s_tasks (s:state) : taskmap :=
+  Definition r_shadow (s:race_state) : shadow :=
   match s with
-  | (_, _, _, tm) => tm
+  | (_, _, sh) => sh
   end.
 
-  Definition s_heap (s:state) : heap :=
+  Definition r_edges (s:race_state) : edges :=
   match s with
-  | (hm, _, _, _) => hm
+  | (_, cg, _) => cg_edges cg
   end.
 
-  Definition s_shadow (s:state) : shadow :=
-  match s with
-  | (_, _, sh, _) => sh
+  Definition cg_eval o (cg:computation_graph) :=
+  let (ts, es) := cg in
+  match o with
+  | Lang.FUTURE x y =>
+    match ts_node x ts with
+    | Some n => ((ts_spawn y) (ts_tick x ts), (n,ts_new_node y)::es)
+    | _ => cg
+    end
+  | Lang.FORCE x y =>
+    match ts_node x ts with
+    | Some nx =>
+      match ts_node y ts with
+      | Some ny =>
+        (ts_tick x ts, (nx,ny)::es)
+      | _ => cg
+      end
+    | _ => cg
+    end
+  | _ => cg
   end.
 
-  Definition s_edges (s:state) : edges :=
-  match s with
-  | (_, es, _, _) => es
+  Definition sh_eval o (cg:computation_graph) (sh:shadow) :=
+  let ts := cg_time cg in
+  match o with
+  | Lang.READ t h =>
+    match ts_node t ts with
+    | Some n => sh_add_write h n sh
+    | _ => sh
+    end
+  | Lang.WRITE t h =>
+    match ts_node t ts with
+    | Some n => sh_add_read h n sh
+    | _ => sh
+    end
+  | _ => sh
   end.
 
-  Definition s_tm_update f (s:state) : state :=
-  match s with
-  | (hm, es, sh, tm) => (hm, es, sh, f tm)
-  end.
+  Inductive Reduces: race_state -> race_state -> Prop :=
+  | reduces_def:
+    forall s s' cg sh o,
+    Lang.Reduces s o s' ->
+    Reduces (s, cg, sh) (s', cg_eval o cg, sh_eval o cg sh). 
 
-  Definition s_heap_update f (s:state) : state :=
-  match s with
-  | (hm, es, sh, tm) => (f hm, es, sh, tm)
-  end.
-
-  Definition s_edges_update f (s:state) : state :=
-  match s with
-  | (hm, es, sh, tm) => (hm, f es, sh, tm)
-  end.
-
-  Definition s_shadow_update f (s:state) : state :=
-  match s with
-  | (hm, es, sh, tm) => (hm, es, f sh, tm)
-  end.
-
-  Definition s_set_program t p s :=
-  s_tm_update (tm_set_program t p) s.
-
-  Definition s_tick t tm :=
-  s_tm_update (tm_tick t) tm.
-
-  Definition s_local_put t x v tm :=
-  s_tm_update (tm_put_var t x v) tm.
-
-  Definition s_add_edge e s :=
-  s_edges_update (fun es => e :: es) s.
-
-  Definition s_global_put x v s :=
-  s_heap_update (fun hs => MM.add x v hs) s.
-
-  Definition s_spawn t l p s :=
-  s_tm_update (fun tm => MT.add t (0, l, p) tm) s. 
-
-  Definition s_add_read h n s :=
-  s_shadow_update (sh_add_read h n) s.
-
-  Definition s_add_write h n s :=
-  s_shadow_update (sh_add_write h n) s.
-
-  Inductive effect := 
-  | READ: node -> mid -> effect
-  | WRITE: node -> mid -> effect
-  | PREC: node -> node -> effect.
-
-  Inductive Local (s:state) t : store -> Prop :=
-  | store_def:
-    forall n p l,
-    MT.MapsTo t (n, l, p) (s_tasks s) ->
-    Local s t l.
-
-  Inductive Time (s:state) (t:tid) : node -> Prop :=
-  | time_def:
-    forall n l p,
-    MT.MapsTo t (n, l, p) (s_tasks s) ->
-    Time s t (t,n).
-
-  Inductive Program s t (p:program) : Prop :=
-  | program_def:
-    forall n l,
-    MT.MapsTo t (n, l, p) (s_tasks s) ->
-    Program s t p.
-
-  Inductive Expression : instruction -> expression -> Prop :=
-  | expression_assign:
-    forall x e,
-    Expression (Assign x e) e
-  | expression_store:
-    forall v e,
-    Expression (Store v e) e.
-
-  Inductive VReduces (s:state) (t:tid) : value -> word -> Prop :=
-  | v_reduces_var:
-    forall x w m,
-    Local s t m ->
-    MV.MapsTo x w m ->
-    VReduces s t (Var x) w
-  | v_reduces_word:
-    forall w,
-    VReduces s t (Word w) w.
-
-  (** Reduction rules *)
-
-  Inductive MReduces : (state * tid * expression) -> option effect -> (state * word) -> Prop :=
-  | m_reduces_malloc:
-    forall h t s,
-    ~ MM.In h (s_heap s) ->
-    MReduces (s, t, Malloc) None (s_global_put h None s, HeapLabel h)
-  | m_reduces_load:
-    forall s t v w h n,
-    VReduces s t v (HeapLabel h) ->
-    MM.MapsTo h (Some w) (s_heap s) ->
-    Time s t n ->
-    MReduces (s, t, Deref v) (Some (READ n h)) (s_add_read h n s, w).
-
-  Inductive Bind (s:state) (t:tid): list var -> list value -> store -> Prop :=
-  | bind_nil:
-    Bind s t nil nil mk_store
-  | bind_cons:
-    forall xs vs x v w m',
-    Bind s t xs vs m' ->
-    VReduces s t v w ->
-    Bind s t (x::xs) (v::vs) (MV.add x w m').
-
-  Inductive Stopped (s:state) (t:tid) (w:word) : Prop :=
-  | stopped_def:
-    forall v,
-    Program s t (Ret v) ->
-    VReduces s t v w ->
-    Stopped s t w.
-
-  Inductive FReduces: (state*tid*expression) -> effect -> (state*word) -> Prop :=
-  | f_reduces_future:
-    forall xs vs t n s p t' (l':store),
-    Bind s t xs vs l' ->
-    Time s t n ->
-    ~ MT.In t' (s_tasks s) ->
-    FReduces (s,t,Future vs xs p) (PREC n (t',0))
-      ((s_spawn t' l' p) (s_add_edge (n,(t',0)) s),
-        TaskLabel t')
-  | f_reduces_force:
-    forall v t' w t s n n',
-    VReduces s t v (TaskLabel t') ->
-    Stopped s t' w ->
-    Time s t n ->
-    Time s t' n' ->
-    FReduces (s,t,Force v) (PREC n n') (s_add_edge (n,n') s, w).
-
-  Inductive EReduces: (state*tid*expression) -> option effect -> (state*word) -> Prop :=
-  | e_reduces_f:
-    forall s s' t e w x,
-    FReduces (s, t, e) x (s', w) ->
-    EReduces (s, t, e) (Some x) (s_tick t s', w)
-  | e_reduces_m:
-    forall s s' t e w o,
-    MReduces (s, t, e) o (s', w) ->
-    EReduces (s, t, e) o (s', w).
-
-  Inductive IReduces: (state * tid * instruction) -> option effect -> state -> Prop :=
-  | i_reduces_assign:
-    forall s t w x,
-    IReduces (s,t,Assign x (Value (Word w))) None (s_local_put t x w s)
-  | i_reduces_store:
-    forall s s' t w h v n,
-    VReduces s t v (HeapLabel h) ->
-    Time s t n ->
-    IReduces (s,t,Store v (Value (Word w))) (Some (WRITE n h))
-      ((s_add_write h n) (s_global_put h (Some w) s')).
-
-  Inductive PReduces: (state * tid * program) -> option effect -> (state * program) -> Prop :=
-  | p_reduces_eval:
-    forall s s' i t e w p o,
-    Expression i e ->
-    EReduces (s,t,e) o (s',w) ->
-    PReduces (s,t, Seq i p) o (s', Seq (eval w i) p)
-  | p_reduces_seq:
-    forall s t i p s' o,
-    IReduces (s,t,i) o s' ->
-    PReduces (s,t, Seq i p) o (s', p)
-  | i_reduces_if_zero:
-    forall s t v p1 p2,
-    VReduces s t v (Num 0) ->
-    PReduces (s,t,If v p1 p2) None (s, p2)
-  | i_reduces_if_succ:
-    forall s t v n p1 p2,
-    VReduces s t v (Num (S n)) ->
-    PReduces (s,t,If v p1 p2) None (s, p1).
-
-  Inductive Reduces: state -> option effect -> state -> Prop :=
-  | reduces_run:
-    forall s s' t p p' o,
-    Program s t p ->
-    PReduces (s,t,p) o (s', p') ->
-    Reduces s o (s_set_program t p' s').
 
   Require Import Coq.Relations.Relation_Operators.
 
-  Inductive Prec (s:state) n1 n2 : Prop :=
+  Inductive Prec (s:race_state) n1 n2 : Prop :=
   | prec_def:
-    List.In (n1,n2) (s_edges s) ->
+    List.In (n1,n2) (r_edges s) ->
     Prec s n1 n2.
 
   Definition HB s := clos_trans node (Prec s).
 
   Definition MHP s n1 n2 := ~ HB s n1 n2 /\ ~ HB s n2 n1.
 
-  Inductive Conflict (s:state) (a:access): Prop :=
+  Inductive Conflict (s:race_state) (a:access): Prop :=
   | conflict_rw:
     forall n1 n2,
     List.In n1 (read_access a) ->
@@ -362,19 +401,19 @@ Module Lang.
   Inductive HasRace h s : Prop :=
   | has_race_def:
     forall a,
-    MM.MapsTo h a (s_shadow s) ->
+    MM.MapsTo h a (r_shadow s) ->
     Conflict s a ->
     HasRace h s.
 
   Inductive Race s : Prop :=
     race_def:
-      (forall h, MM.In h (s_shadow s) -> HasRace h s) ->
+      (forall h, MM.In h (r_shadow s) -> HasRace h s) ->
       Race s.
 
   Axiom race_preserves:
-    forall s o s',
+    forall s s',
     Race s ->
-    Reduces s o s' ->
+    Reduces s s' ->
     Race s'.
 
-End Lang.
+End Races.
