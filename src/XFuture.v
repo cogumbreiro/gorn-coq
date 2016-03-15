@@ -199,6 +199,11 @@ Module Lang.
   Definition s_add_write h n s :=
   s_shadow_update (sh_add_write h n) s.
 
+  Inductive effect := 
+  | READ: node -> mid -> effect
+  | WRITE: node -> mid -> effect
+  | PREC: node -> node -> effect.
+
   Inductive Local (s:state) t : store -> Prop :=
   | store_def:
     forall n p l,
@@ -237,17 +242,17 @@ Module Lang.
 
   (** Reduction rules *)
 
-  Inductive MReduces : (state * tid * expression) -> (state * word) -> Prop :=
+  Inductive MReduces : (state * tid * expression) -> option effect -> (state * word) -> Prop :=
   | m_reduces_malloc:
     forall h t s,
     ~ MM.In h (s_heap s) ->
-    MReduces (s, t, Malloc) (s_global_put h None s, HeapLabel h)
+    MReduces (s, t, Malloc) None (s_global_put h None s, HeapLabel h)
   | m_reduces_load:
-    forall s t v w h r,
+    forall s t v w h n,
     VReduces s t v (HeapLabel h) ->
     MM.MapsTo h (Some w) (s_heap s) ->
-    Time s t r ->
-    MReduces (s, t, Deref v) (s_add_read h r s, w).
+    Time s t n ->
+    MReduces (s, t, Deref v) (Some (READ n h)) (s_add_read h n s, w).
 
   Inductive Bind (s:state) (t:tid): list var -> list value -> store -> Prop :=
   | bind_nil:
@@ -265,69 +270,69 @@ Module Lang.
     VReduces s t v w ->
     Stopped s t w.
 
-  Inductive FReduces: (state*tid*expression) -> (state*word) -> Prop :=
+  Inductive FReduces: (state*tid*expression) -> effect -> (state*word) -> Prop :=
   | f_reduces_future:
     forall xs vs t n s p t' (l':store),
     Bind s t xs vs l' ->
     Time s t n ->
     ~ MT.In t' (s_tasks s) ->
-    FReduces (s,t,Future vs xs p)
+    FReduces (s,t,Future vs xs p) (PREC n (t',0))
       ((s_spawn t' l' p) (s_add_edge (n,(t',0)) s),
         TaskLabel t')
   | f_reduces_force:
-    forall v t' w t s r r',
+    forall v t' w t s n n',
     VReduces s t v (TaskLabel t') ->
     Stopped s t' w ->
-    Time s t r ->
-    Time s t' r' ->
-    FReduces (s,t,Force v) (s_add_edge (r,r') s, w).
+    Time s t n ->
+    Time s t' n' ->
+    FReduces (s,t,Force v) (PREC n n') (s_add_edge (n,n') s, w).
 
-  Inductive EReduces: (state*tid*expression) -> (state*word) -> Prop :=
+  Inductive EReduces: (state*tid*expression) -> option effect -> (state*word) -> Prop :=
   | e_reduces_f:
-    forall s s' t e w,
-    FReduces (s, t, e) (s', w) ->
-    EReduces (s, t, e) (s_tick t s', w)
+    forall s s' t e w x,
+    FReduces (s, t, e) x (s', w) ->
+    EReduces (s, t, e) (Some x) (s_tick t s', w)
   | e_reduces_m:
-    forall s s' t e w,
-    MReduces (s, t, e) (s', w) ->
-    EReduces (s, t, e) (s', w).
+    forall s s' t e w o,
+    MReduces (s, t, e) o (s', w) ->
+    EReduces (s, t, e) o (s', w).
 
-  Inductive IReduces: (state * tid * instruction) -> state -> Prop :=
+  Inductive IReduces: (state * tid * instruction) -> option effect -> state -> Prop :=
   | i_reduces_assign:
     forall s t w x,
-    IReduces (s,t,Assign x (Value (Word w))) (s_local_put t x w s)
+    IReduces (s,t,Assign x (Value (Word w))) None (s_local_put t x w s)
   | i_reduces_store:
     forall s s' t w h v n,
     VReduces s t v (HeapLabel h) ->
     Time s t n ->
-    IReduces (s,t,Store v (Value (Word w)))
+    IReduces (s,t,Store v (Value (Word w))) (Some (WRITE n h))
       ((s_add_write h n) (s_global_put h (Some w) s')).
 
-  Inductive PReduces: (state * tid * program) -> (state * program) -> Prop :=
+  Inductive PReduces: (state * tid * program) -> option effect -> (state * program) -> Prop :=
   | p_reduces_eval:
-    forall s s' i t e w p,
+    forall s s' i t e w p o,
     Expression i e ->
-    EReduces (s,t,e) (s',w) ->
-    PReduces (s,t, Seq i p) (s', Seq (eval w i) p)
+    EReduces (s,t,e) o (s',w) ->
+    PReduces (s,t, Seq i p) o (s', Seq (eval w i) p)
   | p_reduces_seq:
-    forall s t i p s',
-    IReduces (s,t,i) s' ->
-    PReduces (s,t, Seq i p) (s', p)
+    forall s t i p s' o,
+    IReduces (s,t,i) o s' ->
+    PReduces (s,t, Seq i p) o (s', p)
   | i_reduces_if_zero:
     forall s t v p1 p2,
     VReduces s t v (Num 0) ->
-    PReduces (s,t,If v p1 p2) (s, p2)
+    PReduces (s,t,If v p1 p2) None (s, p2)
   | i_reduces_if_succ:
     forall s t v n p1 p2,
     VReduces s t v (Num (S n)) ->
-    PReduces (s,t,If v p1 p2) (s, p1).
+    PReduces (s,t,If v p1 p2) None (s, p1).
 
-  Inductive Reduces: state -> state -> Prop :=
+  Inductive Reduces: state -> option effect -> state -> Prop :=
   | reduces_run:
-    forall s s' t p p',
+    forall s s' t p p' o,
     Program s t p ->
-    PReduces (s,t,p) (s', p') ->
-    Reduces s (s_set_program t p' s').
+    PReduces (s,t,p) o (s', p') ->
+    Reduces s o (s_set_program t p' s').
 
   Require Import Coq.Relations.Relation_Operators.
 
@@ -367,8 +372,9 @@ Module Lang.
       Race s.
 
   Axiom race_preserves:
-    forall s s',
+    forall s o s',
     Race s ->
-    Reduces s s' ->
+    Reduces s o s' ->
     Race s'.
+
 End Lang.
