@@ -168,17 +168,6 @@ Module Lang.
 
   (** Reduction rules *)
 
-  Inductive MReduces : (state * tid * expression) -> effect -> (state * word) -> Prop :=
-  | m_reduces_malloc:
-    forall h t s,
-    ~ MM.In h (s_heap s) ->
-    MReduces (s, t, Malloc) TAU (s_global_put h None s, HeapLabel h)
-  | m_reduces_load:
-    forall s t v w h,
-    VReduces s t v (HeapLabel h) ->
-    MM.MapsTo h (Some w) (s_heap s) ->
-    MReduces (s, t, Deref v) (READ t h) (s, w).
-
   Inductive Bind (s:state) (t:tid): list var -> list value -> store -> Prop :=
   | bind_nil:
     Bind s t nil nil mk_store
@@ -195,29 +184,29 @@ Module Lang.
     VReduces s t v w ->
     Stopped s t w.
 
-  Inductive FReduces: (state*tid*expression) -> effect -> (state*word) -> Prop :=
-  | f_reduces_future:
+  Inductive EReduces : (state * tid * expression) -> effect -> (state * word) -> Prop :=
+  | e_reduces_malloc:
+    forall h t s,
+    ~ MM.In h (s_heap s) ->
+    EReduces (s, t, Malloc) TAU (s_global_put h None s, HeapLabel h)
+  | e_reduces_load:
+    forall s t v w h,
+    VReduces s t v (HeapLabel h) ->
+    MM.MapsTo h (Some w) (s_heap s) ->
+    EReduces (s, t, Deref v) (READ t h) (s, w)
+  | e_reduces_future:
     forall xs vs t s p t' (l':store),
     Bind s t xs vs l' ->
     ~ MT.In t' (s_tasks s) ->
-    FReduces (s,t,Future vs xs p) (FUTURE t t')
+    EReduces (s,t,Future vs xs p) (FUTURE t t')
       ((s_spawn t' l' p) s,
         TaskLabel t')
-  | f_reduces_force:
+  | e_reduces_force:
     forall v t' w t s,
     VReduces s t v (TaskLabel t') ->
     Stopped s t' w ->
-    FReduces (s,t,Force v) (FORCE t t') (s, w).
+    EReduces (s,t,Force v) (FORCE t t') (s, w).
 
-  Inductive EReduces: (state*tid*expression) -> effect -> (state*word) -> Prop :=
-  | e_reduces_f:
-    forall s s' t e w o,
-    FReduces (s, t, e) o (s', w) ->
-    EReduces (s, t, e) o (s', w)
-  | e_reduces_m:
-    forall s s' t e w o,
-    MReduces (s, t, e) o (s', w) ->
-    EReduces (s, t, e) o (s', w).
 
   Inductive IReduces: (state * tid * instruction) -> effect -> state -> Prop :=
   | i_reduces_assign:
