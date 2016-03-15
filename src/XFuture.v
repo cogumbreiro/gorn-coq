@@ -357,4 +357,9 @@ Module Lang.
       (forall h, MM.In h (s_shadow s) -> HasRace h s) ->
       Race s.
 
+  Axiom race_preserves:
+    forall s s',
+    Race s ->
+    Reduces s s' ->
+    Race s'.
 End Lang.
