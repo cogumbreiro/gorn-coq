@@ -37,7 +37,8 @@
 \newcommand{\Put}[2]{\{{#1}:={#2}\}}
 
 \newcommand{\putGlobal}[3]{\mathrm{putGlobal}({#1},{#2},{#3})}
-\newcommand{\addRead}[3]{\mathrm{addRead}({#1},{#2},{#3})}
+\newcommand{\spawn}[4]{\mathrm{spawn}({#1},{#2},{#3},{#4})}
+
 
 \newcommand{\Inst}{i}
 \newcommand{\CALL}[3][\Reg]{{#1}=\mathtt{call}\ {#2}({#3})}
@@ -46,12 +47,11 @@
 \newcommand{\MALLOC}[1][\Reg]{{#1} = \mathtt{malloc}}
 \newcommand{\FUTURE}[3][\Reg]{{#1} = \mathtt{future}\ {#2}({#3})}
 \newcommand{\FORCE}[2][\Val]{\mathtt{force}\ {#1}}
-\newcommand{\RET}[1][\Val]{\mathtt{ret}\ {#1}}
+\newcommand{\Ret}[1][\Val]{\mathtt{ret}\ {#1}}
 \newcommand{\BR}[3][\Val]{\mathtt{br}\ {#1}\ {#2}\ {#3}}
 \newcommand{\OP}[2][\Reg]{{#1}\ =\ {#2}}
 \newcommand{\Nil}{\mathtt{nil}}
 \newcommand{\Args}{A}
-\newcommand{\Bind}[2][\FName]{\mathrm{bind}({#1},{#2})}
 \newcommand{\Op}{o}
 \newcommand{\Var}{x}
 \newcommand{\Exp}{e}
@@ -70,6 +70,14 @@
 \newcommand{\Nodes}{l}
 \newcommand{\AccessMap}{A}
 
+\newcommand{\Local}[1][\State]{\vdash_{#1}}
+\newcommand{\Time}[1][\State]{\vdash_{#1}}
+\newcommand{\Program}[1][\State]{\vdash_{#1}}
+\newcommand{\VReduces}[2][\State]{\ _{{#1},{#2}}\Reduces}
+\newcommand{\Stopped}[1][\State]{\vdash_{#1}}
+\newcommand{\Bind}[2][\State]{\ _{{#1},{#2}}\vdash}
+
+
 \newcommand{\grmor}{|}
 \newcommand{\Grmor}{\ \grmor\ }
 \newcommand{\Grmeq}{::=}
@@ -79,6 +87,9 @@
 
 \begin{document}
 \maketitle
+
+\section{Language}
+
 
 Numbers:
 
@@ -119,7 +130,7 @@ $$
 Programs:
 
 $$
-\Prog ::= \Inst; \Prog \ |\ \If \Prog \Prog \ |\ \RET
+\Prog ::= \Inst; \Prog \ |\ \If \Prog \Prog \ |\ \Ret
 $$
 
 Local store:
@@ -128,16 +139,10 @@ $$
 \sigma ::= \{\Var_1:\Word_1,\dots,\Var_n:\Word_n\}
 $$
 
-Task status (running or stopped):
-
-$$
-\TStatus \Grmeq (\sigma, \Prog) \Grmor \Word
-$$
-
 Task:
 
 $$
-\Task \Grmeq (\Nat,\TStatus)
+\Task \Grmeq (\Store, \Prog)
 $$
 
 Task map:
@@ -157,6 +162,114 @@ Heap:
 $$
 \HeapMap ::= \{\HName_1\colon \HeapVal_1,\dots,\HName_n\colon \HeapVal_n\}
 $$
+
+State:
+
+$$
+\State ::= (\HeapMap,\TaskMap)
+$$
+
+\newpage
+
+\noindent
+\textbf{Get store:}\quad\fbox{$\TName \Local \Store$}
+$$
+\frac{
+  \TaskMap(\State)(\TName) \mapsto (\Store,\Prog)
+}{
+  \TName \Local \Store
+}
+$$
+
+\noindent
+\textbf{Program:}\quad\fbox{$\TName \Program \Prog$}
+$$
+\frac{
+  \TaskMap(\State)(\TName) \mapsto (\Store,\Prog)
+}{
+  \TName \Program \Prog
+}
+$$
+
+
+\noindent
+\textbf{Reduces value:}\quad\fbox{$\Val \VReduces \TName \Word$}
+  %
+  $$
+  \frac{
+    \TName \Local \Store \qquad \Store(\Var) \mapsto \Word
+  }{
+    \Var \VReduces \TName \Word
+  }
+  \qquad
+  \Word \VReduces \TName \Word
+  $$
+  %
+ 
+\noindent
+\textbf{Stopped:}\quad\fbox{$\TName \Stopped \Word$}
+  %
+  $$
+  \frac{
+    \TName \Program \Ret
+    \qquad
+    \Val \VReduces \TName \Word
+  }{
+    \TName \Stopped \Word
+  }
+  $$
+  %
+
+
+\noindent
+\textbf{Bind:}\quad\fbox{$(\vec\Val,\vec\Var) \Bind \TName \Store$}
+  %
+  $$
+  \frac{
+    \forall i \in \{1,\dots,n\} \colon \Val_i \VReduces \TName \Word_i
+  }{
+    (\Val_1\cdots\Val_n, \Var_1\cdots\Var_n)  \Bind \TName \{\Var_1\colon \Word_1,\dots,\Var_n\colon\Word_n\}
+  }
+  $$
+  %
+
+\noindent
+  \textbf{Reduces expressions:}\quad \fbox{$(\State,\Exp) \MReduces (\State,\Val)$}
+  \begin{gather*}
+  \frac{
+    \Val \VReduces \TName \HName
+    \qquad
+    \HeapMap(\State)(\HName) \mapsto \Word
+  }{
+    (\State,\Deref) \MReduces (\State,\Word)
+  }
+  \qquad
+  \frac{
+    \HName \notin \HeapMap(\State)
+  }{
+    (\State,\Malloc) \MReduces (\putGlobal \HName ? \State,\HName)
+  }
+  \\
+  \frac{
+    (\vec\Val,\vec\Var) \Bind \TName \Store
+    \qquad
+    \TName' \notin \TaskMap(\State)
+  }{
+    (\State,\Future {\vec\Val} {\vec\Var} \Prog) \MReduces (\spawn {\TName'} {\Store} {\Prog} \State,\TName')
+  }
+  \qquad
+  \frac{
+    \Val \VReduces \TName {\TName'}
+    \qquad
+    \TName' \Stopped \Word
+  }{
+    (\State,\Force) \MReduces (\State,\Word)
+  }
+  \qquad
+  \end{gather*}
+
+
+\section{Race detection}
 
 Node (from the computation-graph):
 
@@ -193,82 +306,5 @@ Access map (shadow memory):
 $$
 \AccessMap \Grmeq \{ \HName_1\colon \Access_1,\dots,\HName_n\colon\Access_n\}
 $$
-
-State:
-
-$$
-\State ::= (\HeapMap,\Edges,\AccessMap,\TaskMap)
-$$
-
-\newpage
-
-\newcommand{\Local}[1][\State]{\vdash_{#1}}
-\newcommand{\Time}[1][\State]{\vdash_{#1}}
-\newcommand{\Program}[1][\State]{\vdash_{#1}}
-
-\noindent
-\textbf{Get store:}\quad\fbox{$\TName \Local \Store$}
-$$
-\frac{
-  \TaskMap(\State)(\TName) \mapsto (\Nat,(\Store,\Prog))
-}{
-  \TName \Local \Store
-}
-$$
-
-\noindent
-\textbf{Current time:}\quad\fbox{$\TName \Time \Nat$}
-$$
-\frac{
-  \TaskMap(\State)(\TName) \mapsto (\Nat,\TStatus)
-}{
-  \TName \Time \Nat
-}
-$$
-
-\noindent
-\textbf{Program:}\quad\fbox{$\TName \Program \Prog$}
-$$
-\frac{
-  \TaskMap(\State)(\TName) \mapsto (\Nat,(\Store,\Prog))
-}{
-  \TName \Program \Prog
-}
-$$
-
-\newcommand{\VReduces}[2][\State]{\ _{{#1},{#2}}\Reduces}
-
-\noindent
-\textbf{Reduces value:}\quad\fbox{$\Val \VReduces \TName \Word$}
-  %
-  $$
-  \frac{
-    \TName \Local \Store \qquad \Store(\Var) \mapsto \Word
-  }{
-    \Var \VReduces \TName \Word
-  }
-  \qquad
-  \Word \VReduces \TName \Word
-  $$
-  %
-  %
-  \textbf{Reduces memory:}\quad \fbox{$(\State,\Exp) \MReduces (\State,\Val)$}
-  $$
-  \frac{
-    \Val \VReduces \TName \HName
-    \qquad
-    \HeapMap(\State)(\HName) \mapsto \Word
-    \qquad
-    \TName \Time \Nat
-  }{
-    (\State,\Deref) \MReduces (\addRead {\HName} {(\TName,\Nat)} \State,\Word)
-  }
-  \qquad
-  \frac{
-    \HName \notin \HeapMap(\State)
-  }{
-    (\State,\Malloc) \MReduces (\putGlobal \HName ? \State,\HName)
-  }
-  $$
 
 \end{document}
