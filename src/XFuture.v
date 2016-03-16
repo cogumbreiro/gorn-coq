@@ -210,12 +210,14 @@ Module Lang.
 
   Inductive IReduces: (state * tid * instruction) -> effect -> state -> Prop :=
   | i_reduces_assign:
-    forall s t w x,
-    IReduces (s,t,Assign x (Value (Word w))) TAU (s_local_put t x w s)
+    forall s t w x v,
+    VReduces s t v w ->
+    IReduces (s,t,Assign x (Value v)) TAU (s_local_put t x w s)
   | i_reduces_store:
-    forall s s' t w h v,
+    forall s s' t w h v v',
     VReduces s t v (HeapLabel h) ->
-    IReduces (s,t,Store v (Value (Word w))) (WRITE t h)
+    VReduces s t v' w ->
+    IReduces (s,t,Store v (Value v')) (WRITE t h)
       (s_global_put h (Some w) s').
 
   Inductive PReduces: (state * tid * program) -> effect -> (state * program) -> Prop :=
@@ -254,7 +256,7 @@ Module Races.
 
   Definition time := MT.t nat.
 
-  Definition ts_tick t ts :=
+Definition ts_tick t ts :=
   match MT.find t ts with
   | Some n => MT.add t (S n) ts
   | _ => ts
