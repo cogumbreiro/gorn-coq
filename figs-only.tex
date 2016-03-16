@@ -204,7 +204,7 @@ $$
   %
   $$
   \frac{
-    \TName \GetLocal \Local \qquad \Store(\Var) \mapsto \Word
+    \TName \GetLocal \Local \qquad \Local(\Var) \mapsto \Word
   }{
     \Var \VReduces \TName \Word
   }
@@ -391,32 +391,11 @@ $$
 \begin{gather*}  
 \frac{
   \Time(\TName) \mapsto \Nat
-}{
-  \Time \reduces[{\OP{\FORCE \TNamey}}] \Time, \TName \colon \Nat + 1
-}
-\\
-\frac{
-  \Time(\TName) \mapsto \Nat
   \qquad
-  \TName' \notin \Time
 }{
-  \Time \reduces[{\OP{\FUTURE \TNamey}}] \Time, \TName \colon \Nat + 1, \TNamey \colon 0
-}
-\\
-\frac{
-  \forall \TNamey, \Op \neq \FORCE \TNamey
-  \qquad
-  \forall \TNamey, \Op \neq \FUTURE \TNamey
-}{
-  \Time \reduces[{\OP{\Op}}] \Time
-}
-\end{gather*}
-
-\begin{gather*}  
-\frac{
-  \Time(\TName) \mapsto \Nat
-}{
-  (\Time, \Edges) \reduces[{\OP{\FUTURE \TNamey}}] \Edges \cup \{((\TName,\Nat),(\TNamey,0))\}
+  (\Time, \Edges)
+  \reduces[{\OP{\FUTURE \TNamey}}] 
+  (\Time, \TName \colon \Nat + 1, \TNamey \colon 0, \Edges \cup \{((\TName,\Nat),(\TNamey,0))\})
 }
 \\
 \frac{
@@ -424,7 +403,9 @@ $$
   \qquad
   \Time(\TNamey) \mapsto \Naty
 }{
-  (\Time, \Edges) \reduces[{\OP{\FORCE \TNamey}}] \Edges \cup \{((\TName,\Nat),(\TNamey,\Naty))\}
+  (\Time, \Edges)
+  \reduces[{\OP{\FORCE \TNamey}}]
+  (\Time, \TName \colon \Nat + 1, \Edges \cup \{((\TName,\Nat),(\TNamey,\Naty))\}
 }
 \\
 \frac{
