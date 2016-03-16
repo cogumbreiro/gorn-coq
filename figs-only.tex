@@ -71,8 +71,8 @@
 \newcommand{\GetLocal}[1][\TName]{|_{\mathtt{local}({#1})\ }}
 \newcommand{\Program}[1][\TName]{|_{\mathtt{prog}({#1})\ }}
 \newcommand{\VReduces}[2][\State]{\ _{{#1},{#2}}\Reduces}
-\newcommand{\Stopped}[1][\State]{|_{\mathtt{stop},#1}\ }
-\newcommand{\Bind}[2][\State]{\ _{{#1},{#2}}|_{\mathtt{bind}}\ }
+\newcommand{\Stopped}[1][\TName]{|_{\mathtt{stop}({#1})}\ }
+\newcommand{\Bind}[2][\State]{\ _{{#1},{#2}}\Reduces}
 
 \newcommand{\grmor}{|}
 \newcommand{\Grmor}{\ \grmor\ }
@@ -216,15 +216,15 @@ $$
   %
  
 \noindent
-\textbf{Stopped:}\quad\fbox{$\TName \Stopped \Word$}
+\textbf{Stopped:}\quad\fbox{$\State \Stopped \Word$}
   %
   $$
   \frac{
-    \TName \Program \Ret
+    \State \Program \Ret
     \qquad
     \Val \VReduces \TName \Word
   }{
-    \TName \Stopped \Word
+    \State \Stopped \Word
   }
   $$
 
