@@ -129,12 +129,14 @@ Module Lang.
   Definition s_spawn t l p s :=
   s_tm_update (fun tm => MT.add t (l, p) tm) s. 
 
-  Inductive effect := 
-  | READ: tid -> mid -> effect
-  | WRITE: tid -> mid -> effect
-  | FUTURE: tid -> tid -> effect
-  | FORCE: tid -> tid -> effect
-  | TAU: effect.
+  Inductive op := 
+  | READ: mid -> op
+  | WRITE: mid -> op
+  | FUTURE: tid -> op
+  | FORCE: tid -> op
+  | TAU: op.
+
+  Definition effect := (tid * op) % type.
 
   Inductive Local (s:state) t : store -> Prop :=
   | store_def:
@@ -184,67 +186,64 @@ Module Lang.
     VReduces s t v w ->
     Stopped s t w.
 
-  Inductive EReduces : (state * tid * expression) -> effect -> (state * word) -> Prop :=
+  Inductive EReduces : (state * expression) -> effect -> (state * word) -> Prop :=
   | e_reduces_malloc:
     forall h t s,
     ~ MM.In h (s_heap s) ->
-    EReduces (s, t, Malloc) TAU (s_global_put h None s, HeapLabel h)
+    EReduces (s, Malloc) (t,TAU) (s_global_put h None s, HeapLabel h)
   | e_reduces_load:
     forall s t v w h,
     VReduces s t v (HeapLabel h) ->
     MM.MapsTo h (Some w) (s_heap s) ->
-    EReduces (s, t, Deref v) (READ t h) (s, w)
+    EReduces (s, Deref v) (t, READ h) (s, w)
   | e_reduces_future:
     forall xs vs t s p t' (l':store),
     Bind s t xs vs l' ->
     ~ MT.In t' (s_tasks s) ->
-    EReduces (s,t,Future vs xs p) (FUTURE t t')
-      ((s_spawn t' l' p) s,
-        TaskLabel t')
+    EReduces (s, Future vs xs p) (t, FUTURE t') ((s_spawn t' l' p) s, TaskLabel t')
   | e_reduces_force:
     forall v t' w t s,
     VReduces s t v (TaskLabel t') ->
     Stopped s t' w ->
-    EReduces (s,t,Force v) (FORCE t t') (s, w).
+    EReduces (s,Force v) (t,FORCE t') (s, w).
 
 
-  Inductive IReduces: (state * tid * instruction) -> effect -> state -> Prop :=
+  Inductive IReduces: (state * instruction) -> effect -> state -> Prop :=
   | i_reduces_assign:
     forall s t w x v,
     VReduces s t v w ->
-    IReduces (s,t,Assign x (Value v)) TAU (s_local_put t x w s)
+    IReduces (s, Assign x (Value v)) (t,TAU) (s_local_put t x w s)
   | i_reduces_store:
     forall s s' t w h v v',
     VReduces s t v (HeapLabel h) ->
     VReduces s t v' w ->
-    IReduces (s,t,Store v (Value v')) (WRITE t h)
-      (s_global_put h (Some w) s').
+    IReduces (s, Store v (Value v')) (t, WRITE h) (s_global_put h (Some w) s').
 
-  Inductive PReduces: (state * tid * program) -> effect -> (state * program) -> Prop :=
+  Inductive PReduces: (state * program) -> effect -> (state * program) -> Prop :=
   | p_reduces_eval:
-    forall s s' i t e w p o,
+    forall s s' i e w p o,
     Expression i e ->
-    EReduces (s,t,e) o (s',w) ->
-    PReduces (s,t, Seq i p) o (s', Seq (eval w i) p)
+    EReduces (s,e) o (s',w) ->
+    PReduces (s, Seq i p) o (s', Seq (eval w i) p)
   | p_reduces_seq:
-    forall s t i p s' o,
-    IReduces (s,t,i) o s' ->
-    PReduces (s,t, Seq i p) o (s', p)
+    forall s i p s' o,
+    IReduces (s,i) o s' ->
+    PReduces (s, Seq i p) o (s', p)
   | i_reduces_if_zero:
     forall s t v p1 p2,
     VReduces s t v (Num 0) ->
-    PReduces (s,t,If v p1 p2) TAU (s, p2)
+    PReduces (s, If v p1 p2) (t,TAU) (s, p2)
   | i_reduces_if_succ:
     forall s t v n p1 p2,
     VReduces s t v (Num (S n)) ->
-    PReduces (s,t,If v p1 p2) TAU (s, p1).
+    PReduces (s, If v p1 p2) (t,TAU) (s, p1).
 
   Inductive Reduces: state -> effect -> state -> Prop :=
   | reduces_run:
     forall s s' t p p' o,
     Program s t p ->
-    PReduces (s,t,p) o (s', p') ->
-    Reduces s o (s_set_program t p' s').
+    PReduces (s,p) (t,o) (s', p') ->
+    Reduces s (t,o) (s_set_program t p' s').
 End Lang.
 
 Module Races.
@@ -256,7 +255,7 @@ Module Races.
 
   Definition time := MT.t nat.
 
-Definition ts_tick t ts :=
+  Definition ts_tick t ts :=
   match MT.find t ts with
   | Some n => MT.add t (S n) ts
   | _ => ts
@@ -320,15 +319,16 @@ Definition ts_tick t ts :=
   | (_, cg, _) => cg_edges cg
   end.
 
-  Definition cg_eval o (cg:computation_graph) :=
+  Definition cg_eval (e:Lang.effect) (cg:computation_graph) :=
+  let (x, o) := e in
   let (ts, es) := cg in
   match o with
-  | Lang.FUTURE x y =>
+  | Lang.FUTURE y =>
     match ts_node x ts with
     | Some n => ((ts_spawn y) (ts_tick x ts), (n,ts_new_node y)::es)
     | _ => cg
     end
-  | Lang.FORCE x y =>
+  | Lang.FORCE y =>
     match ts_node x ts with
     | Some nx =>
       match ts_node y ts with
@@ -341,15 +341,16 @@ Definition ts_tick t ts :=
   | _ => cg
   end.
 
-  Definition sh_eval o (cg:computation_graph) (sh:shadow) :=
+  Definition sh_eval (e:Lang.effect) (cg:computation_graph) (sh:shadow) :=
+  let (t, o) := e in
   let ts := cg_time cg in
   match o with
-  | Lang.READ t h =>
+  | Lang.READ h =>
     match ts_node t ts with
     | Some n => sh_add_write h n sh
     | _ => sh
     end
-  | Lang.WRITE t h =>
+  | Lang.WRITE h =>
     match ts_node t ts with
     | Some n => sh_add_read h n sh
     | _ => sh
@@ -362,7 +363,6 @@ Definition ts_tick t ts :=
     forall s s' cg sh o,
     Lang.Reduces s o s' ->
     Reduces (s, cg, sh) (s', cg_eval o cg, sh_eval o cg sh). 
-
 
   Require Import Coq.Relations.Relation_Operators.
 
