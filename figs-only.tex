@@ -52,6 +52,7 @@
 \newcommand{\Deref}[1][\Val]{*{#1}}
 \newcommand{\Store}[1][\Val]{\Deref[{#1}] = }
 \newcommand{\Nat}{z}
+\newcommand{\Naty}{z'}
 \newcommand{\Malloc}{\mathtt{malloc}}
 \newcommand{\Future}[3]{\mathtt{future}\ {#1}\ {#2}.{#3}}
 \newcommand{\Force}[1][\Val]{\mathtt{force}\ {#1}}
@@ -65,9 +66,9 @@
 \newcommand{\Edge}{e}
 \newcommand{\Nodes}{l}
 \newcommand{\AccessMap}{A}
+\newcommand{\Time}{N}
 
 \newcommand{\GetLocal}[1][\State]{\vdash_{#1}}
-\newcommand{\Time}[1][\State]{\vdash_{#1}}
 \newcommand{\Program}[1][\State]{\vdash_{#1}}
 \newcommand{\VReduces}[2][\State]{\ _{{#1},{#2}}\Reduces}
 \newcommand{\Stopped}[1][\State]{\vdash_{#1}}
@@ -79,10 +80,10 @@
 
 \newcommand{\OP}[2][\TName]{{#1}:{#2}}
 
-\newcommand{\WRITE}[1]{\mathtt{w}\ {#1}}
-\newcommand{\READ}[1]{\mathtt{r}\ {#1}}
-\newcommand{\FUTURE}[1]{\mathtt{ft}\ {#1}}
-\newcommand{\FORCE}[1]{\mathtt{fc}\ {#1}}
+\newcommand{\WRITE}[1]{\mathtt{write}\ {#1}}
+\newcommand{\READ}[1]{\mathtt{read}\ {#1}}
+\newcommand{\FUTURE}[1]{\mathtt{future}\ {#1}}
+\newcommand{\FORCE}[1]{\mathtt{force}\ {#1}}
 \newcommand{\TAU}{\tau}
 
 \title{Language with futures}
@@ -191,7 +192,7 @@ $$
 \textbf{Program:}\quad\fbox{$\TName \Program \Prog$}
 $$
 \frac{
-  \TaskMap(\State)(\TName) \mapsto (\Store,\Prog)
+  \TaskMap(\State)(\TName) \mapsto (\Local,\Prog)
 }{
   \TName \Program \Prog
 }
@@ -265,11 +266,11 @@ $$
   }
   \\
   \frac{
-    (\vec\Val,\vec\Var) \Bind \TName \Store
+    (\vec\Val,\vec\Var) \Bind \TName \Local
     \qquad
     \TName' \notin \TaskMap(\State)
   }{
-    (\State,\Future {\vec\Val} {\vec\Var} \Prog) \EReduces {\FUTURE {\TName'}} (\spawn {\TName'} {\Store} {\Prog} \State,\TName')
+    (\State,\Future {\vec\Val} {\vec\Var} \Prog) \EReduces {\FUTURE {\TName'}} (\spawn {\TName'} {\Local} {\Prog} \State,\TName')
   }
   \qquad
   \frac{
@@ -368,6 +369,13 @@ $$
 \Nodes \Grmeq \{ \Node_1,\dots,\Node_n\}
 $$
 
+Time:
+$$
+\Time \Grmeq \{ \HName_1 \colon \Nat_1, \dots, \TName_n\colon \Nat_n\}
+$$
+
+
+
 Read and write accesses:
 
 $$
@@ -380,4 +388,91 @@ $$
 \AccessMap \Grmeq \{ \HName_1\colon \Access_1,\dots,\HName_n\colon\Access_n\}
 $$
 
+\begin{gather*}  
+\frac{
+  \Time(\TName) \mapsto \Nat
+}{
+  \Time \reduces[{\OP{\FORCE \TNamey}}] \Time, \TName \colon \Nat + 1
+}
+\\
+\frac{
+  \Time(\TName) \mapsto \Nat
+  \qquad
+  \TName' \notin \Time
+}{
+  \Time \reduces[{\OP{\FUTURE \TNamey}}] \Time, \TName \colon \Nat + 1, \TNamey \colon 0
+}
+\\
+\frac{
+  \forall \TNamey, \Op \neq \FORCE \TNamey
+  \qquad
+  \forall \TNamey, \Op \neq \FUTURE \TNamey
+}{
+  \Time \reduces[{\OP{\Op}}] \Time
+}
+\end{gather*}
+
+\begin{gather*}  
+\frac{
+  \Time(\TName) \mapsto \Nat
+}{
+  (\Time, \Edges) \reduces[{\OP{\FUTURE \TNamey}}] \Edges \cup \{((\TName,\Nat),(\TNamey,0))\}
+}
+\\
+\frac{
+  \Time(\TName) \mapsto \Nat
+  \qquad
+  \Time(\TNamey) \mapsto \Naty
+}{
+  (\Time, \Edges) \reduces[{\OP{\FORCE \TNamey}}] \Edges \cup \{((\TName,\Nat),(\TNamey,\Naty))\}
+}
+\\
+\frac{
+  \forall \TNamey, \Op \neq \FORCE \TNamey
+  \qquad
+  \forall \TNamey, \Op \neq \FUTURE \TNamey
+}{
+  (\Time, \Edges) \reduces[{\OP{\Op}}] \Edges
+}
+\end{gather*}
+
+\begin{gather*}
+\frac{
+  \Time(\TName) \mapsto \Nat
+  \qquad
+  \AccessMap(\HName) \mapsto (\Nodes_r,\Nodes_w)
+}{
+  (\Time, \AccessMap) \reduces[{\OP{\WRITE \HName}}] \AccessMap, \HName \colon (\Nodes_r,\Nodes_w \cup \{(\TName,\Nat)\})
+}
+\\
+\frac{
+  \Time(\TName) \mapsto \Nat
+  \qquad
+  \AccessMap(\HName) \mapsto (\Nodes_r,\Nodes_w)
+}{
+  (\Time, \AccessMap) \reduces[{\OP{\READ \HName}}] \AccessMap, \HName \colon (\Nodes_r\cup \{(\TName,\Nat)\},\Nodes_w )
+}
+\\
+\frac{
+  \forall \HName, \Op \neq \READ \HName
+  \qquad
+  \forall \HName, \Op \neq \WRITE \HName
+}{
+  (\Time, \AccessMap) \reduces[{\OP{\Op}}] \AccessMap
+}
+\\
+\frac{
+  \State \reduces[{\OP{\Op}}] \State'
+  \qquad
+  \Time \reduces[{\OP{\Op}}] \Time'
+  \qquad
+  (\Time, \Edges) \reduces[{\OP{\Op}}] \Edges
+  \qquad
+  (\Time, \AccessMap) \reduces[{\OP{\Op}}] \AccessMap
+}{
+  (\State,\Time,\Edges,\AccessMap)
+  \reduces
+  (\State',\Time',\Edges',\AccessMap')
+}
+\end{gather*}
 \end{document}
