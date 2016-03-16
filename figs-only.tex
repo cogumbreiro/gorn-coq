@@ -68,11 +68,11 @@
 \newcommand{\AccessMap}{A}
 \newcommand{\Time}{N}
 
-\newcommand{\GetLocal}[1][\State]{\vdash_{#1}}
-\newcommand{\Program}[1][\State]{\vdash_{#1}}
+\newcommand{\GetLocal}[1][\State]{|_{\mathtt{local},#1}\ }
+\newcommand{\Program}[1][\State]{|_{\mathtt{prog},#1}\ }
 \newcommand{\VReduces}[2][\State]{\ _{{#1},{#2}}\Reduces}
-\newcommand{\Stopped}[1][\State]{\vdash_{#1}}
-\newcommand{\Bind}[2][\State]{\ _{{#1},{#2}}\vdash}
+\newcommand{\Stopped}[1][\State]{|_{\mathtt{stop},#1}\ }
+\newcommand{\Bind}[2][\State]{\ _{{#1},{#2}}|_{\mathtt{bind}}\ }
 
 \newcommand{\grmor}{|}
 \newcommand{\Grmor}{\ \grmor\ }
@@ -136,6 +136,8 @@ Programs:
 $$
 \Prog \Grmeq \Inst; \Prog \Grmor \If \Prog \Prog \Grmor \Ret
 $$
+
+\section{Abstract machine}
 
 Operations:
 $$
@@ -227,7 +229,7 @@ $$
   $$
 
 \noindent
-\textbf{Bind:}\quad\fbox{$(\vec\Val,\vec\Var) \Bind \TName \Store$}
+\textbf{Bind:}\quad\fbox{$(\vec\Val,\vec\Var) \Bind \TName \Local$}
   %
   $$
   \frac{
