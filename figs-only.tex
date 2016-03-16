@@ -27,18 +27,21 @@
 \newcommand{\State}{S}
 \newcommand{\Code}{L}
 \newcommand{\Codey}{L'}
-\newcommand{\Store}{\sigma}
+\newcommand{\Local}{\sigma}
 
 \newcommand{\reduces}[1][]{\xrightarrow{{#1}}}
 \newcommand{\Reduces}{\rightarrow}
-\newcommand{\EReduces}[2][\TName]{\ _{#1}\reduces[#2]}
-\newcommand{\IReduces}{\rightarrow_{\mathtt{i}}}
-\newcommand{\FReduces}{\rightarrow_{\mathtt{f}}}
+\newcommand{\EReduces}[2][\TName]{\reduces[{\OP[{#1}]{#2}}]}
+\newcommand{\IReduces}[2][\TName]{\reduces[{\OP[{#1}]{#2}}]}
+\newcommand{\PReduces}[2][\TName]{\reduces[{\OP[{#1}]{#2}}]}
+\newcommand{\SReduces}[1]{\reduces[#1]}
 \newcommand{\Put}[2]{\{{#1}:={#2}\}}
 
 \newcommand{\putGlobal}[3]{\mathrm{putGlobal}({#1},{#2},{#3})}
+\newcommand{\putLocal}[4]{\mathrm{putLocal}({#1},{#2},{#3},{#4})}
 \newcommand{\spawn}[4]{\mathrm{spawn}({#1},{#2},{#3},{#4})}
-
+\newcommand{\EEval}[2]{\mathrm{eval}{({#1},{#2})}}
+\newcommand{\setProg}[3]{\mathrm{setProg}{({#1},{#2},{#3})}}
 
 \newcommand{\Inst}{i}
 \newcommand{\Nil}{\mathtt{nil}}
@@ -47,7 +50,8 @@
 \newcommand{\Var}{x}
 \newcommand{\Exp}{e}
 \newcommand{\Deref}[1][\Val]{*{#1}}
-\newcommand{\Nat}{i}
+\newcommand{\Store}[1][\Val]{\Deref[{#1}] = }
+\newcommand{\Nat}{z}
 \newcommand{\Malloc}{\mathtt{malloc}}
 \newcommand{\Future}[3]{\mathtt{future}\ {#1}\ {#2}.{#3}}
 \newcommand{\Force}[1][\Val]{\mathtt{force}\ {#1}}
@@ -62,22 +66,23 @@
 \newcommand{\Nodes}{l}
 \newcommand{\AccessMap}{A}
 
-\newcommand{\Local}[1][\State]{\vdash_{#1}}
+\newcommand{\GetLocal}[1][\State]{\vdash_{#1}}
 \newcommand{\Time}[1][\State]{\vdash_{#1}}
 \newcommand{\Program}[1][\State]{\vdash_{#1}}
 \newcommand{\VReduces}[2][\State]{\ _{{#1},{#2}}\Reduces}
 \newcommand{\Stopped}[1][\State]{\vdash_{#1}}
 \newcommand{\Bind}[2][\State]{\ _{{#1},{#2}}\vdash}
 
-
 \newcommand{\grmor}{|}
 \newcommand{\Grmor}{\ \grmor\ }
 \newcommand{\Grmeq}{::=}
 
-\newcommand{\WRITE}[2][\TName]{\mathtt{w}({#1},{#2})}
-\newcommand{\READ}[2][\TName]{\mathtt{r}({#1},{#2})}
-\newcommand{\FUTURE}[2][\TName]{\mathtt{fut}({#1},{#2})}
-\newcommand{\FORCE}[2][\TName]{\mathtt{frc}({#1},{#2})}
+\newcommand{\OP}[2][\TName]{{#1}:{#2}}
+
+\newcommand{\WRITE}[1]{\mathtt{w}\ {#1}}
+\newcommand{\READ}[1]{\mathtt{r}\ {#1}}
+\newcommand{\FUTURE}[1]{\mathtt{ft}\ {#1}}
+\newcommand{\FORCE}[1]{\mathtt{fc}\ {#1}}
 \newcommand{\TAU}{\tau}
 
 \title{Language with futures}
@@ -122,7 +127,7 @@ $$
 Instructions:
 
 $$
-\Inst   ::=\  \Var = \Exp \ |\ \Deref = \Val 
+\Inst \Grmeq \Var = \Exp \Grmor \Store \Val 
 $$
 
 Programs:
@@ -145,7 +150,7 @@ $$
 Task:
 
 $$
-\Task \Grmeq (\Store, \Prog)
+\Task \Grmeq (\Local, \Prog)
 $$
 
 Task map:
@@ -172,15 +177,13 @@ $$
 \State ::= (\HeapMap,\TaskMap)
 $$
 
-\newpage
-
 \noindent
-\textbf{Get store:}\quad\fbox{$\TName \Local \Store$}
+\textbf{Task memory:}\quad\fbox{$\TName \GetLocal \Local$}
 $$
 \frac{
-  \TaskMap(\State)(\TName) \mapsto (\Store,\Prog)
+  \TaskMap(\State)(\TName) \mapsto (\Local,\Prog)
 }{
-  \TName \Local \Store
+  \TName \GetLocal \Local
 }
 $$
 
@@ -200,7 +203,7 @@ $$
   %
   $$
   \frac{
-    \TName \Local \Store \qquad \Store(\Var) \mapsto \Word
+    \TName \GetLocal \Local \qquad \Store(\Var) \mapsto \Word
   }{
     \Var \VReduces \TName \Word
   }
@@ -234,8 +237,18 @@ $$
   $$
   %
 
+  \noindent
+  \textbf{Expression:}\quad\fbox{$\Inst \vdash \Exp$}
+  %
+  $$
+  \Store \Exp \vdash \Exp
+  \qquad
+  \Var = \Exp \vdash \Exp
+  $$
+  %
+
 \noindent
-  \textbf{Reduces expressions:}\quad \fbox{$(\State,\Exp) \EReduces \Op (\State,\Val)$}
+  \textbf{Reduces expressions:}\quad \fbox{$(\State,\Exp) \EReduces \Op  (\State,\Val)$}
   \begin{gather*}
   \frac{
     \Val \VReduces \TName \HName
@@ -266,9 +279,68 @@ $$
   }{
     (\State,\Force) \EReduces {\FORCE {\TName'}} (\State,\Word)
   }
-  \qquad
   \end{gather*}
 
+
+  \noindent
+  \textbf{Reduces instructions:}\quad \fbox{$(\State,\Inst) \IReduces \Op \State$}
+  \begin{gather*}
+  \frac{
+    \Val \VReduces \TName \HName
+    \qquad
+    \Valy \VReduces \TName \Word
+  }{
+    (\State,\Store \Valy) \EReduces {\WRITE {\HName}} {\putGlobal {\HName} {\Word} \State}
+  }
+  \qquad
+  \frac{
+    \Val \VReduces \TName \Word
+  }{
+    (\State,\Var = \Val) \EReduces {\TAU} {\putLocal \TName \Var \Word \State}
+  }
+  \end{gather*}
+
+  \noindent
+  \textbf{Reduces programs:}\quad \fbox{$(\State,\Prog) \PReduces \Op (\State,\Prog)$}
+  \begin{gather*}
+    \frac{
+      \Inst \vdash \Exp
+      \qquad
+      (\State,\Exp) \EReduces \Op (\State',\Word)
+    }{
+      (\State,\Inst;\Prog) \PReduces \Op (\State',\EEval \Inst \Word;\Prog)
+    }
+    \qquad
+    \frac{
+      (\State,\Inst) \IReduces \Op \State'
+    }{
+      (\State,\Inst;\Prog) \PReduces \Op (\State',\Prog)
+    }
+    \\
+    \frac{
+    \Val \VReduces \TName 0
+    }{
+      (\State,\If {\Prog} {\Prog'}) \PReduces \TAU (\State,\Prog')
+    }
+    \qquad
+    \frac{
+    \Val \VReduces \TName \Nat
+    \qquad
+    \Nat \neq 0
+    }{
+      (\State,\If {\Prog} {\Prog'}) \PReduces \TAU (\State,\Prog)
+    }
+  \end{gather*}  
+
+  \noindent
+  \textbf{Reduces states:}\quad \fbox{$\State \SReduces \Op \State$}
+  \begin{gather*}
+    \frac{
+      (\State,\Prog) \PReduces \Op (\State',\Prog')
+    }{
+      \State \SReduces \Op \setProg \TName {\Prog'} {\State'}
+    }
+  \end{gather*}
 
 \section{Race detection}
 
