@@ -244,14 +244,25 @@ Module Lang.
     Program s t p ->
     PReduces (s,p) (t,o) (s', p') ->
     Reduces s (t,o) (s_set_program t p' s').
+
+
+  Definition is_f_op o :=
+  match o with
+  | FUTURE _ => true
+  | FORCE _ => true
+  | _ => false
+  end.
+
+  Definition is_m_op o :=
+  match o with
+  | WRITE _ => true
+  | READ _ => true
+  | _ => false
+  end.
 End Lang.
 
 Module Races.
   Definition node := (tid*nat) % type.
-
-  Definition edge := (node * node) % type.
-
-  Definition edges := list edge.
 
   Definition time := MT.t nat.
 
@@ -264,25 +275,79 @@ Module Races.
   Definition ts_spawn t ts :=
   MT.add t 0 ts.
 
-  Definition ts_node t ts : option node :=
+  Definition ts_lookup (t:tid) (ts:time) : option node :=
   match MT.find t ts with
   | Some n => Some (t, n)
   | None => None
   end.
 
+  Definition ts_future x y ts : time := (ts_spawn y) (ts_tick x ts).
+
+  Definition ts_force (x y:tid) ts : time := (ts_tick x ts).
+
+  Definition ts_eval (x:tid) o : time -> time :=
+  match o with
+  | Lang.FUTURE y => ts_future x y
+  | Lang.FORCE y => ts_force x y
+  | _ => id
+  end.
+
   Definition ts_new_node (t:tid) : node := (t, 0).
+
+  Definition edge := (node * node) % type.
+
+  Definition edges := list edge.
+
+  Definition es_future (ts:time) x y es : edges :=
+  match ts_lookup x ts with
+  | Some n => (n,ts_new_node y)::es
+  | _ => es
+  end.
+
+  Definition es_force (ts:time) x y es : edges :=
+  match ts_lookup x ts with
+  | Some nx =>
+    match ts_lookup y ts with
+    | Some ny => (nx,ny)::es
+    | _ => es
+    end
+  | _ => es
+  end.
+
+  Definition es_eval (ts:time) (x y:tid) o :=
+  match o with
+  | Lang.FUTURE y => es_future ts x y
+  | Lang.FORCE y => es_force ts x y
+  | _ => id
+  end.
 
   Definition computation_graph := (time * edges) % type.
 
-  Definition cg_time (cg:computation_graph) : time :=
-  match cg with
-  | (ts, _) => ts
-  end.
-
   Definition cg_edges (cg:computation_graph) : edges :=
   match cg with
-  | (_,es) => es
+  | (_, es) => es
   end.
+
+  Definition cg_lookup (t:tid) (cg:computation_graph) : option node :=
+  match cg with
+  | (ts, _) => ts_lookup t ts
+  end.
+
+  Inductive CGReduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
+  | cg_reduces_future:
+    forall x y ts es,
+    MT.In x ts ->
+    ~ MT.In y ts ->
+    CGReduces (ts,es) (x,Lang.FUTURE y) (ts_future x y ts, es_future ts x y es)
+  | cg_reduces_force:
+    forall x y (ts:time) ts es,
+    MT.In x ts ->
+    MT.In y ts ->
+    CGReduces (ts,es) (x,Lang.FORCE y) (ts_force x y ts, es_force ts x y es)
+  | cg_reduces_skip:
+    forall cg t o,
+    Lang.is_f_op o = false ->
+    CGReduces cg (t,o) cg.
 
   Structure access := {
     write_access: list node;
@@ -301,11 +366,24 @@ Module Races.
   | _ => sh
   end.
 
-  Definition sh_add_read h n sh : shadow :=
-  sh_update h (a_add_read n) sh.
+  Definition sh_read cg t h sh : shadow :=
+  match cg_lookup t cg with
+  | Some n => sh_update h (a_add_read n) sh
+  | _ => sh
+  end.
 
-  Definition sh_add_write h n sh : shadow :=
-  sh_update h (a_add_write n) sh.
+  Definition sh_write cg t h sh : shadow :=
+  match cg_lookup t cg with
+  | Some n => sh_update h (a_add_write n) sh
+  | _ => sh
+  end.
+
+  Definition sh_eval (cg:computation_graph) t o (sh:shadow) :=
+  match o with
+  | Lang.READ h => sh_write cg t h
+  | Lang.WRITE h => sh_read cg t h
+  | _ => id
+  end.
 
   Definition race_state := (Lang.state * computation_graph * shadow) % type.
 
@@ -319,50 +397,26 @@ Module Races.
   | (_, cg, _) => cg_edges cg
   end.
 
-  Definition cg_eval (e:Lang.effect) (cg:computation_graph) :=
-  let (x, o) := e in
-  let (ts, es) := cg in
-  match o with
-  | Lang.FUTURE y =>
-    match ts_node x ts with
-    | Some n => ((ts_spawn y) (ts_tick x ts), (n,ts_new_node y)::es)
-    | _ => cg
-    end
-  | Lang.FORCE y =>
-    match ts_node x ts with
-    | Some nx =>
-      match ts_node y ts with
-      | Some ny =>
-        (ts_tick x ts, (nx,ny)::es)
-      | _ => cg
-      end
-    | _ => cg
-    end
-  | _ => cg
-  end.
 
-  Definition sh_eval (e:Lang.effect) (cg:computation_graph) (sh:shadow) :=
-  let (t, o) := e in
-  let ts := cg_time cg in
-  match o with
-  | Lang.READ h =>
-    match ts_node t ts with
-    | Some n => sh_add_write h n sh
-    | _ => sh
-    end
-  | Lang.WRITE h =>
-    match ts_node t ts with
-    | Some n => sh_add_read h n sh
-    | _ => sh
-    end
-  | _ => sh
-  end.
+  Inductive SHReduces cg: shadow -> Lang.effect -> shadow -> Prop :=
+  | sh_reduces_read:
+    forall sh t h,
+    SHReduces cg sh (t,Lang.READ h) (sh_read cg t h sh)
+  | sh_reduces_write:
+    forall sh t h,
+    SHReduces cg sh (t,Lang.WRITE h) (sh_write cg t h sh)
+  | sh_reduces_skip:
+    forall sh t o,
+    Lang.is_m_op o = true ->
+    SHReduces cg sh (t,o) sh.
 
   Inductive Reduces: race_state -> race_state -> Prop :=
   | reduces_def:
-    forall s s' cg sh o,
+    forall s s' cg sh o cg' sh',
     Lang.Reduces s o s' ->
-    Reduces (s, cg, sh) (s', cg_eval o cg, sh_eval o cg sh). 
+    CGReduces cg o cg' ->
+    SHReduces cg sh o sh' ->
+    Reduces (s, cg, sh) (s', cg', sh').
 
   Require Import Coq.Relations.Relation_Operators.
 
