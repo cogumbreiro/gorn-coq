@@ -68,10 +68,10 @@
 \newcommand{\AccessMap}{A}
 \newcommand{\Time}{N}
 
-\newcommand{\GetLocal}[1][\TName]{|_{\mathtt{local}({#1})\ }}
-\newcommand{\Program}[1][\TName]{|_{\mathtt{prog}({#1})\ }}
+\newcommand{\GetLocal}[3][\State]{\mathrm{local}({#1},{#2},{#3})}
+\newcommand{\Program}[3][\State]{{\mathrm{prog}({#1},{#2},{#3})}}
 \newcommand{\VReduces}[2][\State]{\Reduces_{{#1},{#2}}}
-\newcommand{\Stopped}[1][\TName]{|_{\mathtt{stop}({#1})}\ }
+\newcommand{\Stopped}[3][\TName]{{\mathrm{stopped}({#1},{#2},{#3})}\ }
 \newcommand{\Bind}[2][\State]{\Reduces_{{#1},{#2}}}
 
 \newcommand{\grmor}{|}
@@ -181,22 +181,22 @@ $$
 $$
 
 \noindent
-\textbf{Task memory:}\quad\fbox{$\State \GetLocal \Local$}
+\textbf{Task memory:}\quad\fbox{$\GetLocal \TName  \Local$}
 $$
 \frac{
   \TaskMap(\State)(\TName) \mapsto (\Local,\Prog)
 }{
-  \State \GetLocal \Local
+  \GetLocal\TName \Local
 }
 $$
 
 \noindent
-\textbf{Program:}\quad\fbox{$\State \Program \Prog$}
+\textbf{Program:}\quad\fbox{$\Program \TName \Prog$}
 $$
 \frac{
   \TaskMap(\State)(\TName) \mapsto (\Local,\Prog)
 }{
-  \TName \Program \Prog
+  \Program \TName \Prog
 }
 $$
 
@@ -206,7 +206,7 @@ $$
   %
   $$
   \frac{
-    \State \GetLocal \Local \qquad \Local(\Var) \mapsto \Word
+    \GetLocal\TName  \Local \qquad \Local(\Var) \mapsto \Word
   }{
     \Var \VReduces \TName \Word
   }
@@ -216,15 +216,15 @@ $$
   %
  
 \noindent
-\textbf{Stopped:}\quad\fbox{$\State \Stopped \Word$}
+\textbf{Stopped:}\quad\fbox{$ \Stopped \State \Word$}
   %
   $$
   \frac{
-    \State \Program \Ret
+    \Program \TName \Ret
     \qquad
     \Val \VReduces \TName \Word
   }{
-    \State \Stopped \Word
+     \Stopped \State \Word
   }
   $$
 
@@ -278,7 +278,7 @@ $$
   \frac{
     \Val \VReduces \TName {\TName'}
     \qquad
-    \TName' \Stopped \Word
+     \Stopped[\TName'] \State \Word
   }{
     (\State,\Force) \EReduces {\FORCE {\TName'}} (\State,\Word)
   }
