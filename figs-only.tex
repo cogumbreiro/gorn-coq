@@ -430,7 +430,7 @@ Shadow memory \fbox{$(\CG,\AccessMap) \reduces[{\OP{\Op}}] \AccessMap$}:
   \qquad
   \AccessMap(\HName) \mapsto (\Nodes_r,\Nodes_w)
 }{
-  (\Time, \AccessMap) \reduces[{\OP{\WRITE \HName}}] \AccessMap, \HName \colon (\Nodes_r,\Nodes_w \cup \{(\TName,\Nat)\})
+  ((\Time,\Edges), \AccessMap) \reduces[{\OP{\WRITE \HName}}] \AccessMap, \HName \colon (\Nodes_r,\Nodes_w \cup \{(\TName,\Nat)\})
 }
 \\
 \frac{
@@ -438,7 +438,7 @@ Shadow memory \fbox{$(\CG,\AccessMap) \reduces[{\OP{\Op}}] \AccessMap$}:
   \qquad
   \AccessMap(\HName) \mapsto (\Nodes_r,\Nodes_w)
 }{
-  (\Time, \AccessMap) \reduces[{\OP{\READ \HName}}] \AccessMap, \HName \colon (\Nodes_r\cup \{(\TName,\Nat)\},\Nodes_w )
+  ((\Time,\Edges), \AccessMap) \reduces[{\OP{\READ \HName}}] \AccessMap, \HName \colon (\Nodes_r\cup \{(\TName,\Nat)\},\Nodes_w )
 }
 \\
 \frac{
@@ -446,7 +446,7 @@ Shadow memory \fbox{$(\CG,\AccessMap) \reduces[{\OP{\Op}}] \AccessMap$}:
   \qquad
   \forall \HName, \Op \neq \WRITE \HName
 }{
-  (\Time, \AccessMap) \reduces[{\OP{\Op}}] (\Time,\AccessMap)
+  (\CG, \AccessMap) \reduces[{\OP{\Op}}] \AccessMap
 }
 \end{gather*}
 
