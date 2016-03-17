@@ -400,7 +400,7 @@ Computation graph reduction \fbox{$\CG \reduces[{\OP{\Op}}] \CG$}:
 }{
   (\Time, \Edges)
   \reduces[{\OP{\FUTURE \TNamey}}] 
-  (\Time, \TName \colon \Nat + 1, \TNamey \colon 0, \Edges \cup \{((\TName,\Nat),(\TNamey,0))\})
+  (\Time, \TName \colon \Nat + 1, \TNamey \colon 0, \Edges \cup \{((\TName,\Nat),(\TNamey,0)), (((\TName,\Nat),(\TName,\Nat+1))) \})
 }
 \\
 \frac{
@@ -410,7 +410,7 @@ Computation graph reduction \fbox{$\CG \reduces[{\OP{\Op}}] \CG$}:
 }{
   (\Time, \Edges)
   \reduces[{\OP{\FORCE \TNamey}}]
-  (\Time, \TName \colon \Nat + 1, \Edges \cup \{((\TNamey,\Naty),(\TName,\Nat))\}
+  (\Time, \TName \colon \Nat + 1, \Edges \cup \{((\TNamey,\Naty),(\TName,\Nat)), (((\TName,\Nat),(\TName,\Nat+1)))\}
 }
 \\
 \frac{
