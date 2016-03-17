@@ -67,6 +67,7 @@
 \newcommand{\Nodes}{l}
 \newcommand{\AccessMap}{A}
 \newcommand{\Time}{N}
+\newcommand{\CG}{C}
 
 \newcommand{\GetLocal}[3][\State]{\mathrm{local}({#1},{#2},{#3})}
 \newcommand{\Program}[3][\State]{{\mathrm{prog}({#1},{#2},{#3})}}
@@ -373,7 +374,7 @@ $$
 
 Time:
 $$
-\Time \Grmeq \{ \HName_1 \colon \Nat_1, \dots, \TName_n\colon \Nat_n\}
+\Time \Grmeq \{ \TName_1 \colon \Nat_1, \dots, \TName_n\colon \Nat_n\}
 $$
 
 
@@ -415,7 +416,7 @@ $$
   \qquad
   \forall \TNamey, \Op \neq \FUTURE \TNamey
 }{
-  (\Time, \Edges) \reduces[{\OP{\Op}}] \Edges
+  \CG \reduces[{\OP{\Op}}] \CG
 }
 \end{gather*}
 
@@ -441,21 +442,19 @@ $$
   \qquad
   \forall \HName, \Op \neq \WRITE \HName
 }{
-  (\Time, \AccessMap) \reduces[{\OP{\Op}}] \AccessMap
+  (\Time, \AccessMap) \reduces[{\OP{\Op}}] (\Time,\AccessMap)
 }
 \\
 \frac{
   \State \reduces[{\OP{\Op}}] \State'
   \qquad
-  \Time \reduces[{\OP{\Op}}] \Time'
+  \CG \reduces[{\OP{\Op}}] \CG'
   \qquad
-  (\Time, \Edges) \reduces[{\OP{\Op}}] \Edges
-  \qquad
-  (\Time, \AccessMap) \reduces[{\OP{\Op}}] \AccessMap
+  (\CG, \AccessMap) \reduces[{\OP{\Op}}] \AccessMap
 }{
-  (\State,\Time,\Edges,\AccessMap)
+  (\State,\CG,\AccessMap)
   \reduces
-  (\State',\Time',\Edges',\AccessMap')
+  (\State',\CG',\AccessMap')
 }
 \end{gather*}
 \end{document}
