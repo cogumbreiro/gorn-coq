@@ -391,6 +391,8 @@ $$
 \AccessMap \Grmeq \{ \HName_1\colon \Access_1,\dots,\HName_n\colon\Access_n\}
 $$
 
+Computation graph reduction \fbox{$\CG \reduces[{\OP{\Op}}] \CG$}:
+
 \begin{gather*}  
 \frac{
   \Time(\TName) \mapsto \Nat
@@ -420,6 +422,8 @@ $$
 }
 \end{gather*}
 
+Shadow memory \fbox{$(\CG,\AccessMap) \reduces[{\OP{\Op}}] \AccessMap$}:
+
 \begin{gather*}
 \frac{
   \Time(\TName) \mapsto \Nat
@@ -444,7 +448,10 @@ $$
 }{
   (\Time, \AccessMap) \reduces[{\OP{\Op}}] (\Time,\AccessMap)
 }
-\\
+\end{gather*}
+
+The whole thing:
+\begin{gather*}
 \frac{
   \State \reduces[{\OP{\Op}}] \State'
   \qquad
