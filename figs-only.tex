@@ -128,7 +128,7 @@ $$
 Instructions:
 
 $$
-\Inst \Grmeq \Var = \Exp \Grmor \Store \Val 
+\Inst \Grmeq \Var = \Exp \Grmor \Store \Exp
 $$
 
 Programs:
@@ -241,12 +241,12 @@ $$
   %
 
   \noindent
-  \textbf{Expression:}\quad\fbox{$\Inst \vdash \Exp$}
+  \textbf{Get expression from instruction:}\quad\fbox{$\Inst[\Exp]$}
   %
   $$
-  \Store \Exp \vdash \Exp
+  (\Store \Exp)[\Exp]
   \qquad
-  \Var = \Exp \vdash \Exp
+  (\Var = \Exp)[ \Exp]
   $$
   %
 
@@ -307,7 +307,7 @@ $$
   \textbf{Reduces programs:}\quad \fbox{$(\State,\Prog) \PReduces \Op (\State,\Prog)$}
   \begin{gather*}
     \frac{
-      \Inst \vdash \Exp
+      \Inst[\Exp]
       \qquad
       (\State,\Exp) \EReduces \Op (\State',\Word)
     }{
