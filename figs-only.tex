@@ -78,7 +78,7 @@
 \newcommand{\Grmor}{\ \grmor\ }
 \newcommand{\Grmeq}{::=}
 
-\newcommand{\OP}[2][\TName]{{#1}:{#2}}
+\newcommand{\OP}[2][\TName]{{#1},{#2}}
 
 \newcommand{\WRITE}[1]{\mathtt{write}\ {#1}}
 \newcommand{\READ}[1]{\mathtt{read}\ {#1}}
@@ -336,12 +336,12 @@ $$
   \end{gather*}  
 
   \noindent
-  \textbf{Reduces states:}\quad \fbox{$\State \SReduces \Op \State$}
+  \textbf{Reduces states:}\quad \fbox{$\State \SReduces {\OP{\Op}} \State$}
   \begin{gather*}
     \frac{
       (\State,\Prog) \PReduces \Op (\State',\Prog')
     }{
-      \State \SReduces \Op \setProg \TName {\Prog'} {\State'}
+      \State \SReduces {\OP{\Op}} \setProg \TName {\Prog'} {\State'}
     }
   \end{gather*}
 
