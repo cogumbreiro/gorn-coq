@@ -462,3 +462,391 @@ Module Races.
     Race s'.
 
 End Races.
+Set Implict Arguments.
+Module X.
+  Section X.
+  Variable A:Type.
+  Variable eq_dec: forall (x y:A), { x = y } + { x <> y }.
+
+
+  Inductive Fin:  list A -> Type :=
+  | F1:
+    forall x l,
+    Fin (x::l) 
+  | FS:
+    forall x l,
+    Fin l ->
+    Fin (x::l).
+
+  Inductive Vector (E : Type) : list A -> Type :=
+  | Vnil :
+    Vector E nil
+  | Vcons :
+    E ->
+    forall l x,
+    Vector E l ->
+    Vector E (x :: l).
+
+  Fixpoint vector_impl (E F:Type) (f:E->F) (l:list A) (v:Vector E l) : Vector F l := 
+  match v with 
+  | Vnil => @Vnil F
+  | Vcons e l' x v' => @Vcons F (f e) l' x (vector_impl f v')
+  end.
+
+End X.
+
+Check (FS 1 (F1 2 nil)).
+
+Check (F1 1 (2::nil)).
+
+Section Y.
+  Variable A:Type.
+
+  Inductive DAG : list A -> list (A * A) -> Prop :=
+  | dag_nil:
+    DAG nil nil
+  | dag_cons_edge:
+    forall x y vs es,
+    DAG (x::vs) es ->
+    List.In y vs ->
+    ~ List.In (x,y) es ->
+    DAG (x::vs) ((x,y)::es)
+  | dag_cons_vertex:
+    forall x vs es,
+    DAG vs es ->
+    ~ List.In x vs ->
+    DAG (x::vs) es.
+
+  Lemma dag_no_dup:
+    forall vs es,
+    DAG vs es ->
+    NoDup vs.
+  Proof.
+    intros.
+    induction H.
+    - auto using NoDup_nil.
+    - assumption.
+    - auto using NoDup_cons.
+  Qed.
+
+  Lemma dag_in_edge_right:
+    forall vs es,
+    DAG vs es ->
+    forall x y,
+    List.In (x, y) es ->
+    List.In y vs.
+  Proof.
+    intros vs es H.
+    induction H; intros.
+    - inversion H.
+    - inversion H2.
+      + inversion H3; subst; clear H3.
+        auto using in_cons.
+      + eauto.
+    - eauto using in_cons.
+  Qed.
+
+  Lemma dag_in_edge_left:
+    forall vs es,
+    DAG vs es ->
+    forall x y,
+    List.In (x, y) es ->
+    List.In x vs.
+  Proof.
+    intros vs es H.
+    induction H; intros.
+    - inversion H.
+    - inversion H2.
+      + inversion H3; subst; clear H3.
+        auto using in_eq.
+      + eauto using in_cons.
+    - eauto using in_cons.
+  Qed.
+
+  Lemma dag_inv_cons_nil:
+    forall es x,
+    DAG (x :: nil) es ->
+    es = nil.
+  Proof.
+    intros es.
+    induction es.
+    - auto.
+    - intros.
+      inversion H.
+      + subst.
+        inversion H5.
+      + subst.
+        inversion H2.
+  Qed.
+
+  Lemma dag_snd_vertex_not_cons:
+    forall es vs x e,
+    DAG (x :: vs) es ->
+    List.In e es ->
+    snd e <> x.
+  Proof.
+    intros es.
+    induction es; intros. {
+      inversion H0.
+    }
+    inversion H0.
+    - subst.
+      inversion H.
+      + subst.
+        simpl.
+        unfold not; intros.
+        subst.
+        assert (~ In x vs). {
+          assert (n: NoDup (x::vs)) by eauto using dag_no_dup.
+          inversion n; eauto.
+        }
+        contradiction.
+      + subst.
+        destruct e as (a,b).
+        simpl in *.
+        assert (In b vs) by eauto using dag_in_edge_right.
+        unfold not; intros.
+        subst.
+        contradiction.
+    - inversion H; subst.
+      + simpl in *.
+        destruct H0.
+        * inversion H0.
+          subst.
+          contradiction.
+        * apply IHes with (e:=e) in H6; auto.
+      + destruct e as (x1,y1).
+        simpl in *.
+        unfold not; intros; subst.
+        contradiction H6.
+        eauto using dag_in_edge_right.
+  Qed.
+
+  Lemma dag_snd_vertex_not_cons_alt:
+    forall es vs x y z,
+    DAG (x :: vs) es ->
+    List.In (y, z) es ->
+    z <> x.
+  Proof.
+    intros.
+    assert (snd (y, z) <> x)
+    by eauto using dag_snd_vertex_not_cons.
+    auto.
+  Qed.
+
+  Lemma dag_inv_neq_cons_vertex:
+    forall x y z vs es,
+    DAG (x :: vs) ((y, z) :: es) ->
+    x <> y ->
+    DAG vs ((y, z) :: es).
+  Proof.
+    intros.
+    inversion H; subst.
+    - contradiction H0; trivial.
+    - assumption.
+  Qed.
+
+  Lemma dag_inv_cons_edge:
+    forall x y vs es,
+    DAG (x :: vs) ((x, y) :: es) ->
+    DAG (x :: vs) es.
+  Proof.
+    intros.
+    inversion H; subst.
+    - assumption.
+    - contradiction H4.
+      eauto using dag_in_edge_left, in_eq.
+  Qed.
+
+  Lemma dag_inv_not_in_vetex:
+    forall x vs es,
+    DAG (x :: vs) es ->
+    ~ In x vs.
+  Proof.
+    intros.
+    assert (n: NoDup (x::vs)) by eauto using dag_no_dup.
+    inversion n.
+    auto.
+  Qed.
+
+  Lemma dag_inv_neq_vertex:
+    forall x y vs es,
+    DAG (x :: vs) ((x, y) :: es) ->
+    x <> y.
+  Proof.
+    intros.
+    inversion H; subst.
+    - assert (~ In x vs) by eauto using dag_inv_not_in_vetex.
+      unfold not; intros; subst;
+      contradiction.
+    - contradiction H4.
+      eauto using dag_in_edge_left, in_eq.
+  Qed.
+
+  Lemma dag_edge_neq_vertex:
+    forall es vs,
+    DAG vs es ->
+    forall x y,
+    In (x, y) es ->
+    x <> y.
+  Proof.
+    intros es.
+    induction es; intros. {
+      inversion H0.
+    }
+    inversion H; subst.
+    - inversion H0; eauto.
+      inversion H1; subst; clear H1.
+      assert (y <> x) by
+      eauto using dag_snd_vertex_not_cons_alt.
+      auto.
+    - inversion H0.
+      + subst.
+        induction vs0. {
+          inversion H1.
+        }
+        assert (Hin: In x (a :: vs0))
+        by eauto using dag_in_edge_left.
+        destruct Hin. {
+          subst.
+          eauto using dag_inv_neq_vertex.
+        }
+        assert (x <> a). {
+          apply dag_inv_not_in_vetex in H1.
+          unfold not; intros; subst.
+          contradiction.
+        }
+        apply IHvs0; auto.
+        * unfold not; intros.
+          contradiction H2.
+          auto using in_cons.
+        * apply dag_inv_neq_cons_vertex with (x:=a); auto.
+        * apply dag_inv_neq_cons_vertex in H1; auto.
+          apply dag_cons_vertex; auto.
+          unfold not; intros; subst.
+          contradiction H2.
+          auto using in_cons.
+      + destruct a as (a, b).
+        induction vs0. {
+          apply dag_inv_cons_nil in H.
+          inversion H.
+        }
+        assert (Hin: In a (a0::vs0)). {
+          eauto using dag_in_edge_left, in_eq.
+        }
+        destruct Hin. {
+          subst.
+          apply dag_inv_cons_edge in H1.
+          eauto.
+        }
+        assert (a <> a0). {
+          unfold not; intros; subst.
+          apply dag_inv_not_in_vetex in H1.
+          contradiction.
+        }
+        apply IHvs0; auto.
+        * eauto using dag_inv_neq_cons_vertex.
+        * unfold not; intros.
+          contradiction H2.
+          auto using in_cons.
+        * assert (x0 <> a). {
+            unfold not; intros; subst.
+            contradiction H2.
+            auto using in_cons.
+          }
+          apply dag_inv_neq_cons_vertex in H1; auto.
+          apply dag_cons_vertex; auto.
+          unfold not; intros; subst.
+          contradiction H2.
+          auto using in_cons.
+  Qed.
+        
+
+  Require Import Coq.Relations.Relation_Definitions.
+
+  Variable vs:list A.
+  Variable es:list (A*A).
+  Variable g:DAG vs es.
+
+
+
+  Definition prec x y := List.In (x,y) es.
+
+  Lemma prec_irreflex:
+    forall x y,
+    prec x y ->
+    x <> y.
+  Proof.
+    intros.
+    unfold prec in *.
+    eauto using dag_edge_neq_vertex.
+  Qed.
+
+  Require Import Coq.Relations.Relation_Operators.
+  Definition reaches := clos_trans A prec.
+
+  Lemma reaches_trans:
+    forall x y z,
+    reaches x y ->
+    reaches y z ->
+    reaches x z.
+  Proof.
+    intros.
+    unfold reaches in *.
+    eauto using t_trans.
+  Qed.
+
+  Lemma reaches_irreflex:
+    forall x y,
+    reaches x y ->
+    x <> y.
+  Proof.
+    intros.
+    unfold reaches in *.
+    apply Operators_Properties.clos_trans_t1n in H.
+    induction H.
+    - eauto using dag_edge_neq_vertex.
+    - unfold not; intros; subst. 
+  Qed.
+
+  Let dag
+
+Section Y.
+  Variable A:Type.
+
+  Definition Node := @Fin A.
+
+  Definition Ancestors (l:list A) := list (Node l).
+
+  Fixpoint ancestors_cons x {l} (fins:list (Fin l)) : Ancestors (x::l) :=
+  match fins with
+  | nil => nil
+  | (f::fins) => (FS x f) :: (ancestors_cons x fins)
+  end.
+
+  Definition DAG (l:list A) := Vector (Ancestors l) l.
+
+  Definition dag_nil : DAG nil := @Vnil A (Ancestors nil).
+
+  Definition dag_cons (l:list A) (G:DAG l) (x:A) (es:Ancestors (x::l)) : DAG (x::l) :=
+    @Vcons A (Ancestors (x::l)) es l x (vector_impl (ancestors_cons x) G).
+End Y.
+Let x := Vnil (@Node nat nil) (@Node nat nil).
+Let y := Vcons 
+
+Check @node nat nil.
+Check @node nat (1::2::nil) ((FS 1 (F1 2 nil)) :: (F1 1 (2::nil)) :: nil).
+
+(*
+  Inductive t (A : Type) : nat -> Type :=
+    nil : t A 0 | cons : A -> forall n : nat, t A n -> t A (S n)
+*)
+
+
+
+  
+
+    
+
+End X.
+
