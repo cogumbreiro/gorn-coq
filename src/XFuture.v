@@ -455,13 +455,199 @@ Module Shadow.
     Reads n1 h ->
     Writes n2 h ->
     CoAccess n1 n2 h
-  | co_accesss_ww:
+  | co_access_ww:
     Writes n1 h ->
     Writes n2 h ->
     CoAccess n1 n2 h.
 
   End Opts.
 
+  Section Props.
+
+  Let reads_to_in_read_access:
+    forall sh n h a,
+    Reads sh n h ->
+    MM.MapsTo h a sh ->
+    In n (read_access a).
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    assert (a0 = a) by eauto using MM_Facts.MapsTo_fun.
+    subst; auto.
+  Qed.
+
+  Let writes_to_in_write_access:
+    forall sh n h a,
+    Writes sh n h ->
+    MM.MapsTo h a sh ->
+    In n (write_access a).
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    assert (a0 = a) by eauto using MM_Facts.MapsTo_fun.
+    subst; auto.
+  Qed.
+
+  Let in_read_access_add_read:
+    forall n a n',
+    In n (read_access a) ->
+    In n (read_access (a_add_read n' a)).
+  Proof.
+    intros.
+    destruct a; simpl in *.
+    auto.
+  Qed.
+
+  Let in_read_access_add_write:
+    forall n a n',
+    In n (read_access a) ->
+    In n (read_access (a_add_write n' a)).
+  Proof.
+    intros.
+    destruct a; simpl in *.
+    auto.
+  Qed.
+
+  Let in_write_access_add_read:
+    forall n a n',
+    In n (write_access a) ->
+    In n (write_access (a_add_read n' a)).
+  Proof.
+    intros.
+    destruct a; simpl in *.
+    auto.
+  Qed.
+
+  Let in_write_access_add_write:
+    forall n a n',
+    In n (write_access a) ->
+    In n (write_access (a_add_write n' a)).
+  Proof.
+    intros.
+    destruct a; simpl in *.
+    auto.
+  Qed.
+
+  Let reads_preservation_read:
+    forall cg t sh n h h',
+    Reads sh n h ->
+    Reads (sh_read cg t h' sh) n h.
+  Proof.
+    intros.
+    unfold sh_read.
+    unfold CG.cg_lookup.
+    destruct (MT_Extra.find_rw t (CG.cg_tasks cg)) as [(rw,?)|(e,(rw,?))].
+    - rewrite rw.
+      auto.
+    - rewrite rw; clear rw.
+      unfold sh_update.
+      destruct (MM_Extra.find_rw h' sh) as [(rw,?)|(a,(rw,?))]; rewrite rw; clear rw.
+      + assumption.
+      + destruct (MID.eq_dec h' h).
+        * rewrite mid_eq_rw in *; subst.
+          eauto using reads_def, MM.add_1.
+        * rewrite mid_eq_rw in *; subst.
+          inversion H.
+          eauto using reads_def, MM.add_2.
+  Qed.
+
+  Let reads_preservation_write:
+    forall cg t sh n h h',
+    Reads sh n h ->
+    Reads (sh_write cg t h' sh) n h.
+  Proof.
+    intros.
+    unfold sh_write.
+    unfold CG.cg_lookup.
+    destruct (MT_Extra.find_rw t (CG.cg_tasks cg)) as [(rw,?)|(e,(rw,?))].
+    - rewrite rw.
+      auto.
+    - rewrite rw; clear rw.
+      unfold sh_update.
+      destruct (MM_Extra.find_rw h' sh) as [(rw,?)|(a,(rw,?))]; rewrite rw; clear rw.
+      + assumption.
+      + destruct (MID.eq_dec h' h).
+        * rewrite mid_eq_rw in *; subst.
+          eauto using reads_def, MM.add_1.
+        * rewrite mid_eq_rw in *; subst.
+          inversion H.
+          eauto using reads_def, MM.add_2.
+  Qed.
+
+  Let writes_preservation_read:
+    forall cg t sh n h h',
+    Writes sh n h ->
+    Writes (sh_read cg t h' sh) n h.
+  Proof.
+    intros.
+    unfold sh_read.
+    unfold CG.cg_lookup.
+    destruct (MT_Extra.find_rw t (CG.cg_tasks cg)) as [(rw,?)|(e,(rw,?))].
+    - rewrite rw.
+      auto.
+    - rewrite rw; clear rw.
+      unfold sh_update.
+      destruct (MM_Extra.find_rw h' sh) as [(rw,?)|(a,(rw,?))]; rewrite rw; clear rw.
+      + assumption.
+      + destruct (MID.eq_dec h' h).
+        * rewrite mid_eq_rw in *; subst.
+          eauto using writes_def, MM.add_1.
+        * rewrite mid_eq_rw in *; subst.
+          inversion H.
+          eauto using writes_def, MM.add_2.
+  Qed.
+
+  Let writes_preservation_write:
+    forall cg t sh n h h',
+    Writes sh n h ->
+    Writes (sh_write cg t h' sh) n h.
+  Proof.
+    intros.
+    unfold sh_write.
+    unfold CG.cg_lookup.
+    destruct (MT_Extra.find_rw t (CG.cg_tasks cg)) as [(rw,?)|(e,(rw,?))].
+    - rewrite rw.
+      auto.
+    - rewrite rw; clear rw.
+      unfold sh_update.
+      destruct (MM_Extra.find_rw h' sh) as [(rw,?)|(a,(rw,?))]; rewrite rw; clear rw.
+      + assumption.
+      + destruct (MID.eq_dec h' h).
+        * rewrite mid_eq_rw in *; subst.
+          eauto using writes_def, MM.add_1.
+        * rewrite mid_eq_rw in *; subst.
+          inversion H.
+          eauto using writes_def, MM.add_2.
+  Qed.
+
+  Let co_access_preservation_read:
+    forall cg t sh n1 n2 h h',
+    CoAccess sh n1 n2 h ->
+    CoAccess (sh_read cg t h' sh) n1 n2 h.
+  Proof.
+    intros.
+    destruct H; eauto using co_access_rw, co_access_ww.
+  Qed.
+
+  Let co_access_preservation_write:
+    forall cg t sh n1 n2 h h',
+    CoAccess sh n1 n2 h ->
+    CoAccess (sh_write cg t h' sh) n1 n2 h.
+  Proof.
+    intros.
+    destruct H; eauto using co_access_rw, co_access_ww.
+  Qed.
+
+  Lemma co_access_preservation:
+    forall sh o sh' n1 n2 h cg,
+    CoAccess sh n1 n2 h ->
+    Reduces cg sh o sh' ->
+    CoAccess sh' n1 n2 h.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0; eauto.
+  Qed.
+  End Props.
 End Shadow.
 
 Module Races.
