@@ -378,6 +378,17 @@ Module CG.
     Lang.is_f_op o = false ->
     Reduces cg (t,o) cg.
 
+  Inductive Prec (cg:computation_graph) n1 n2 : Prop :=
+  | prec_def:
+    List.In (n1,n2) (cg_edges cg) ->
+    Prec cg n1 n2.
+
+  Require Import Coq.Relations.Relation_Operators.
+
+  Definition HB cg := clos_trans CG.node (Prec cg).
+
+  Definition MHP cg n1 n2 := ~ HB cg n1 n2 /\ ~ HB cg n2 n1.
+
 End CG.
 
 Module Shadow.
@@ -422,6 +433,35 @@ Module Shadow.
     Lang.is_m_op o = true ->
     Reduces cg sh (t,o) sh.
 
+  Section Opts.
+  Variable sh:shadow.
+
+  Inductive Reads (n:CG.node) (h:mid) : Prop :=
+  | reads_def:
+    forall a,
+    MM.MapsTo h a sh ->
+    List.In n (read_access a) ->
+    Reads n h.
+
+  Inductive Writes (n:CG.node) (h:mid) : Prop :=
+  | writes_def:
+    forall a,
+    MM.MapsTo h a sh ->
+    List.In n (write_access a) ->
+    Writes n h.
+
+  Inductive CoAccess (n1 n2:CG.node) (h:mid): Prop :=
+  | co_access_rw:
+    Reads n1 h ->
+    Writes n2 h ->
+    CoAccess n1 n2 h
+  | co_accesss_ww:
+    Writes n1 h ->
+    Writes n2 h ->
+    CoAccess n1 n2 h.
+
+  End Opts.
+
 End Shadow.
 
 Module Races.
@@ -433,9 +473,9 @@ Module Races.
   | (_, _, sh) => sh
   end.
 
-  Definition r_edges (s:race_state) : CG.edges :=
+  Definition r_dag (s:race_state) : CG.computation_graph :=
   match s with
-  | (_, cg, _) => CG.cg_edges cg
+  | (_, cg, _) => cg
   end.
 
   Inductive Reduces: race_state -> race_state -> Prop :=
@@ -446,48 +486,19 @@ Module Races.
     Shadow.Reduces cg sh o sh' ->
     Reduces (s, cg, sh) (s', cg', sh').
 
-  Require Import Coq.Relations.Relation_Operators.
-
-  Inductive Prec (s:race_state) n1 n2 : Prop :=
-  | prec_def:
-    List.In (n1,n2) (r_edges s) ->
-    Prec s n1 n2.
-
-  Definition HB s := clos_trans CG.node (Prec s).
-
-  Definition MHP s n1 n2 := ~ HB s n1 n2 /\ ~ HB s n2 n1.
-
-  Inductive Conflict (s:race_state) (a:Shadow.access): Prop :=
-  | conflict_rw:
-    forall n1 n2,
-    List.In n1 (Shadow.read_access a) ->
-    List.In n2 (Shadow.write_access a) -> 
-    MHP s n1 n2 ->
-    Conflict s a
-  | conflict_ww:
-    forall n1 n2,
-    List.In n1 (Shadow.write_access a) ->
-    List.In n2 (Shadow.write_access a) -> 
-    MHP s n1 n2 ->
-    Conflict s a.
-
   Inductive HasRace h s : Prop :=
   | has_race_def:
-    forall a,
-    MM.MapsTo h a (r_shadow s) ->
-    Conflict s a ->
+    forall n1 n2,
+    Shadow.CoAccess (r_shadow s) n1 n2 h ->
+    CG.MHP (r_dag s) n1 n2 ->
     HasRace h s.
 
   Inductive Race s : Prop :=
     race_def:
       (forall h, MM.In h (r_shadow s) -> HasRace h s) ->
       Race s.
+    
 
-  Axiom race_preserves:
-    forall s s',
-    Race s ->
-    Reduces s s' ->
-    Race s'.
 
 End Races.
 Set Implict Arguments.
