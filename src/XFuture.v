@@ -717,14 +717,14 @@ Module CG.
   Structure computation_graph := cg_make {
     cg_size : nat;
     cg_tasks: MT.t nat;
-    cg_edges: list (nat * nat);
+    cg_edges: list ((tid*nat) * (tid*nat));
     cg_tasks_spec:
       forall x n,
       MT.MapsTo x n cg_tasks ->
       n < cg_size;
     cg_edges_spec:
       forall x y,
-      List.In (x,y) cg_edges -> x < y
+      List.In (x,y) cg_edges -> (snd x) < (snd y)
   }.
 
   Program Definition cg_future (x y:tid) (cg : computation_graph) : computation_graph :=
@@ -733,7 +733,7 @@ Module CG.
   let total := S ny in
   match MT.find x (cg_tasks cg) with
   | Some nx =>
-    @cg_make total ((MT.add x nx') ((MT.add y ny) (cg_tasks cg))) ((nx,nx')::(nx,ny)::(cg_edges cg)) _ _
+    @cg_make total ((MT.add x nx') ((MT.add y ny) (cg_tasks cg))) (((x,nx),(x,nx'))::((x,nx),(y,ny))::(cg_edges cg)) _ _
   | _ => cg
   end.
   Next Obligation.
@@ -758,7 +758,8 @@ Module CG.
     apply MT_Facts.find_mapsto_iff in Heq_anonymous.
     apply cg_tasks_spec in Heq_anonymous.
     destruct H as [?|[?|?]];
-    try (inversion H; subst; clear H); eauto.
+    try (inversion H; simpl in *; subst; clear H); eauto.
+    simpl in *.
     apply cg_edges_spec in H; auto.
   Qed.
 
@@ -769,7 +770,7 @@ Module CG.
   | Some nx =>
     match MT.find y (cg_tasks cg) with
     | Some ny =>
-      @cg_make total ((MT.add x nx') (cg_tasks cg)) ((nx,nx')::(ny, nx')::(cg_edges cg)) _ _
+      @cg_make total ((MT.add x nx') (cg_tasks cg)) (((x,nx),(x,nx'))::((y,ny), (x,nx'))::(cg_edges cg)) _ _
     | _ => cg
     end
   | _ => cg
