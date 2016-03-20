@@ -711,5 +711,95 @@ Module Vector.
   Qed.
 
   End Defs.
-End Vector.
+
+
+Module CG.
+  Structure computation_graph := cg_make {
+    cg_size : nat;
+    cg_tasks: MT.t nat;
+    cg_edges: list (nat * nat);
+    cg_tasks_spec:
+      forall x n,
+      MT.MapsTo x n cg_tasks ->
+      n < cg_size;
+    cg_edges_spec:
+      forall x y,
+      List.In (x,y) cg_edges -> x < y
+  }.
+
+  Program Definition cg_future (x y:tid) (cg : computation_graph) : computation_graph :=
+  let nx' := cg_size cg in
+  let ny := S nx' in
+  let total := S ny in
+  match MT.find x (cg_tasks cg) with
+  | Some nx =>
+    @cg_make total ((MT.add x nx') ((MT.add y ny) (cg_tasks cg))) ((nx,nx')::(nx,ny)::(cg_edges cg)) _ _
+  | _ => cg
+  end.
+  Next Obligation.
+    symmetry in Heq_anonymous.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
+    apply cg_tasks_spec in Heq_anonymous.
+    apply MT_Facts.add_mapsto_iff in H.
+    destruct H as [(?,?)|(?,?)]. {
+      subst.
+      auto.
+    }
+    apply MT_Facts.add_mapsto_iff in H0.
+    destruct H0 as [(?,?)|(?,?)]. {
+      subst.
+      auto.
+    }
+    apply cg_tasks_spec in H1.
+    auto.
+  Qed.
+  Next Obligation.
+    symmetry in Heq_anonymous.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
+    apply cg_tasks_spec in Heq_anonymous.
+    destruct H as [?|[?|?]];
+    try (inversion H; subst; clear H); eauto.
+    apply cg_edges_spec in H; auto.
+  Qed.
+
+  Program Definition cg_force (x y:tid) (cg : computation_graph) : computation_graph :=
+  let nx' := cg_size cg in
+  let total := S nx' in
+  match MT.find x (cg_tasks cg) with
+  | Some nx =>
+    match MT.find y (cg_tasks cg) with
+    | Some ny =>
+      @cg_make total ((MT.add x nx') (cg_tasks cg)) ((nx,nx')::(ny, nx')::(cg_edges cg)) _ _
+    | _ => cg
+    end
+  | _ => cg
+  end.
+  Next Obligation.
+    symmetry in Heq_anonymous.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
+    apply cg_tasks_spec in Heq_anonymous.
+    symmetry in Heq_anonymous0.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous0.
+    apply cg_tasks_spec in Heq_anonymous0.
+    apply MT_Facts.add_mapsto_iff in H.
+    destruct H as [(?,?)|(?,?)]. {
+      subst.
+      auto.
+    }
+    apply cg_tasks_spec in H0.
+    auto.
+  Qed.
+  Next Obligation.
+    symmetry in Heq_anonymous.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
+    apply cg_tasks_spec in Heq_anonymous.
+    symmetry in Heq_anonymous0.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous0.
+    apply cg_tasks_spec in Heq_anonymous0.
+    destruct H as [?|[?|?]];
+    try (inversion H; subst; clear H); eauto.
+    apply cg_edges_spec in H; auto.
+  Qed.
+
+End CG.
 
