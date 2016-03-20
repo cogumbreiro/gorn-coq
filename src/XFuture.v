@@ -261,6 +261,121 @@ Module Lang.
   end.
 End Lang.
 
+Module Walk2Lt.
+  Section Defs.
+  Variable A:Type.
+
+  Variable Lt: A -> A -> Prop.
+
+  Variable lt_trans:
+    forall (x y z: A),
+    Lt x y ->
+    Lt y z ->
+    Lt x z.
+
+  Notation Edge := (fun e => let (x,y) := e in Lt x y).
+
+  Require Import Aniceto.Graphs.Graph.
+
+  Lemma walk_to_lt:
+    forall w x y,
+    Walk2 Edge x y w ->
+    Lt x y.
+  Proof.
+    induction w; intros. {
+      apply walk2_nil_inv in H.
+      inversion H.
+    }
+    destruct a as (x',z).
+    destruct w. {
+      apply walk2_inv_pair in H.
+      destruct H.
+      inversion H; subst; clear H.
+      assumption.
+    }
+    apply walk2_inv in H.
+    destruct H as (z', (He, (Hi, Hw))).
+    inversion He; subst; clear He; rename z' into z.
+    assert (Lt z y) by eauto.
+    eauto.
+  Qed.
+  End Defs.
+End Walk2Lt.
+
+Module DAG.
+  Section Defs.
+  Variable A:Type.
+
+  Variable Lt: A -> A -> Prop.
+
+  Inductive DAG : list (A*A) -> Prop :=
+  | dag_nil:
+    DAG nil
+  | dag_cons:
+    forall x y es,
+    DAG es ->
+    Lt x y ->
+    DAG ((x,y)::es).
+
+  Lemma dag_in_to_lt:
+    forall es,
+    DAG es ->
+    forall x y,
+    List.In (x, y) es ->
+    Lt x y.
+  Proof.
+    induction es; intros. {
+      inversion H0.
+    }
+    inversion H; subst; clear H.
+    destruct H0. {
+      inversion H; subst; auto.
+    }
+    eauto.
+  Qed.
+
+  Lemma make_dag:
+    forall es,
+    (forall x y, List.In (x,y) es -> Lt x y) ->
+    DAG es.
+  Proof.
+    intros.
+    induction es. {
+      auto using dag_nil.
+    }
+    destruct a as (x,y).
+    apply dag_cons.
+    - eauto using dag_in_to_lt, in_cons.
+    - auto using in_eq.
+  Qed.
+
+  Notation Edge := (fun g e => @List.In (A*A) e g) %type.
+
+  Require Import Aniceto.Graphs.Graph.
+
+  Variable lt_trans:
+    forall (x y z: A),
+    Lt x y ->
+    Lt y z ->
+    Lt x z.
+
+  Lemma dag_walk_to_lt:
+    forall es,
+    DAG es ->
+    forall w x y,
+    Walk2 (Edge es) x y w ->
+    Lt x y.
+  Proof.
+    intros.
+    apply Walk2Lt.walk_to_lt with (w:=w); eauto.
+    apply walk2_impl with (E:=Edge es); auto.
+    intros.
+    destruct e as (a,b); simpl.
+    eauto using dag_in_to_lt.
+  Qed.
+End Defs.
+End DAG.
+
 Module CG.
   Definition node := (tid*nat) % type.
 
@@ -378,14 +493,87 @@ Module CG.
     Lang.is_f_op o = false ->
     Reduces cg (t,o) cg.
 
-  Inductive Prec (cg:computation_graph) n1 n2 : Prop :=
-  | prec_def:
-    List.In (n1,n2) (cg_edges cg) ->
-    Prec cg n1 n2.
+  Definition Prec (cg:computation_graph) n1 n2 := List.In (n1,n2) (cg_edges cg).
 
   Require Import Coq.Relations.Relation_Operators.
 
   Definition HB cg := clos_trans CG.node (Prec cg).
+
+  Lemma hb_trans:
+    forall cg n1 n2 n3,
+    HB cg n1 n2 ->
+    HB cg n2 n3 ->
+    HB cg n1 n3.
+  Proof.
+    intros.
+    unfold HB in *; eauto using t_trans.
+  Qed.
+
+  Require Aniceto.Graphs.Graph.
+
+  Let Lt (n1 n2:node) := (snd n1) < (snd n2).
+
+  Let cg_is_dag:
+    forall cg,
+    DAG.DAG Lt (cg_edges cg).
+  Proof.
+    intros.
+    apply DAG.make_dag.
+    intros.
+    apply cg_edges_spec in H.
+    auto.
+  Qed.
+
+  Let Edge cg e := (List.In e (cg_edges cg)).
+
+  Let hb_to_walk2:
+    forall cg n1 n2,
+    HB cg n1 n2 ->
+    exists w, Graph.Walk2 (Edge cg) n1 n2 w.
+  Proof.
+    unfold not, HB; intros.
+    apply Graph.clos_trans_to_walk2 with (R:=Prec cg); auto.
+    intros.
+    unfold Prec, Edge.
+    tauto.
+  Qed.
+
+  Let lt_trans:
+    forall x y z : node,
+    Lt x y ->
+    Lt y z ->
+    Lt x z.
+  Proof.
+    unfold Lt; intros.
+    auto with *.
+  Qed.
+
+  Lemma hb_irrefl:
+    forall cg n,
+    ~ HB cg n n.
+  Proof.
+    intros.
+    unfold not; intros.
+    apply hb_to_walk2 in H.
+    destruct H as (w, H).
+    apply DAG.dag_walk_to_lt with (Lt:=Lt) in H.
+    - unfold Lt in *.
+      omega.
+    - apply lt_trans.
+    - auto using cg_is_dag.
+  Qed.
+
+  Lemma hb_asymm:
+    forall cg n1 n2,
+    HB cg n1 n2 ->
+    ~ HB cg n2 n1.
+  Proof.
+    intros.
+    unfold not; intros.
+    assert (HB cg n1 n1) by eauto using hb_trans.
+    apply hb_irrefl in H1.
+    assumption.
+  Qed.
 
   Definition MHP cg n1 n2 := ~ HB cg n1 n2 /\ ~ HB cg n2 n1.
 
@@ -687,109 +875,6 @@ Module Races.
 
 
 End Races.
-Set Implict Arguments.
-
-Module Walk2Lt.
-  Section Defs.
-  Variable A:Type.
-
-  Variable Lt: A -> A -> Prop.
-
-  Variable lt_trans:
-    forall (x y z: A),
-    Lt x y ->
-    Lt y z ->
-    Lt x z.
-
-  Notation Edge := (fun e => let (x,y) := e in Lt x y).
-
-  Require Import Aniceto.Graphs.Graph.
-
-  Lemma walk_to_lt:
-    forall w x y,
-    Walk2 Edge x y w ->
-    Lt x y.
-  Proof.
-    induction w; intros. {
-      apply walk2_nil_inv in H.
-      inversion H.
-    }
-    destruct a as (x',z).
-    destruct w. {
-      apply walk2_inv_pair in H.
-      destruct H.
-      inversion H; subst; clear H.
-      assumption.
-    }
-    apply walk2_inv in H.
-    destruct H as (z', (He, (Hi, Hw))).
-    inversion He; subst; clear He; rename z' into z.
-    assert (Lt z y) by eauto.
-    eauto.
-  Qed.
-  End Defs.
-End Walk2Lt.
-
-Module DAG.
-  Section Defs.
-  Variable A:Type.
-
-  Variable Lt: A -> A -> Prop.
-
-  Inductive DAG : list (A*A) -> Prop :=
-  | dag_nil:
-    DAG nil
-  | dag_cons_edge:
-    forall x y es,
-    DAG es ->
-    Lt x y ->
-    ~ List.In (x,y) es ->
-    DAG ((x,y)::es).
-
-  Lemma dag_in_to_lt:
-    forall es,
-    DAG es ->
-    forall x y,
-    List.In (x, y) es ->
-    Lt x y.
-  Proof.
-    induction es; intros. {
-      inversion H0.
-    }
-    inversion H; subst; clear H.
-    destruct H0. {
-      inversion H; subst; auto.
-    }
-    eauto.
-  Qed.
-
-  Notation Edge := (fun g e => @List.In (A*A) e g) %type.
-
-  Require Import Aniceto.Graphs.Graph.
-
-  Variable lt_trans:
-    forall (x y z: A),
-    Lt x y ->
-    Lt y z ->
-    Lt x z.
-
-  Lemma dag_walk_to_lt:
-    forall es,
-    DAG es ->
-    forall w x y,
-    Walk2 (Edge es) x y w ->
-    Lt x y.
-  Proof.
-    intros.
-    apply Walk2Lt.walk_to_lt with (w:=w); eauto.
-    apply walk2_impl with (E:=Edge es); auto.
-    intros.
-    destruct e as (a,b); simpl.
-    eauto using dag_in_to_lt.
-  Qed.
-End Defs.
-End DAG.
-
 
 Module Vector.
   Section Defs.
