@@ -395,22 +395,29 @@ Computation graph reduction \fbox{$\CG \reduces[{\OP{\Op}}] \CG$}:
 
 \begin{gather*}  
 \frac{
-  \Time(\TName) \mapsto \Nat
+  \Time(\TName) \mapsto \Node_1
   \qquad
+  \Node'_1 \notin \Edges
+  \qquad
+  \Node_2 \notin \Edges
+  \qquad
+  \TName' \notin \Time
 }{
   (\Time, \Edges)
   \reduces[{\OP{\FUTURE \TNamey}}] 
-  (\Time, \TName \colon \Nat + 1, \TNamey \colon 0, \Edges \cup \{((\TName,\Nat),(\TNamey,0)), ((\TName,\Nat),(\TName,\Nat+1)) \})
+  (\Time, \TName \colon \Node'_1, \TNamey \colon \Node_2, \Edges \cup \{(\Node_1,\Node_2), (\Node_1,\Node_1') \})
 }
 \\
 \frac{
-  \Time(\TName) \mapsto \Nat
+  \Time(\TName) \mapsto \Node_1
   \qquad
-  \Time(\TNamey) \mapsto \Naty
+  \Time(\TNamey) \mapsto \Node_2
+  \qquad
+  \Node'_1 \notin \Edges
 }{
   (\Time, \Edges)
   \reduces[{\OP{\FORCE \TNamey}}]
-  (\Time, \TName \colon \Nat + 1, \Edges \cup \{((\TNamey,\Naty),(\TName,\Nat)), ((\TName,\Nat),(\TName,\Nat+1))\}
+  (\Time, \TName \colon \Node_1', \Edges \cup \{(\Node_2,\Node_1'), (\Node_1,\Node_1')\}
 }
 \\
 \frac{
