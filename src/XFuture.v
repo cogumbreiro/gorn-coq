@@ -264,25 +264,24 @@ End Lang.
 Module Races.
   Definition node := (tid*nat) % type.
 
+  Definition make_node (t:tid) : node := (t, 0).
+
   Definition node_succ (n:node) : node :=
   let (x,y) := n in (x, S y).
 
-  Definition time := MT.t nat.
+  Definition time := MT.t node.
 
   Definition ts_tick t ts :=
   match MT.find t ts with
-  | Some n => MT.add t (S n) ts
+  | Some n => MT.add t (node_succ n) ts
   | _ => ts
   end.
 
   Definition ts_spawn t ts :=
-  MT.add t 0 ts.
+  MT.add t (make_node t) ts.
 
   Definition ts_lookup (t:tid) (ts:time) : option node :=
-  match MT.find t ts with
-  | Some n => Some (t, n)
-  | None => None
-  end.
+  MT.find t ts.
 
   Definition ts_future x y ts : time := (ts_spawn y) (ts_tick x ts).
 
@@ -295,34 +294,22 @@ Module Races.
   | _ => id
   end.
 
-  Definition ts_new_node (t:tid) : node := (t, 0).
-
   Definition edge := (node * node) % type.
 
   Definition edges := list edge.
 
-  Definition es_future (ts:time) x y es : edges :=
-  match ts_lookup x ts with
-  | Some n => (n,ts_new_node y)::(n, node_succ n)::es
-  | _ => es
-  end.
-
-  Definition es_force (ts:time) x y es : edges :=
-  match ts_lookup x ts with
+  Definition es_add tsx x tsy y es : edges :=
+  match ts_lookup x tsx with
   | Some nx =>
-    match ts_lookup y ts with
-    | Some ny => (nx,ny)::(nx, node_succ nx)::es
-    | _ => es
+    match ts_lookup y tsy with
+      | Some ny => (nx, ny) :: es
+      | _ => es
     end
   | _ => es
   end.
 
-  Definition es_eval (ts:time) (x y:tid) o :=
-  match o with
-  | Lang.FUTURE y => es_future ts x y
-  | Lang.FORCE y => es_force ts x y
-  | _ => id
-  end.
+  Definition es_eval (ts:time) (x:tid) (y:tid) (ts':time) (es:edges) : edges :=
+  (es_add ts x ts' y) (es_add ts x ts' x es).
 
   Definition computation_graph := (time * edges) % type.
 
@@ -341,12 +328,14 @@ Module Races.
     forall x y ts es,
     MT.In x ts ->
     ~ MT.In y ts ->
-    CGReduces (ts,es) (x,Lang.FUTURE y) (ts_future x y ts, es_future ts x y es)
+    let ts' := ts_future x y ts in
+    CGReduces (ts,es) (x,Lang.FUTURE y) (ts', (es_eval ts x y ts') es)
   | cg_reduces_force:
     forall x y (ts:time) ts es,
     MT.In x ts ->
     MT.In y ts ->
-    CGReduces (ts,es) (x,Lang.FORCE y) (ts_force x y ts, es_force ts x y es)
+    let ts' := ts_force x y ts in
+    CGReduces (ts,es) (x,Lang.FORCE y) (ts', (es_eval ts x y ts') es)
   | cg_reduces_skip:
     forall cg t o,
     Lang.is_f_op o = false ->
@@ -467,49 +456,6 @@ Module Races.
 End Races.
 Set Implict Arguments.
 
-(*
-Module Vector.
-  Section Defs.
-  Variable A:Type.
-
-  Inductive In: A -> forall n, Vector.t A n -> Prop :=
-  | in_eq:
-    forall x {n} (v:Vector.t A n),
-    In x (Vector.cons A x n v)
-  | in_cons:
-    forall x y {n} (v:Vector.t A n),
-    In x v ->
-    In x (Vector.cons A y n v).
-
-  Inductive NoDup: forall n, Vector.t A n -> Prop:=
-  | no_dup_nil:
-    NoDup (@Vector.nil A)
-  | no_dup_cons:
-    forall x {n} (v:Vector.t A n),
-    ~ In x v ->
-    NoDup v ->
-    NoDup (Vector.cons A x n v).
-  End Defs.
-End Vector.
-
-(*
-  Fixpoint value_of {n:nat} (f:Fin.t n) :=
-  match f with
-  | Fin.F1 n' => n'
-  | Fin.FS _ f' => value_of f'
-  end.
-
-  Variable Lt {n} (v:Vector.t A n) (x:A) (y:A) : Prop :=
-  | lt_def:
-    forall (xn:Fin.t n) (yn:Fin.t n),
-    Vector.nth v xn = x ->
-    Vector.nth v yn = y ->
-    value_of xn < value_of yn ->
-    Lt v x y.
-*)
-
-*)
-
 Module Walk2Lt.
   Section Defs.
   Variable A:Type.
@@ -610,3 +556,160 @@ Module DAG.
   Qed.
 End Defs.
 End DAG.
+
+
+Module Vector.
+  Section Defs.
+  Variable A:Type.
+
+  Inductive IndexOf (x:A) : nat -> list A -> Prop :=
+  | index_of_eq:
+    forall l,
+    IndexOf x (length l) (x :: l)
+  | index_of_cons:
+    forall y n l,
+    IndexOf x n l ->
+    IndexOf x n (y :: l).
+
+  Lemma index_of_to_in:
+    forall x n l,
+    IndexOf x n l ->
+    In x l.
+  Proof.
+    intros.
+    induction l. {
+      inversion H.
+    }
+    inversion H; subst.
+    - auto using in_eq.
+    - auto using in_cons.
+  Qed.
+
+  Lemma index_of_fun:
+    forall l x n n',
+    NoDup l ->
+    IndexOf x n l ->
+    IndexOf x n' l ->
+    n' = n.
+  Proof.
+    intros.
+    induction l. {
+      inversion H0.
+    }
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    - inversion H1; subst; clear H1.
+      + trivial.
+      + contradiction H4; eauto using index_of_to_in.
+    - inversion H1; subst; clear H1.
+      + contradiction H4; eauto using index_of_to_in.
+      + eauto.
+  Qed.
+
+  Lemma index_of_length_lt:
+    forall x n l,
+    IndexOf x n l ->
+    n < length l.
+  Proof.
+    intros.
+    induction l. {
+      inversion H.
+    }
+    inversion H; subst.
+    - auto.
+    - simpl.
+      assert (n < length l) by eauto.
+      eauto.
+  Qed.
+
+  Lemma index_of_bij:
+    forall l x x' n,
+    NoDup l ->
+    IndexOf x n l ->
+    IndexOf x' n l ->
+    x' = x.
+  Proof.
+    intros.
+    induction l. {
+      inversion H0.
+    }
+    inversion H; clear H; subst.
+    inversion H0; subst; clear H0.
+    - inversion H1; subst; clear H1.
+      + trivial.
+      + assert (length l < length l). {
+          eauto using index_of_length_lt.
+        }
+        omega.
+    - inversion H1; subst; clear H1.
+      + assert (length l < length l). {
+          eauto using index_of_length_lt.
+        }
+        omega.
+      + eauto.
+  Qed.
+
+  Lemma index_of_neq:
+    forall l x y n n',
+    NoDup l ->
+    IndexOf x n l ->
+    IndexOf y n' l ->
+    n <> n' ->
+    x <> y.
+  Proof.
+    intros.
+    induction l. {
+      inversion H0.
+    }
+    inversion H; clear H; subst.
+    inversion H0; subst; clear H0.
+    - inversion H1; subst; clear H1.
+      + omega.
+      + unfold not; intros; subst.
+        contradiction H5.
+        eauto using index_of_to_in.
+    - inversion H1; subst; clear H1.
+      + unfold not; intros; subst.
+        contradiction H5.
+        eauto using index_of_to_in.
+      + eauto.
+  Qed.
+
+  Inductive Lt (l:list A) (x:A) (y:A) : Prop :=
+  | lt_def:
+    forall xn yn,
+    IndexOf x xn l ->
+    IndexOf y yn l ->
+    xn < yn ->
+    Lt l x y.
+
+  Lemma lt_trans (l:list A) (N:NoDup l):
+    forall x y z,
+    Lt l x y ->
+    Lt l y z ->
+    Lt l x z.
+  Proof.
+    intros.
+    inversion H; clear H.
+    inversion H0; clear H0.
+    rename yn0 into zn.
+    assert (xn0 = yn) by
+    eauto using index_of_fun; subst.
+    apply lt_def with (xn:=xn) (yn:=zn); auto.
+    omega.
+  Qed.
+
+  Lemma lt_neq (l:list A) (N:NoDup l):
+    forall x y,
+    Lt l x y ->
+    x <> y.
+  Proof.
+    intros.
+    inversion H; clear H.
+    assert (xn <> yn) by omega.
+    eauto using index_of_neq.
+  Qed.
+
+  End Defs.
+End Vector.
+
