@@ -261,89 +261,129 @@ Module Lang.
   end.
 End Lang.
 
-Module Races.
+Module CG.
   Definition node := (tid*nat) % type.
-
-  Definition make_node (t:tid) : node := (t, 0).
-
-  Definition node_succ (n:node) : node :=
-  let (x,y) := n in (x, S y).
-
-  Definition time := MT.t node.
-
-  Definition ts_tick t ts :=
-  match MT.find t ts with
-  | Some n => MT.add t (node_succ n) ts
-  | _ => ts
-  end.
-
-  Definition ts_spawn t ts :=
-  MT.add t (make_node t) ts.
-
-  Definition ts_lookup (t:tid) (ts:time) : option node :=
-  MT.find t ts.
-
-  Definition ts_future x y ts : time := (ts_spawn y) (ts_tick x ts).
-
-  Definition ts_force (x y:tid) ts : time := (ts_tick x ts).
-
-  Definition ts_eval (x:tid) o : time -> time :=
-  match o with
-  | Lang.FUTURE y => ts_future x y
-  | Lang.FORCE y => ts_force x y
-  | _ => id
-  end.
 
   Definition edge := (node * node) % type.
 
   Definition edges := list edge.
 
-  Definition es_add tsx x tsy y es : edges :=
-  match ts_lookup x tsx with
+  Structure computation_graph := cg_make {
+    cg_size : nat;
+    cg_tasks: MT.t nat;
+    cg_edges: list (node * node);
+    cg_tasks_spec:
+      forall x n,
+      MT.MapsTo x n cg_tasks ->
+      n < cg_size;
+    cg_edges_spec:
+      forall x y,
+      List.In (x,y) cg_edges -> (snd x) < (snd y)
+  }.
+
+  Definition cg_lookup (t:tid) cg : option node :=
+  match MT.find t (cg_tasks cg) with
+  | Some n => Some (t,n)
+  | _ => None
+  end.
+
+  Program Definition cg_future (x y:tid) (cg : computation_graph) : computation_graph :=
+  let nx' := cg_size cg in
+  let ny := S nx' in
+  let total := S ny in
+  match MT.find x (cg_tasks cg) with
   | Some nx =>
-    match ts_lookup y tsy with
-      | Some ny => (nx, ny) :: es
-      | _ => es
+    @cg_make total ((MT.add x nx') ((MT.add y ny) (cg_tasks cg))) (((x,nx),(x,nx'))::((x,nx),(y,ny))::(cg_edges cg)) _ _
+  | _ => cg
+  end.
+  Next Obligation.
+    symmetry in Heq_anonymous.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
+    apply cg_tasks_spec in Heq_anonymous.
+    apply MT_Facts.add_mapsto_iff in H.
+    destruct H as [(?,?)|(?,?)]. {
+      subst.
+      auto.
+    }
+    apply MT_Facts.add_mapsto_iff in H0.
+    destruct H0 as [(?,?)|(?,?)]. {
+      subst.
+      auto.
+    }
+    apply cg_tasks_spec in H1.
+    auto.
+  Qed.
+  Next Obligation.
+    symmetry in Heq_anonymous.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
+    apply cg_tasks_spec in Heq_anonymous.
+    destruct H as [?|[?|?]];
+    try (inversion H; simpl in *; subst; clear H); eauto.
+    simpl in *.
+    apply cg_edges_spec in H; auto.
+  Qed.
+
+  Program Definition cg_force (x y:tid) (cg : computation_graph) : computation_graph :=
+  let nx' := cg_size cg in
+  let total := S nx' in
+  match MT.find x (cg_tasks cg) with
+  | Some nx =>
+    match MT.find y (cg_tasks cg) with
+    | Some ny =>
+      @cg_make total ((MT.add x nx') (cg_tasks cg)) (((x,nx),(x,nx'))::((y,ny), (x,nx'))::(cg_edges cg)) _ _
+    | _ => cg
     end
-  | _ => es
+  | _ => cg
   end.
+  Next Obligation.
+    symmetry in Heq_anonymous.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
+    apply cg_tasks_spec in Heq_anonymous.
+    symmetry in Heq_anonymous0.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous0.
+    apply cg_tasks_spec in Heq_anonymous0.
+    apply MT_Facts.add_mapsto_iff in H.
+    destruct H as [(?,?)|(?,?)]. {
+      subst.
+      auto.
+    }
+    apply cg_tasks_spec in H0.
+    auto.
+  Qed.
+  Next Obligation.
+    symmetry in Heq_anonymous.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
+    apply cg_tasks_spec in Heq_anonymous.
+    symmetry in Heq_anonymous0.
+    apply MT_Facts.find_mapsto_iff in Heq_anonymous0.
+    apply cg_tasks_spec in Heq_anonymous0.
+    destruct H as [?|[?|?]];
+    try (inversion H; subst; clear H); eauto.
+    apply cg_edges_spec in H; auto.
+  Qed.
 
-  Definition es_eval (ts:time) (x:tid) (y:tid) (ts':time) (es:edges) : edges :=
-  (es_add ts x ts' y) (es_add ts x ts' x es).
-
-  Definition computation_graph := (time * edges) % type.
-
-  Definition cg_edges (cg:computation_graph) : edges :=
-  match cg with
-  | (_, es) => es
-  end.
-
-  Definition cg_lookup (t:tid) (cg:computation_graph) : option node :=
-  match cg with
-  | (ts, _) => ts_lookup t ts
-  end.
-
-  Inductive CGReduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
+  Inductive Reduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
   | cg_reduces_future:
-    forall x y ts es,
-    MT.In x ts ->
-    ~ MT.In y ts ->
-    let ts' := ts_future x y ts in
-    CGReduces (ts,es) (x,Lang.FUTURE y) (ts', (es_eval ts x y ts') es)
+    forall x y cg,
+    MT.In x (cg_tasks cg) ->
+    ~ MT.In y (cg_tasks cg) ->
+    Reduces cg (x,Lang.FUTURE y) (cg_future x y cg)
   | cg_reduces_force:
-    forall x y (ts:time) ts es,
-    MT.In x ts ->
-    MT.In y ts ->
-    let ts' := ts_force x y ts in
-    CGReduces (ts,es) (x,Lang.FORCE y) (ts', (es_eval ts x y ts') es)
+    forall x y cg,
+    MT.In x (cg_tasks cg) ->
+    MT.In y (cg_tasks cg) ->
+    Reduces cg (x,Lang.FORCE y) (cg_force x y cg)
   | cg_reduces_skip:
     forall cg t o,
     Lang.is_f_op o = false ->
-    CGReduces cg (t,o) cg.
+    Reduces cg (t,o) cg.
 
+End CG.
+
+Module Shadow.
   Structure access := {
-    write_access: list node;
-    read_access: list node
+    write_access: list CG.node;
+    read_access: list CG.node
   }.
 
   Definition a_add_write n a := Build_access (n :: write_access a) (read_access a).
@@ -359,55 +399,51 @@ Module Races.
   end.
 
   Definition sh_read cg t h sh : shadow :=
-  match cg_lookup t cg with
+  match CG.cg_lookup t cg with
   | Some n => sh_update h (a_add_read n) sh
   | _ => sh
   end.
 
   Definition sh_write cg t h sh : shadow :=
-  match cg_lookup t cg with
+  match CG.cg_lookup t cg with
   | Some n => sh_update h (a_add_write n) sh
   | _ => sh
   end.
 
-  Definition sh_eval (cg:computation_graph) t o (sh:shadow) :=
-  match o with
-  | Lang.READ h => sh_write cg t h
-  | Lang.WRITE h => sh_read cg t h
-  | _ => id
-  end.
+  Inductive Reduces cg: shadow -> Lang.effect -> shadow -> Prop :=
+  | reduces_read:
+    forall sh t h,
+    Reduces cg sh (t,Lang.READ h) (sh_read cg t h sh)
+  | sh_reduces_write:
+    forall sh t h,
+    Reduces cg sh (t,Lang.WRITE h) (sh_write cg t h sh)
+  | reduces_skip:
+    forall sh t o,
+    Lang.is_m_op o = true ->
+    Reduces cg sh (t,o) sh.
 
-  Definition race_state := (Lang.state * computation_graph * shadow) % type.
+End Shadow.
 
-  Definition r_shadow (s:race_state) : shadow :=
+Module Races.
+
+  Definition race_state := (Lang.state * CG.computation_graph * Shadow.shadow) % type.
+
+  Definition r_shadow (s:race_state) : Shadow.shadow :=
   match s with
   | (_, _, sh) => sh
   end.
 
-  Definition r_edges (s:race_state) : edges :=
+  Definition r_edges (s:race_state) : CG.edges :=
   match s with
-  | (_, cg, _) => cg_edges cg
+  | (_, cg, _) => CG.cg_edges cg
   end.
-
-
-  Inductive SHReduces cg: shadow -> Lang.effect -> shadow -> Prop :=
-  | sh_reduces_read:
-    forall sh t h,
-    SHReduces cg sh (t,Lang.READ h) (sh_read cg t h sh)
-  | sh_reduces_write:
-    forall sh t h,
-    SHReduces cg sh (t,Lang.WRITE h) (sh_write cg t h sh)
-  | sh_reduces_skip:
-    forall sh t o,
-    Lang.is_m_op o = true ->
-    SHReduces cg sh (t,o) sh.
 
   Inductive Reduces: race_state -> race_state -> Prop :=
   | reduces_def:
     forall s s' cg sh o cg' sh',
     Lang.Reduces s o s' ->
-    CGReduces cg o cg' ->
-    SHReduces cg sh o sh' ->
+    CG.Reduces cg o cg' ->
+    Shadow.Reduces cg sh o sh' ->
     Reduces (s, cg, sh) (s', cg', sh').
 
   Require Import Coq.Relations.Relation_Operators.
@@ -417,21 +453,21 @@ Module Races.
     List.In (n1,n2) (r_edges s) ->
     Prec s n1 n2.
 
-  Definition HB s := clos_trans node (Prec s).
+  Definition HB s := clos_trans CG.node (Prec s).
 
   Definition MHP s n1 n2 := ~ HB s n1 n2 /\ ~ HB s n2 n1.
 
-  Inductive Conflict (s:race_state) (a:access): Prop :=
+  Inductive Conflict (s:race_state) (a:Shadow.access): Prop :=
   | conflict_rw:
     forall n1 n2,
-    List.In n1 (read_access a) ->
-    List.In n2 (write_access a) -> 
+    List.In n1 (Shadow.read_access a) ->
+    List.In n2 (Shadow.write_access a) -> 
     MHP s n1 n2 ->
     Conflict s a
   | conflict_ww:
     forall n1 n2,
-    List.In n1 (write_access a) ->
-    List.In n2 (write_access a) -> 
+    List.In n1 (Shadow.write_access a) ->
+    List.In n2 (Shadow.write_access a) -> 
     MHP s n1 n2 ->
     Conflict s a.
 
@@ -711,96 +747,6 @@ Module Vector.
   Qed.
 
   End Defs.
+End Vector.
 
-
-Module CG.
-  Structure computation_graph := cg_make {
-    cg_size : nat;
-    cg_tasks: MT.t nat;
-    cg_edges: list ((tid*nat) * (tid*nat));
-    cg_tasks_spec:
-      forall x n,
-      MT.MapsTo x n cg_tasks ->
-      n < cg_size;
-    cg_edges_spec:
-      forall x y,
-      List.In (x,y) cg_edges -> (snd x) < (snd y)
-  }.
-
-  Program Definition cg_future (x y:tid) (cg : computation_graph) : computation_graph :=
-  let nx' := cg_size cg in
-  let ny := S nx' in
-  let total := S ny in
-  match MT.find x (cg_tasks cg) with
-  | Some nx =>
-    @cg_make total ((MT.add x nx') ((MT.add y ny) (cg_tasks cg))) (((x,nx),(x,nx'))::((x,nx),(y,ny))::(cg_edges cg)) _ _
-  | _ => cg
-  end.
-  Next Obligation.
-    symmetry in Heq_anonymous.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
-    apply cg_tasks_spec in Heq_anonymous.
-    apply MT_Facts.add_mapsto_iff in H.
-    destruct H as [(?,?)|(?,?)]. {
-      subst.
-      auto.
-    }
-    apply MT_Facts.add_mapsto_iff in H0.
-    destruct H0 as [(?,?)|(?,?)]. {
-      subst.
-      auto.
-    }
-    apply cg_tasks_spec in H1.
-    auto.
-  Qed.
-  Next Obligation.
-    symmetry in Heq_anonymous.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
-    apply cg_tasks_spec in Heq_anonymous.
-    destruct H as [?|[?|?]];
-    try (inversion H; simpl in *; subst; clear H); eauto.
-    simpl in *.
-    apply cg_edges_spec in H; auto.
-  Qed.
-
-  Program Definition cg_force (x y:tid) (cg : computation_graph) : computation_graph :=
-  let nx' := cg_size cg in
-  let total := S nx' in
-  match MT.find x (cg_tasks cg) with
-  | Some nx =>
-    match MT.find y (cg_tasks cg) with
-    | Some ny =>
-      @cg_make total ((MT.add x nx') (cg_tasks cg)) (((x,nx),(x,nx'))::((y,ny), (x,nx'))::(cg_edges cg)) _ _
-    | _ => cg
-    end
-  | _ => cg
-  end.
-  Next Obligation.
-    symmetry in Heq_anonymous.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
-    apply cg_tasks_spec in Heq_anonymous.
-    symmetry in Heq_anonymous0.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous0.
-    apply cg_tasks_spec in Heq_anonymous0.
-    apply MT_Facts.add_mapsto_iff in H.
-    destruct H as [(?,?)|(?,?)]. {
-      subst.
-      auto.
-    }
-    apply cg_tasks_spec in H0.
-    auto.
-  Qed.
-  Next Obligation.
-    symmetry in Heq_anonymous.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
-    apply cg_tasks_spec in Heq_anonymous.
-    symmetry in Heq_anonymous0.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous0.
-    apply cg_tasks_spec in Heq_anonymous0.
-    destruct H as [?|[?|?]];
-    try (inversion H; subst; clear H); eauto.
-    apply cg_edges_spec in H; auto.
-  Qed.
-
-End CG.
 
