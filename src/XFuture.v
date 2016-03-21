@@ -303,19 +303,15 @@ Module Walk2Lt.
 End Walk2Lt.
 
 Module DAG.
+  Require Import Coq.Lists.List.
   Section Defs.
   Variable A:Type.
 
   Variable Lt: A -> A -> Prop.
 
-  Inductive DAG : list (A*A) -> Prop :=
-  | dag_nil:
-    DAG nil
-  | dag_cons:
-    forall x y es,
-    DAG es ->
-    Lt x y ->
-    DAG ((x,y)::es).
+  Definition LtEdge (e:A*A) := let (x,y) := e in Lt x y.
+
+  Notation DAG := (Forall LtEdge).
 
   Lemma dag_in_to_lt:
     forall es,
@@ -340,13 +336,10 @@ Module DAG.
     DAG es.
   Proof.
     intros.
-    induction es. {
-      auto using dag_nil.
-    }
-    destruct a as (x,y).
-    apply dag_cons.
-    - eauto using dag_in_to_lt, in_cons.
-    - auto using in_eq.
+    rewrite Forall_forall.
+    unfold LtEdge.
+    intros; destruct x.
+    auto.
   Qed.
 
   Notation Edge := (fun g e => @List.In (A*A) e g) %type.
@@ -377,6 +370,8 @@ End Defs.
 End DAG.
 
 Module CG.
+  Section Defs.
+
   Definition node := (tid*nat) % type.
 
   Definition edge := (node * node) % type.
@@ -386,15 +381,42 @@ Module CG.
   Structure computation_graph := cg_make {
     cg_size : nat;
     cg_tasks: MT.t nat;
-    cg_edges: list (node * node);
-    cg_tasks_spec:
-      forall x n,
-      MT.MapsTo x n cg_tasks ->
-      n < cg_size;
-    cg_edges_spec:
-      forall x y,
-      List.In (x,y) cg_edges -> (snd x) < (snd y)
+    cg_edges: list (node * node)
   }.
+
+  Definition Size (cg:computation_graph) :=
+    forall x n,
+    MT.MapsTo x n (cg_tasks cg) ->
+    n < cg_size cg.
+
+  Let Lt (n1 n2:node) := (snd n1) < (snd n2).
+
+  Let LtEdge (e:edge) := let (x,y) := e in Lt x y.
+
+  Lemma cg_size_maps_to:
+    forall cg x n,
+    Size cg ->
+    MT.MapsTo x n (cg_tasks cg) ->
+    n < cg_size cg.
+  Proof.
+    unfold Size; intros; eauto.
+  Qed.
+
+  Definition NodesLt (cg:computation_graph) := Forall LtEdge (cg_edges cg).
+
+  Lemma cg_nodes_lt:
+    forall cg x y,
+    NodesLt cg ->
+    List.In (x,y) (cg_edges cg) ->
+    Lt x y.
+  Proof.
+    intros.
+    unfold NodesLt in *.
+    rewrite Forall_forall in H.
+    unfold LtEdge in *.
+    apply H in H0.
+    assumption.
+  Qed.
 
   Definition cg_lookup (t:tid) cg : option node :=
   match MT.find t (cg_tasks cg) with
@@ -402,79 +424,128 @@ Module CG.
   | _ => None
   end.
 
-  Program Definition cg_future (x y:tid) (cg : computation_graph) : computation_graph :=
+  Definition cg_future (x y:tid) (cg : computation_graph) : computation_graph :=
   let nx' := cg_size cg in
   let ny := S nx' in
   let total := S ny in
   match MT.find x (cg_tasks cg) with
   | Some nx =>
-    @cg_make total ((MT.add x nx') ((MT.add y ny) (cg_tasks cg))) (((x,nx),(x,nx'))::((x,nx),(y,ny))::(cg_edges cg)) _ _
+    @cg_make total ((MT.add x nx') ((MT.add y ny) (cg_tasks cg))) (((x,nx),(x,nx'))::((x,nx),(y,ny))::(cg_edges cg))
   | _ => cg
   end.
-  Next Obligation.
-    symmetry in Heq_anonymous.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
-    apply cg_tasks_spec in Heq_anonymous.
-    apply MT_Facts.add_mapsto_iff in H.
-    destruct H as [(?,?)|(?,?)]. {
-      subst.
-      auto.
-    }
-    apply MT_Facts.add_mapsto_iff in H0.
-    destruct H0 as [(?,?)|(?,?)]. {
-      subst.
-      auto.
-    }
-    apply cg_tasks_spec in H1.
-    auto.
-  Qed.
-  Next Obligation.
-    symmetry in Heq_anonymous.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
-    apply cg_tasks_spec in Heq_anonymous.
-    destruct H as [?|[?|?]];
-    try (inversion H; simpl in *; subst; clear H); eauto.
-    simpl in *.
-    apply cg_edges_spec in H; auto.
-  Qed.
 
-  Program Definition cg_force (x y:tid) (cg : computation_graph) : computation_graph :=
+  Definition cg_force (x y:tid) (cg : computation_graph) : computation_graph :=
   let nx' := cg_size cg in
   let total := S nx' in
   match MT.find x (cg_tasks cg) with
   | Some nx =>
     match MT.find y (cg_tasks cg) with
     | Some ny =>
-      @cg_make total ((MT.add x nx') (cg_tasks cg)) (((x,nx),(x,nx'))::((y,ny), (x,nx'))::(cg_edges cg)) _ _
+      @cg_make total ((MT.add x nx') (cg_tasks cg)) (((x,nx),(x,nx'))::((y,ny), (x,nx'))::(cg_edges cg))
     | _ => cg
     end
   | _ => cg
   end.
-  Next Obligation.
-    symmetry in Heq_anonymous.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
-    apply cg_tasks_spec in Heq_anonymous.
-    symmetry in Heq_anonymous0.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous0.
-    apply cg_tasks_spec in Heq_anonymous0.
-    apply MT_Facts.add_mapsto_iff in H.
-    destruct H as [(?,?)|(?,?)]. {
+
+  Lemma cg_future_size:
+    forall cg x y,
+    Size cg ->
+    Size (cg_future x y cg).
+  Proof.
+    intros.
+    unfold cg_future.
+    destruct (MT_Extra.find_rw x (cg_tasks cg)) as [(rw,?)|(e,(rw,?))]; rewrite rw; clear rw. {
+      auto.
+    }
+    unfold Size in *; intros; simpl in *.
+    apply MT_Facts.add_mapsto_iff in H1.
+    destruct H1 as [(?,?)|(?,?)]. {
       subst.
       auto.
     }
-    apply cg_tasks_spec in H0.
+    apply MT_Facts.add_mapsto_iff in H2.
+    destruct H2 as [(?,?)|(?,?)]. {
+      subst.
+      auto.
+    }
+    apply H in H3.
+    eauto.
+  Qed.
+
+  Lemma cg_force_size:
+    forall cg x y,
+    Size cg ->
+    Size (cg_force x y cg).
+  Proof.
+    intros.
+    unfold cg_force.
+    destruct (MT_Extra.find_rw x (cg_tasks cg)) as [(rw,?)|(nx,(rw,?))]; rewrite rw; clear rw. {
+      auto.
+    }
+    destruct (MT_Extra.find_rw y (cg_tasks cg)) as [(rw,?)|(ny,(rw,?))]; rewrite rw; clear rw. {
+      auto.
+    }
+    unfold Size in *; intros; simpl in *.
+    apply MT_Facts.add_mapsto_iff in H2.
+    destruct H2 as [(?,?)|(?,?)]. {
+      subst.
+      auto.
+    }
+    apply H in H3.
+    eauto.
+  Qed.
+
+  Lemma cg_future_nodes_lt:
+    forall cg x y,
+    Size cg ->
+    NodesLt cg ->
+    NodesLt (cg_future x y cg).
+  Proof.
+    intros.
+    unfold cg_future.
+    destruct (MT_Extra.find_rw x (cg_tasks cg)) as [(rw,?)|(e,(rw,?))];
+    rewrite rw; clear rw. {
+      auto.
+    }
+    unfold NodesLt in *; intros; simpl in *.
+    apply Forall_cons. {
+      unfold LtEdge, Lt.
+      simpl.
+      eauto using cg_size_maps_to.
+    }
+    apply Forall_cons. {
+      unfold LtEdge, Lt.
+      simpl.
+      apply cg_size_maps_to in H1; auto.
+    }
     auto.
   Qed.
-  Next Obligation.
-    symmetry in Heq_anonymous.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous.
-    apply cg_tasks_spec in Heq_anonymous.
-    symmetry in Heq_anonymous0.
-    apply MT_Facts.find_mapsto_iff in Heq_anonymous0.
-    apply cg_tasks_spec in Heq_anonymous0.
-    destruct H as [?|[?|?]];
-    try (inversion H; subst; clear H); eauto.
-    apply cg_edges_spec in H; auto.
+
+  Lemma cg_force_nodes_lt:
+    forall cg x y,
+    Size cg ->
+    NodesLt cg ->
+    NodesLt (cg_force x y cg).
+  Proof.
+    intros.
+    unfold cg_force.
+    destruct (MT_Extra.find_rw x (cg_tasks cg)) as [(rw,?)|(e,(rw,?))];
+    rewrite rw; clear rw; auto.
+    unfold NodesLt in *; intros; simpl in *.
+    destruct (MT_Extra.find_rw y (cg_tasks cg)) as [(rw,?)|(n',(rw,?))];
+    rewrite rw; clear rw; auto.
+    simpl in *.
+    apply Forall_cons. {
+      unfold LtEdge, Lt.
+      simpl.
+      eauto using cg_size_maps_to.
+    }
+    apply Forall_cons. {
+      unfold LtEdge, Lt.
+      simpl.
+      apply cg_size_maps_to in H2; auto.
+    }
+    auto.
   Qed.
 
   Inductive Reduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
@@ -497,7 +568,7 @@ Module CG.
 
   Require Import Coq.Relations.Relation_Operators.
 
-  Definition HB cg := clos_trans CG.node (Prec cg).
+  Definition HB cg := clos_trans node (Prec cg).
 
   Lemma hb_trans:
     forall cg n1 n2 n3,
@@ -511,17 +582,15 @@ Module CG.
 
   Require Aniceto.Graphs.Graph.
 
-  Let Lt (n1 n2:node) := (snd n1) < (snd n2).
-
   Let cg_is_dag:
     forall cg,
-    DAG.DAG Lt (cg_edges cg).
+    NodesLt cg ->
+    Forall (DAG.LtEdge Lt) (cg_edges cg).
   Proof.
     intros.
     apply DAG.make_dag.
     intros.
-    apply cg_edges_spec in H.
-    auto.
+    apply cg_nodes_lt in H0; auto.
   Qed.
 
   Let Edge cg e := (List.In e (cg_edges cg)).
@@ -548,8 +617,8 @@ Module CG.
     auto with *.
   Qed.
 
-  Lemma hb_irrefl:
-    forall cg n,
+  Lemma hb_irrefl (cg:computation_graph) (G:NodesLt cg):
+    forall n,
     ~ HB cg n n.
   Proof.
     intros.
@@ -560,23 +629,49 @@ Module CG.
     - unfold Lt in *.
       omega.
     - apply lt_trans.
-    - auto using cg_is_dag.
+    - auto.
   Qed.
 
-  Lemma hb_asymm:
-    forall cg n1 n2,
+  Lemma hb_asymm (cg:computation_graph) (G:NodesLt cg):
+    forall n1 n2,
     HB cg n1 n2 ->
     ~ HB cg n2 n1.
   Proof.
     intros.
     unfold not; intros.
     assert (HB cg n1 n1) by eauto using hb_trans.
-    apply hb_irrefl in H1.
-    assumption.
+    apply hb_irrefl in H1; auto.
   Qed.
 
   Definition MHP cg n1 n2 := ~ HB cg n1 n2 /\ ~ HB cg n2 n1.
+(*
+  Let mhb_preserves_future:
+    forall cg n1 n2 x y,
+    MHP cg n1 n2 ->
+    MHP (cg_future x y cg) n1 n2.
+  Proof.
+    intros.
+    unfold cg_future.
+    destruct (MT_Extra.find_rw x (cg_tasks cg)) as [(rw,?)|(e,(rw,?))];
+    rewrite rw; auto; clear rw.
+    unfold MHP.
+    split.
+    - unfold not; intros.
+      destruct H.
+  Qed.
 
+  Lemma mhb_preservation:
+    forall cg n1 n2 o cg',
+    MHP cg n1 n2 ->
+    Reduces cg o cg' ->
+    MHP cg' n1 n2.
+  Proof.
+    intros.
+    destruct H0.
+    - 
+  Qed.
+*)
+End Defs.
 End CG.
 
 Module Shadow.
