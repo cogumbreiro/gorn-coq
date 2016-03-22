@@ -387,41 +387,22 @@ Module DAG.
     forall x,
     ~ Lt x x.
 
-  Lemma dag_cons_cena:
+  Let dag_cons_inv:
     forall a b es,
     DAG es ->
     UpperBound b es ->
     Lt a b ->
     forall w,
     Walk (Edge ((a,b)::es)) w ->
-    w = nil \/ End w (a,b) \/ ~ List.In (a,b) w.
+    End w (a,b) \/ ~ List.In (a,b) w.
   Proof.
     induction w; intros. {
       eauto.
     }
-    right.
     inversion H2; subst.
     assert (W:=H5).
     apply IHw in H5; clear H2 IHw.
-    destruct H5 as [?|[?|?]].
-    - subst.
-      destruct a0 as (x,y).
-      destruct H6. {
-        inversion H2; subst; clear H2.
-        eauto using end_nil.
-      }
-      right.
-      unfold not; intros.
-      assert (rw: (x,y) = (a,b)). {
-        inversion H3.
-        - trivial.
-        - contradiction.
-      }
-      rewrite rw in *; clear rw.
-      apply upper_bound with (max:=b) in H2; auto.
-      destruct H2 as (?,n).
-      apply lt_irrefl in n.
-      assumption.
+    destruct H5 as [?|?].
     - left; auto using end_cons.
     - destruct a0 as (x,y).
       destruct H6. {
@@ -467,70 +448,71 @@ Module DAG.
     auto.
   Qed.
 
-  Lemma dag_cons_cena2:
+  Lemma end_to_append:
+    forall {A:Type} w (e:A*A),
+    End w e ->
+    exists w', w = w' ++ (e::nil).
+  Proof.
+    intros.
+    induction H.
+    - exists nil.
+      auto.
+    - destruct IHEnd as (w', rw).
+      subst.
+      exists (e'::w').
+      simpl.
+      auto.
+  Qed.
+
+  Let dag_cons_inv_2:
     forall a b es,
     DAG es ->
     UpperBound b es ->
     Lt a b ->
     forall w,
-    Walk (Edge ((a,b)::es)) w ->
-    End w (a,b) ->
-    exists w', (w = w' ++ ((a,b)::nil) /\ ~ List.In (a,b) w').
+    Walk (Edge ((a,b)::es)) (w ++ ((a,b)::nil)) ->
+    ~ List.In (a,b) w.
   Proof.
     induction w; intros. {
       (* absurd *)
-      inversion H3.
+      intuition.
     }
-    destruct w. {
-      exists nil.
-      apply end_inv in H3; subst.
-      auto.
-    }
-    inversion H3; subst; clear H3.
-    inversion H2; subst; clear H2.
+    inversion H2; subst.
     assert (W:=H5).
-    destruct (IHw H5 H7) as (w',(Hx,Hy)); clear H5 H7 IHw.
-    destruct w'. {
-      simpl in Hx.
-      inversion Hx; subst; clear Hx Hy W H6.
-      exists (a0::nil).
-      simpl.
-      split; auto.
-      unfold not; intros.
-      destruct H2; try contradiction.
-      subst.
-      apply linked_inv in H8; subst.
-      apply lt_irrefl in H1; contradiction.
-    }
-    simpl in Hx.
-    inversion Hx; subst; clear Hx.
-    exists (a0::p0::w'); split; auto.
+    apply IHw in H5; clear IHw.
     assert ((a,b) <> a0). {
-      unfold not; intros.
-      subst.
-      destruct p0 as (b',c).
-      apply linked_inv in H8.
-      subst.
-      assert (List.In (b,c) ((a,b)::es)). {
-        apply walk_to_edge with (e:=(b,c)) in W; auto using in_eq.
-      }
-      destruct H2. {
-        inversion H2; subst.
+      unfold not; intros; subst; clear H6.
+      destruct w. {
+        simpl in H7.
+        apply linked_inv in H7.
+        subst.
         apply lt_irrefl in H1.
         contradiction.
       }
-      apply upper_bound with (max:=b) in H2; auto.
-      destruct H2 as (n, _).
+      destruct p as (b',c).
+      apply linked_inv in H7.
+      subst.
+      assert (List.In (b,c) ((a,b)::es)). {
+        apply walk_to_edge with (e:=(b,c)) in W; simpl; auto using in_eq.
+      }
+      destruct H3. {
+        inversion H3; subst.
+        apply lt_irrefl in H1.
+        contradiction.
+      }
+      apply upper_bound with (max:=b) in H3; auto.
+      destruct H3 as (n, _).
       apply lt_irrefl in n.
       contradiction.
     }
     unfold not; intros.
-    destruct H3. {
+    destruct H4. {
       subst.
-      contradiction H2; trivial.
+      contradiction H3; trivial.
     }
     contradiction.
   Qed.
+
   
 End Defs.
 
