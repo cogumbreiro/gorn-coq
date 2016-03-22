@@ -366,7 +366,175 @@ Module DAG.
     destruct e as (a,b); simpl.
     eauto using dag_in_to_lt.
   Qed.
+
+  Definition UpperBound max :=
+  List.Forall (fun (e:A*A)=> let (x,y) := e in Lt x max /\ Lt y max).
+
+  Lemma upper_bound:
+    forall (max a b:A) l,
+    UpperBound max l ->
+    List.In (a,b) l ->
+    Lt a max /\ Lt b max.
+  Proof.
+    unfold UpperBound.
+    intros.
+    rewrite Forall_forall in H.
+    apply H in H0.
+    auto.
+  Qed.
+
+  Variable lt_irrefl:
+    forall x,
+    ~ Lt x x.
+
+  Lemma dag_cons_cena:
+    forall a b es,
+    DAG es ->
+    UpperBound b es ->
+    Lt a b ->
+    forall w,
+    Walk (Edge ((a,b)::es)) w ->
+    w = nil \/ End w (a,b) \/ ~ List.In (a,b) w.
+  Proof.
+    induction w; intros. {
+      eauto.
+    }
+    right.
+    inversion H2; subst.
+    assert (W:=H5).
+    apply IHw in H5; clear H2 IHw.
+    destruct H5 as [?|[?|?]].
+    - subst.
+      destruct a0 as (x,y).
+      destruct H6. {
+        inversion H2; subst; clear H2.
+        eauto using end_nil.
+      }
+      right.
+      unfold not; intros.
+      assert (rw: (x,y) = (a,b)). {
+        inversion H3.
+        - trivial.
+        - contradiction.
+      }
+      rewrite rw in *; clear rw.
+      apply upper_bound with (max:=b) in H2; auto.
+      destruct H2 as (?,n).
+      apply lt_irrefl in n.
+      assumption.
+    - left; auto using end_cons.
+    - destruct a0 as (x,y).
+      destruct H6. {
+        inversion H3; subst; clear H3.
+        left.
+        destruct w; auto using end_nil.
+        (* absurd *)
+        destruct p as (y',z).
+        apply linked_inv in H7; subst.
+        apply walk_to_forall in W.
+        assert (i:List.In (y,z) ((y,z)::w)) by eauto using in_eq.
+        rewrite Forall_forall in W.
+        apply W in i.
+        destruct i as [i|i].
+        - inversion i; subst.
+          apply lt_irrefl in H1.
+          contradiction.
+        - apply upper_bound with (max:=y) in i; auto.
+          destruct i as (i,_).
+          apply lt_irrefl in i.
+          contradiction.
+      }
+      right.
+      unfold not; intros.
+      destruct H4.
+      + inversion H4; subst; clear H4.
+        apply upper_bound with (max:=b) in H3; auto.
+        destruct H3 as (?,n).
+        apply lt_irrefl in n.
+        contradiction.
+      + contradiction. 
+  Qed.
+
+  Lemma walk_to_edge:
+    forall {A:Type} (E:A*A->Prop) w e,
+    Walk E w ->
+    List.In e w ->
+    E e.
+  Proof.
+    intros.
+    apply walk_to_forall in H.
+    rewrite Forall_forall in H.
+    auto.
+  Qed.
+
+  Lemma dag_cons_cena2:
+    forall a b es,
+    DAG es ->
+    UpperBound b es ->
+    Lt a b ->
+    forall w,
+    Walk (Edge ((a,b)::es)) w ->
+    End w (a,b) ->
+    exists w', (w = w' ++ ((a,b)::nil) /\ ~ List.In (a,b) w').
+  Proof.
+    induction w; intros. {
+      (* absurd *)
+      inversion H3.
+    }
+    destruct w. {
+      exists nil.
+      apply end_inv in H3; subst.
+      auto.
+    }
+    inversion H3; subst; clear H3.
+    inversion H2; subst; clear H2.
+    assert (W:=H5).
+    destruct (IHw H5 H7) as (w',(Hx,Hy)); clear H5 H7 IHw.
+    destruct w'. {
+      simpl in Hx.
+      inversion Hx; subst; clear Hx Hy W H6.
+      exists (a0::nil).
+      simpl.
+      split; auto.
+      unfold not; intros.
+      destruct H2; try contradiction.
+      subst.
+      apply linked_inv in H8; subst.
+      apply lt_irrefl in H1; contradiction.
+    }
+    simpl in Hx.
+    inversion Hx; subst; clear Hx.
+    exists (a0::p0::w'); split; auto.
+    assert ((a,b) <> a0). {
+      unfold not; intros.
+      subst.
+      destruct p0 as (b',c).
+      apply linked_inv in H8.
+      subst.
+      assert (List.In (b,c) ((a,b)::es)). {
+        apply walk_to_edge with (e:=(b,c)) in W; auto using in_eq.
+      }
+      destruct H2. {
+        inversion H2; subst.
+        apply lt_irrefl in H1.
+        contradiction.
+      }
+      apply upper_bound with (max:=b) in H2; auto.
+      destruct H2 as (n, _).
+      apply lt_irrefl in n.
+      contradiction.
+    }
+    unfold not; intros.
+    destruct H3. {
+      subst.
+      contradiction H2; trivial.
+    }
+    contradiction.
+  Qed.
+  
 End Defs.
+
+
 End DAG.
 
 Module CG.
@@ -428,20 +596,22 @@ Module CG.
   let nx' := cg_size cg in
   let ny := S nx' in
   let total := S ny in
+  let tasks := (MT.add x nx') ((MT.add y ny) (cg_tasks cg)) in
   match MT.find x (cg_tasks cg) with
   | Some nx =>
-    @cg_make total ((MT.add x nx') ((MT.add y ny) (cg_tasks cg))) (((x,nx),(x,nx'))::((x,nx),(y,ny))::(cg_edges cg))
+    cg_make total tasks (((x,nx),(x,nx'))::((x,nx),(y,ny))::(cg_edges cg))
   | _ => cg
   end.
 
   Definition cg_force (x y:tid) (cg : computation_graph) : computation_graph :=
   let nx' := cg_size cg in
   let total := S nx' in
+  let tasks := (MT.add x nx') (cg_tasks cg) in
   match MT.find x (cg_tasks cg) with
   | Some nx =>
     match MT.find y (cg_tasks cg) with
     | Some ny =>
-      @cg_make total ((MT.add x nx') (cg_tasks cg)) (((x,nx),(x,nx'))::((y,ny), (x,nx'))::(cg_edges cg))
+      cg_make total tasks (((x,nx),(x,nx'))::((y,ny), (x,nx'))::(cg_edges cg))
     | _ => cg
     end
   | _ => cg
@@ -642,6 +812,102 @@ Module CG.
     assert (HB cg n1 n1) by eauto using hb_trans.
     apply hb_irrefl in H1; auto.
   Qed.
+
+  Require Import Aniceto.Graphs.Graph.
+
+  Let cg_future_preserves_prec:
+    forall cg a b x y,
+    Prec cg a b ->
+    Prec (cg_future x y cg) a b.
+  Proof.
+    intros.
+    unfold Prec in *.
+    unfold cg_future; simpl.
+    destruct (MT_Extra.find_rw x (cg_tasks cg)) as [(rw,?)|(nx,(rw,?))];
+    rewrite rw; clear rw; auto.
+    simpl.
+    auto.
+  Qed.
+
+  Let cg_force_preserves_prec:
+    forall cg a b x y,
+    Prec cg a b ->
+    Prec (cg_force x y cg) a b.
+  Proof.
+    intros.
+    unfold Prec in *.
+    unfold cg_force; simpl.
+    destruct (MT_Extra.find_rw x (cg_tasks cg)) as [(rw,?)|(nx,(rw,?))];
+    rewrite rw; clear rw; auto.
+    simpl.
+    destruct (MT_Extra.find_rw y (cg_tasks cg)) as [(rw,?)|(ny,(rw,?))];
+    rewrite rw; clear rw; auto.
+    simpl.
+    auto.
+  Qed.
+
+  Lemma cg_future_preserves_hb:
+    forall cg n1 n2 x y,
+    HB cg n1 n2 ->
+    HB (cg_future x y cg) n1 n2.
+  Proof.
+    intros.
+    unfold HB in *.
+    apply clos_trans_impl with (P:=Prec cg); auto.
+  Qed.
+
+  Lemma cg_force_preserves_hb:
+    forall cg n1 n2 x y,
+    HB cg n1 n2 ->
+    HB (cg_force x y cg) n1 n2.
+  Proof.
+    intros.
+    unfold HB in *.
+    apply clos_trans_impl with (P:=Prec cg); auto.
+  Qed.
+
+  Let hb_neq_fi cg:
+    forall n1 n2,
+    ~ HB cg n1 n2 ->
+    forall n,
+    HB cg n1 n ->
+    n <> n2.
+  Proof.
+    intros.
+    unfold not; intros.
+    subst.
+    contradiction H0.
+  Qed.
+
+  Let hb_neq_if cg:
+    forall n1 n2,
+    (forall n, HB cg n1 n -> n <> n2) ->
+    ~ HB cg n1 n2.
+  Proof.
+    intros.
+    unfold not; intros.
+    apply H in H0.
+    contradiction H0; auto.
+  Qed.
+
+  Let heq_neq_iff cg:
+    forall n1 n2,
+    (forall n, HB cg n1 n -> n <> n2) <-> ~ HB cg n1 n2.
+  Proof.
+    intros; split; try intros; eauto.
+  Qed.
+
+  Let cg_future_preserves_not_hb:
+    forall cg n1 n2 x y,
+    ~ HB cg n1 n2 ->
+    ~ HB (cg_future x y cg) n1 n2.
+  Proof.
+    intros.
+    apply heq_neq_iff.
+    intros.
+    
+  Qed.
+      
 
   Definition MHP cg n1 n2 := ~ HB cg n1 n2 /\ ~ HB cg n2 n1.
 (*
@@ -966,9 +1232,6 @@ Module Races.
     race_def:
       (forall h, MM.In h (r_shadow s) -> HasRace h s) ->
       Race s.
-    
-
-
 End Races.
 
 Module Vector.
