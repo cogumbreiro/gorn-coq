@@ -449,19 +449,25 @@ Module DAG.
   Qed.
 
   Lemma end_to_append:
-    forall {A:Type} w (e:A*A),
-    End w e ->
-    exists w', w = w' ++ (e::nil).
+    forall {A:Type} w (x y:A),
+    End w (x,y) ->
+    exists w', w = w' ++ ((x,y)::nil).
   Proof.
     intros.
-    induction H.
-    - exists nil.
-      auto.
-    - destruct IHEnd as (w', rw).
-      subst.
-      exists (e'::w').
+    induction w. {
+      inversion H.
+    }
+    inversion H; subst. {
+      exists nil.
       simpl.
       auto.
+    }
+    apply IHw in H3; clear IHw.
+    destruct H3 as (w', rw).
+    subst.
+    simpl.
+    exists (a::w').
+    auto.
   Qed.
 
   Let dag_cons_inv_2:
@@ -513,6 +519,125 @@ Module DAG.
     contradiction.
   Qed.
 
+  Let dag_impl_simpl:
+    forall a b es w,
+    Walk (Edge ((a,b)::es)) w ->
+    ~ List.In (a,b) w ->
+    Walk (Edge es) w.
+  Proof.
+    intros.
+    apply walk_impl_weak with (E:=Edge ((a, b) :: es)); auto; intros.
+    destruct H2.
+    - subst.
+      contradiction.
+    - auto.
+  Qed.
+
+  Lemma ends_with_alt:
+    forall {A} (x y:A),
+    EndsWith ((x, y) :: nil) y.
+  Proof.
+    intros.
+    apply ends_with_def with (v':=x).
+    auto using end_nil.
+  Qed.
+
+  Lemma ends_with_inv_append:
+    forall {A:Type} w (x y z:A),
+    EndsWith (w ++ (x, y) :: nil) z ->
+    y = z.
+  Proof.
+    intros.
+    induction w. {
+      simpl in *.
+      eauto using ends_with_eq.
+    }
+    simpl in H.
+    apply IHw.
+    inversion H; subst.
+    destruct x0  as (v1,v2).
+    destruct H0; subst.
+    inversion H0; subst. {
+      destruct w; inversion H3.
+    }
+    eauto using ends_with_def.
+  Qed.
+
+  Lemma walk_split:
+    forall {A:Type} (a b: A) w w' E,
+    Walk E (w ++ (a, b) :: w') ->
+    w = nil \/ (EndsWith w a /\ Walk E w /\ Walk E ((a,b)::w')).
+  Proof.
+    intros.
+    induction w. {
+      simpl in *.
+      eauto.
+    }
+    right.
+    simpl in H.
+    inversion H; subst; clear H.
+    assert (W:=H2).
+    apply IHw in H2; clear IHw.
+    destruct a0 as (x,y).
+    destruct H2 as [?|(?,(?,?))]. {
+      subst; simpl in *.
+      apply linked_inv in H4; subst.
+      repeat split; auto using ends_with_alt.
+      eauto using edge_to_walk.
+    }
+    split; auto using ends_with_cons.
+    destruct w. {
+      simpl in *.
+      apply linked_inv in H4; subst.
+      eauto using edge_to_walk.
+    }
+    auto using walk_cons.
+  Qed.
+
+  Lemma dag_walk2_inv_cons_edge:
+    forall a b es,
+    DAG es ->
+    UpperBound b es ->
+    Lt a b ->
+    forall w x y,
+    Walk2 (Edge ((a,b)::es)) x y w ->
+    w = ((a,b) :: nil) \/ 
+    (exists w', (w = w' ++ ((a,b)::nil)) /\ Walk2 (Edge es) x a w' /\ y = b) \/
+    Walk2 (Edge es) x y w.
+  Proof.
+    intros.
+    assert (W2:=H2).
+    inversion H2; subst; clear H2.
+    assert (X: End w (a,b) \/ ~ List.In (a,b) w) by eauto.
+    destruct X. {
+      apply end_to_append in H2.
+      destruct H2 as (w', rw).
+      subst.
+      assert (W:=H5).
+      apply dag_cons_inv_2 in H5; auto.
+      apply walk_split in W.
+      destruct W as [?|(?,(?,?))]. {
+        subst.
+        simpl in *.
+        eauto.
+      }
+      apply dag_impl_simpl in H6; auto; clear H5.
+      apply ends_with_inv_append in H4; subst.
+      destruct w'. {
+        simpl in *.
+        eauto.
+      }
+      right; left.
+      destruct p as (x',v).
+      apply starts_with_eq in H3; subst.
+      exists ((x,v)::w').
+      intuition.
+      auto using starts_with_def, walk2_def.
+    }
+    right; right.
+    apply dag_impl_simpl in H5; auto.
+    auto using walk2_def.
+  Qed.
   
 End Defs.
 
@@ -878,7 +1003,7 @@ Module CG.
   Proof.
     intros; split; try intros; eauto.
   Qed.
-
+(*
   Let cg_future_preserves_not_hb:
     forall cg n1 n2 x y,
     ~ HB cg n1 n2 ->
@@ -889,7 +1014,7 @@ Module CG.
     intros.
     
   Qed.
-      
+  *)    
 
   Definition MHP cg n1 n2 := ~ HB cg n1 n2 /\ ~ HB cg n2 n1.
 (*
@@ -1212,7 +1337,8 @@ Module Races.
 
   Inductive Race s : Prop :=
     race_def:
-      (forall h, MM.In h (r_shadow s) -> HasRace h s) ->
+      forall h,
+      HasRace h s ->
       Race s.
 End Races.
 
