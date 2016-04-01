@@ -261,388 +261,120 @@ Module Lang.
   end.
 End Lang.
 
-Module Walk2Lt.
-  Section Defs.
-  Variable A:Type.
+Require Import Aniceto.Graphs.DAG.
+Require Import Coq.Relations.Relation_Operators.
+Require Aniceto.Graphs.Graph.
 
-  Variable Lt: A -> A -> Prop.
 
-  Variable lt_trans:
-    forall (x y z: A),
-    Lt x y ->
-    Lt y z ->
-    Lt x z.
+Module CGExtra.
 
-  Notation Edge := (fun e => let (x,y) := e in Lt x y).
+  Definition node := (tid*nat) % type.
+  Definition edge := (node * node) % type.
+
+  Structure continue_edge := {
+    task: tid;
+    source: nat;
+    target: nat
+  }.
+
+  Definition source_node c : node :=
+  match c with
+  | {| task:= t; source:= n; target:= _ |} => (t,n)
+  end.
+
+  Definition target_node c : node :=
+  match c with
+  | {| task:= t; source:= _; target:= n |} => (t,n)
+  end.
+
+  Definition as_edge (e:continue_edge) := (source_node e, target_node e).
+
+  Inductive triangle :=
+  | Spawn : continue_edge -> node -> triangle
+  | Join : continue_edge -> node -> triangle.
+
+
+  Definition get_continue n :=
+  match n with
+  | Spawn c _ => c
+  | Join c _ => c
+  end.
+
+  Definition fst_edge n := as_edge (get_continue n).
+
+  Definition snd_edge n :=
+  match n with
+  | Spawn c n => ((source_node c), n)
+  | Join c n => (n, (target_node c))
+  end.
+
+  Inductive ContinueEdge t : edge -> Prop :=
+    continue_edge_def:
+      ContinueEdge t (fst_edge t).
+
+  Inductive SpawnEdge: triangle -> edge -> Prop :=
+    spawn_edge_def:
+      forall c n,
+      SpawnEdge (Spawn c n) ((source_node c), n).
+
+  Inductive JoinEdge: triangle -> edge -> Prop :=
+    join_edge_def:
+      forall c n,
+      JoinEdge (Join c n) (n, (target_node c)).
+
+  Inductive IntraEdge t e : Prop :=
+  | intra_edge_continue:
+    ContinueEdge t e ->
+    IntraEdge t e
+  | intra_edge_spawn:
+    SpawnEdge t e ->
+    IntraEdge t e
+  | intra_edge_join:
+    JoinEdge t e ->
+    IntraEdge t e.
+
+  Inductive ListEdge {A:Type} {B:Type} P l (e:B*B) : Prop :=
+  | list_edge_def:
+    forall (x:A),
+    List.In x l ->
+    P x e ->
+    ListEdge P l e.
+
+  Let EContinue := ListEdge ContinueEdge.
+  Let ESpawn := ListEdge SpawnEdge.
+  Let Prec := ListEdge IntraEdge.
 
   Require Import Aniceto.Graphs.Graph.
 
-  Lemma walk_to_lt:
-    forall w x y,
-    Walk2 Edge x y w ->
-    Lt x y.
-  Proof.
-    induction w; intros. {
-      apply walk2_nil_inv in H.
-      inversion H.
-    }
-    destruct a as (x',z).
-    destruct w. {
-      apply walk2_inv_pair in H.
-      destruct H.
-      inversion H; subst; clear H.
-      assumption.
-    }
-    apply walk2_inv in H.
-    destruct H as (z', (He, (Hi, Hw))).
-    inversion He; subst; clear He; rename z' into z.
-    assert (Lt z y) by eauto.
-    eauto.
-  Qed.
-  End Defs.
-End Walk2Lt.
-
-Module DAG.
-  Require Import Coq.Lists.List.
-  Section Defs.
-  Variable A:Type.
-
-  Variable Lt: A -> A -> Prop.
-
-  Definition LtEdge (e:A*A) := let (x,y) := e in Lt x y.
-
-  Notation DAG := (Forall LtEdge).
-
-  Lemma dag_in_to_lt:
-    forall es,
-    DAG es ->
-    forall x y,
-    List.In (x, y) es ->
-    Lt x y.
-  Proof.
-    induction es; intros. {
-      inversion H0.
-    }
-    inversion H; subst; clear H.
-    destruct H0. {
-      inversion H; subst; auto.
-    }
-    eauto.
-  Qed.
-
-  Lemma make_dag:
-    forall es,
-    (forall x y, List.In (x,y) es -> Lt x y) ->
-    DAG es.
-  Proof.
-    intros.
-    rewrite Forall_forall.
-    unfold LtEdge.
-    intros; destruct x.
-    auto.
-  Qed.
-
-  Notation Edge := (fun g e => @List.In (A*A) e g) %type.
-
-  Require Import Aniceto.Graphs.Graph.
-
-  Variable lt_trans:
-    forall (x y z: A),
-    Lt x y ->
-    Lt y z ->
-    Lt x z.
-
-  Lemma dag_walk_to_lt:
-    forall es,
-    DAG es ->
-    forall w x y,
-    Walk2 (Edge es) x y w ->
-    Lt x y.
-  Proof.
-    intros.
-    apply Walk2Lt.walk_to_lt with (w:=w); eauto.
-    apply walk2_impl with (E:=Edge es); auto.
-    intros.
-    destruct e as (a,b); simpl.
-    eauto using dag_in_to_lt.
-  Qed.
-
-  Definition UpperBound max :=
-  List.Forall (fun (e:A*A)=> let (x,y) := e in Lt x max /\ Lt y max).
-
-  Lemma upper_bound:
-    forall (max a b:A) l,
-    UpperBound max l ->
-    List.In (a,b) l ->
-    Lt a max /\ Lt b max.
-  Proof.
-    unfold UpperBound.
-    intros.
-    rewrite Forall_forall in H.
-    apply H in H0.
-    auto.
-  Qed.
-
-  Variable lt_irrefl:
-    forall x,
-    ~ Lt x x.
-
-  Let dag_cons_inv:
-    forall a b es,
-    DAG es ->
-    UpperBound b es ->
-    Lt a b ->
+  Inductive Reaches {A:Type} E (x y:A) : Prop :=
+  | reaches_def:
     forall w,
-    Walk (Edge ((a,b)::es)) w ->
-    End w (a,b) \/ ~ List.In (a,b) w.
-  Proof.
-    induction w; intros. {
-      eauto.
-    }
-    inversion H2; subst.
-    assert (W:=H5).
-    apply IHw in H5; clear H2 IHw.
-    destruct H5 as [?|?].
-    - left; auto using end_cons.
-    - destruct a0 as (x,y).
-      destruct H6. {
-        inversion H3; subst; clear H3.
-        left.
-        destruct w; auto using end_nil.
-        (* absurd *)
-        destruct p as (y',z).
-        apply linked_inv in H7; subst.
-        apply walk_to_forall in W.
-        assert (i:List.In (y,z) ((y,z)::w)) by eauto using in_eq.
-        rewrite Forall_forall in W.
-        apply W in i.
-        destruct i as [i|i].
-        - inversion i; subst.
-          apply lt_irrefl in H1.
-          contradiction.
-        - apply upper_bound with (max:=y) in i; auto.
-          destruct i as (i,_).
-          apply lt_irrefl in i.
-          contradiction.
-      }
-      right.
-      unfold not; intros.
-      destruct H4.
-      + inversion H4; subst; clear H4.
-        apply upper_bound with (max:=b) in H3; auto.
-        destruct H3 as (?,n).
-        apply lt_irrefl in n.
-        contradiction.
-      + contradiction. 
-  Qed.
+    Walk2 E x y w ->
+    Reaches E x y.
 
-  Lemma walk_to_edge:
-    forall {A:Type} (E:A*A->Prop) w e,
-    Walk E w ->
-    List.In e w ->
-    E e.
-  Proof.
-    intros.
-    apply walk_to_forall in H.
-    rewrite Forall_forall in H.
-    auto.
-  Qed.
+  Definition HB (ts:list triangle) := @Reaches node (Prec ts).
 
-  Lemma end_to_append:
-    forall {A:Type} w (x y:A),
-    End w (x,y) ->
-    exists w', w = w' ++ ((x,y)::nil).
-  Proof.
-    intros.
-    induction w. {
-      inversion H.
-    }
-    inversion H; subst. {
-      exists nil.
-      simpl.
-      auto.
-    }
-    apply IHw in H3; clear IHw.
-    destruct H3 as (w', rw).
-    subst.
-    simpl.
-    exists (a::w').
-    auto.
-  Qed.
+  Definition PAR ts x y : Prop := ~ HB ts x y /\ ~ HB ts y x.
 
-  Let dag_cons_inv_2:
-    forall a b es,
-    DAG es ->
-    UpperBound b es ->
-    Lt a b ->
-    forall w,
-    Walk (Edge ((a,b)::es)) (w ++ ((a,b)::nil)) ->
-    ~ List.In (a,b) w.
-  Proof.
-    induction w; intros. {
-      (* absurd *)
-      intuition.
-    }
-    inversion H2; subst.
-    assert (W:=H5).
-    apply IHw in H5; clear IHw.
-    assert ((a,b) <> a0). {
-      unfold not; intros; subst; clear H6.
-      destruct w. {
-        simpl in H7.
-        apply linked_inv in H7.
-        subst.
-        apply lt_irrefl in H1.
-        contradiction.
-      }
-      destruct p as (b',c).
-      apply linked_inv in H7.
-      subst.
-      assert (List.In (b,c) ((a,b)::es)). {
-        apply walk_to_edge with (e:=(b,c)) in W; simpl; auto using in_eq.
-      }
-      destruct H3. {
-        inversion H3; subst.
-        apply lt_irrefl in H1.
-        contradiction.
-      }
-      apply upper_bound with (max:=b) in H3; auto.
-      destruct H3 as (n, _).
-      apply lt_irrefl in n.
-      contradiction.
-    }
-    unfold not; intros.
-    destruct H4. {
-      subst.
-      contradiction H3; trivial.
-    }
-    contradiction.
-  Qed.
+  (**
+    We have a safe-spawn when the body of the spawn may run in parallel
+    with the continuation of the spawn.
+    *)
 
-  Let dag_impl_simpl:
-    forall a b es w,
-    Walk (Edge ((a,b)::es)) w ->
-    ~ List.In (a,b) w ->
-    Walk (Edge es) w.
-  Proof.
-    intros.
-    apply walk_impl_weak with (E:=Edge ((a, b) :: es)); auto; intros.
-    destruct H2.
-    - subst.
-      contradiction.
-    - auto.
-  Qed.
+  Inductive SafeSpawn ts t : Prop :=
+  | safe_spawn_def:
+    forall x y x' y',
+    List.In t ts ->
+    SpawnEdge t (x, y) ->
+    ContinueEdge t (x, x') ->
+    (y = y' \/ Reaches (EContinue ts) y y') ->
+    PAR ts x' y' ->
+    SafeSpawn ts t.
 
-  Lemma ends_with_alt:
-    forall {A} (x y:A),
-    EndsWith ((x, y) :: nil) y.
-  Proof.
-    intros.
-    apply ends_with_def with (v':=x).
-    auto using end_nil.
-  Qed.
-
-  Lemma ends_with_inv_append:
-    forall {A:Type} w (x y z:A),
-    EndsWith (w ++ (x, y) :: nil) z ->
-    y = z.
-  Proof.
-    intros.
-    induction w. {
-      simpl in *.
-      eauto using ends_with_eq.
-    }
-    simpl in H.
-    apply IHw.
-    inversion H; subst.
-    destruct x0  as (v1,v2).
-    destruct H0; subst.
-    inversion H0; subst. {
-      destruct w; inversion H3.
-    }
-    eauto using ends_with_def.
-  Qed.
-
-  Lemma walk_split:
-    forall {A:Type} (a b: A) w w' E,
-    Walk E (w ++ (a, b) :: w') ->
-    w = nil \/ (EndsWith w a /\ Walk E w /\ Walk E ((a,b)::w')).
-  Proof.
-    intros.
-    induction w. {
-      simpl in *.
-      eauto.
-    }
-    right.
-    simpl in H.
-    inversion H; subst; clear H.
-    assert (W:=H2).
-    apply IHw in H2; clear IHw.
-    destruct a0 as (x,y).
-    destruct H2 as [?|(?,(?,?))]. {
-      subst; simpl in *.
-      apply linked_inv in H4; subst.
-      repeat split; auto using ends_with_alt.
-      eauto using edge_to_walk.
-    }
-    split; auto using ends_with_cons.
-    destruct w. {
-      simpl in *.
-      apply linked_inv in H4; subst.
-      eauto using edge_to_walk.
-    }
-    auto using walk_cons.
-  Qed.
-
-  Lemma dag_walk2_inv_cons_edge:
-    forall a b es,
-    DAG es ->
-    UpperBound b es ->
-    Lt a b ->
-    forall w x y,
-    Walk2 (Edge ((a,b)::es)) x y w ->
-    w = ((a,b) :: nil) \/ 
-    (exists w', (w = w' ++ ((a,b)::nil)) /\ Walk2 (Edge es) x a w' /\ y = b) \/
-    Walk2 (Edge es) x y w.
-  Proof.
-    intros.
-    assert (W2:=H2).
-    inversion H2; subst; clear H2.
-    assert (X: End w (a,b) \/ ~ List.In (a,b) w) by eauto.
-    destruct X. {
-      apply end_to_append in H2.
-      destruct H2 as (w', rw).
-      subst.
-      assert (W:=H5).
-      apply dag_cons_inv_2 in H5; auto.
-      apply walk_split in W.
-      destruct W as [?|(?,(?,?))]. {
-        subst.
-        simpl in *.
-        eauto.
-      }
-      apply dag_impl_simpl in H6; auto; clear H5.
-      apply ends_with_inv_append in H4; subst.
-      destruct w'. {
-        simpl in *.
-        eauto.
-      }
-      right; left.
-      destruct p as (x',v).
-      apply starts_with_eq in H3; subst.
-      exists ((x,v)::w').
-      intuition.
-      auto using starts_with_def, walk2_def.
-    }
-    right; right.
-    apply dag_impl_simpl in H5; auto.
-    auto using walk2_def.
-  Qed.
-  
-End Defs.
+  Definition Safe ts := List.Forall (SafeSpawn ts) ts.
 
 
-End DAG.
+End CGExtra.
 
 Module CG.
   Section Defs.
@@ -658,40 +390,6 @@ Module CG.
     cg_tasks: MT.t nat;
     cg_edges: list (node * node)
   }.
-
-  Definition Size (cg:computation_graph) :=
-    forall x n,
-    MT.MapsTo x n (cg_tasks cg) ->
-    n < cg_size cg.
-
-  Let Lt (n1 n2:node) := (snd n1) < (snd n2).
-
-  Let LtEdge (e:edge) := let (x,y) := e in Lt x y.
-
-  Lemma cg_size_maps_to:
-    forall cg x n,
-    Size cg ->
-    MT.MapsTo x n (cg_tasks cg) ->
-    n < cg_size cg.
-  Proof.
-    unfold Size; intros; eauto.
-  Qed.
-
-  Definition NodesLt (cg:computation_graph) := Forall LtEdge (cg_edges cg).
-
-  Lemma cg_nodes_lt:
-    forall cg x y,
-    NodesLt cg ->
-    List.In (x,y) (cg_edges cg) ->
-    Lt x y.
-  Proof.
-    intros.
-    unfold NodesLt in *.
-    rewrite Forall_forall in H.
-    unfold LtEdge in *.
-    apply H in H0.
-    assumption.
-  Qed.
 
   Definition cg_lookup (t:tid) cg : option node :=
   match MT.find t (cg_tasks cg) with
@@ -723,6 +421,21 @@ Module CG.
     end
   | _ => cg
   end.
+
+  (** Properties *)
+
+  Let Lt (n1 n2:node) := (snd n1) < (snd n2).
+
+  Let cg_upper_bound cg :node := ((taskid 0), cg_size cg).
+
+  Definition HasBound cg := DAG.UpperBound Lt (cg_upper_bound cg) (cg_edges cg).
+
+  Let LtEdge (e:edge) := let (x,y) := e in Lt x y.
+
+  Definition Size (cg:computation_graph) :=
+    forall x n,
+    MT.MapsTo x n (cg_tasks cg) ->
+    n < cg_size cg.
 
   Lemma cg_future_size:
     forall cg x y,
@@ -771,6 +484,32 @@ Module CG.
     apply H in H3.
     eauto.
   Qed.
+
+  Lemma cg_size_maps_to:
+    forall cg x n,
+    Size cg ->
+    MT.MapsTo x n (cg_tasks cg) ->
+    n < cg_size cg.
+  Proof.
+    unfold Size; intros; eauto.
+  Qed.
+
+  Definition NodesLt (cg:computation_graph) := Forall LtEdge (cg_edges cg).
+
+  Lemma cg_nodes_lt:
+    forall cg x y,
+    NodesLt cg ->
+    List.In (x,y) (cg_edges cg) ->
+    Lt x y.
+  Proof.
+    intros.
+    unfold NodesLt in *.
+    rewrite Forall_forall in H.
+    unfold LtEdge in *.
+    apply H in H0.
+    assumption.
+  Qed.
+
 
   Lemma cg_future_nodes_lt:
     forall cg x y,
@@ -843,9 +582,15 @@ Module CG.
 
   Definition Prec (cg:computation_graph) n1 n2 := List.In (n1,n2) (cg_edges cg).
 
-  Require Import Coq.Relations.Relation_Operators.
-
   Definition HB cg := clos_trans node (Prec cg).
+
+  Inductive Ordered cg n1 n2 : Prop :=
+  | ordered_lr:
+    HB cg n1 n2 ->
+    Ordered cg n1 n2
+  | ordered_rl:
+    HB cg n2 n1 ->
+    Ordered cg n1 n2.
 
   Lemma hb_trans:
     forall cg n1 n2 n3,
@@ -857,12 +602,10 @@ Module CG.
     unfold HB in *; eauto using t_trans.
   Qed.
 
-  Require Aniceto.Graphs.Graph.
-
   Let cg_is_dag:
     forall cg,
     NodesLt cg ->
-    Forall (DAG.LtEdge Lt) (cg_edges cg).
+    DAG Lt (cg_edges cg).
   Proof.
     intros.
     apply DAG.make_dag.
@@ -1004,6 +747,83 @@ Module CG.
     intros; split; try intros; eauto.
   Qed.
 (*
+  Let hb_add_edge_inv:
+    forall x n cg n1 n2,
+    MT.MapsTo x n (cg_tasks cg) ->
+    HB
+      {|
+      cg_size := S (cg_size cg);
+      cg_tasks := MT.add x (cg_size cg) (cg_tasks cg);
+      cg_edges := ((x, n), (x, cg_size cg)) :: cg_edges cg |} n1 n2 ->
+    False.
+  Proof.
+    intros.
+    remember (cg_edges cg) as l.
+    remember (((x, n), (x, cg_size cg))) as e.
+    apply clos_trans_to_walk2 with (Edge:=fun e' => List.In e' (e::l)) in H0. {
+      destruct H0 as (w, W2).
+      assert (X:=W2).
+      apply (DAG.dag_walk2_inv_cons_edge (hb_irrefl cg))) with (Lt:=Lt) in X. {
+        destruct H1 as [?|[(w'',(?,(?,?)))|?]].
+      
+    }
+  Qed.
+
+  Let hb_inv_cg_future:
+    forall x y cg n1 n2,
+    HB (cg_future x y cg) n1 n2 ->
+    HB cg n1 n2 \/
+    (exists n, MT.MapsTo x n (cg_tasks cg) /\ n1 = (x,n) /\ n2 = (x, cg_size cg)) \/
+    False.
+  Proof.
+    intros.
+(*    unfold HB, cg_future, Prec in *.*)
+    unfold cg_future in *.
+    destruct (MT_Extra.find_rw x (cg_tasks cg)) as [(rw,?)|(e,(rw,?))];
+    rewrite rw in *; clear rw; try intuition.
+    remember (cg_edges {|
+            cg_size := _;
+            cg_tasks := _;
+            cg_edges := _ |}) as l.
+    simpl in *.
+    apply clos_trans_to_walk2 with (Edge:=fun (e:edge) => List.In e l) in H. {
+      destruct H as (w, W).
+      assert (X:=W).
+      subst.
+      apply DAG.dag_walk2_inv_cons_edge with (Lt:=Lt) in X.
+      - destruct X as [?|[(w',(?,(?,?)))|?]].
+        + subst.
+          inversion W; subst; clear W.
+          right; left.
+          exists e.
+          split; auto.
+          apply starts_with_eq in H.
+          apply ends_with_eq in H1.
+          auto.
+        + subst.
+          remember (y, S (cg_size cg)) as vy.
+          remember (x, cg_size cg) as vx'.
+          remember (x, e) as vx.
+          apply DAG.dag_walk2_inv_cons_edge with (Lt:=Lt) in H1. {
+            destruct H1 as [?|[(w'',(?,(?,?)))|?]].
+            - rewrite H in *; clear H.
+              simpl in W.
+              assert (vc
+              inversion W; subst.
+              clear H1.
+              apply starts_with_eq in H; subst.
+              inversion H2. {
+                subst.
+                apply linked_inv in H5.
+                inversion H5; subst; clear H5.
+                clear H4.
+                
+          }
+    }
+    
+*)
+
+(*
   Let cg_future_preserves_not_hb:
     forall cg n1 n2 x y,
     ~ HB cg n1 n2 ->
@@ -1011,10 +831,8 @@ Module CG.
   Proof.
     intros.
     apply heq_neq_iff.
-    intros.
-    
   Qed.
-  *)    
+*)   
 
   Definition MHP cg n1 n2 := ~ HB cg n1 n2 /\ ~ HB cg n2 n1.
 (*
@@ -1106,15 +924,47 @@ Module Shadow.
     List.In n (write_access a) ->
     Writes n h.
 
+  Inductive Node n h : Prop :=
+  | node_read:
+    Reads n h ->
+    Node n h
+  | node_write:
+    Writes n h ->
+    Node n h.
+
   Inductive CoAccess (n1 n2:CG.node) (h:mid): Prop :=
-  | co_access_rw:
-    Reads n1 h ->
-    Writes n2 h ->
-    CoAccess n1 n2 h
-  | co_access_ww:
+  | co_access_def:
     Writes n1 h ->
-    Writes n2 h ->
+    Node n2 h ->
     CoAccess n1 n2 h.
+
+  Variable cg: CG.computation_graph.
+
+  Inductive HasRace h : Prop :=
+  | has_race_def:
+    forall n1 n2,
+    CoAccess n1 n2 h ->
+    CG.MHP cg n1 n2 ->
+    HasRace h.
+
+  Inductive OrderedAccesses (lhs:list CG.node) (rhs:list CG.node): Prop :=
+  | safe_reads_def:
+    (forall x y, List.In x lhs -> List.In y rhs -> CG.Ordered cg x y) ->
+    OrderedAccesses lhs rhs.
+
+  Inductive RaceFree h : Prop :=
+  | race_free_def:
+      forall a,
+      MM.MapsTo h a sh ->
+      OrderedAccesses (read_access a) (write_access a) ->
+      OrderedAccesses (write_access a) (write_access a) ->
+      RaceFree h.
+
+  Inductive Racy : Prop :=
+    racy_def:
+      forall h,
+      HasRace h ->
+      Racy.
 
   End Opts.
 
@@ -1124,7 +974,7 @@ Module Shadow.
     forall sh n h a,
     Reads sh n h ->
     MM.MapsTo h a sh ->
-    In n (read_access a).
+    List.In n (read_access a).
   Proof.
     intros.
     inversion H; subst; clear H.
@@ -1136,7 +986,7 @@ Module Shadow.
     forall sh n h a,
     Writes sh n h ->
     MM.MapsTo h a sh ->
-    In n (write_access a).
+    List.In n (write_access a).
   Proof.
     intros.
     inversion H; subst; clear H.
@@ -1146,8 +996,8 @@ Module Shadow.
 
   Let in_read_access_add_read:
     forall n a n',
-    In n (read_access a) ->
-    In n (read_access (a_add_read n' a)).
+    List.In n (read_access a) ->
+    List.In n (read_access (a_add_read n' a)).
   Proof.
     intros.
     destruct a; simpl in *.
@@ -1156,8 +1006,8 @@ Module Shadow.
 
   Let in_read_access_add_write:
     forall n a n',
-    In n (read_access a) ->
-    In n (read_access (a_add_write n' a)).
+    List.In n (read_access a) ->
+    List.In n (read_access (a_add_write n' a)).
   Proof.
     intros.
     destruct a; simpl in *.
@@ -1166,8 +1016,8 @@ Module Shadow.
 
   Let in_write_access_add_read:
     forall n a n',
-    In n (write_access a) ->
-    In n (write_access (a_add_read n' a)).
+    List.In n (write_access a) ->
+    List.In n (write_access (a_add_read n' a)).
   Proof.
     intros.
     destruct a; simpl in *.
@@ -1176,8 +1026,8 @@ Module Shadow.
 
   Let in_write_access_add_write:
     forall n a n',
-    In n (write_access a) ->
-    In n (write_access (a_add_write n' a)).
+    List.In n (write_access a) ->
+    List.In n (write_access (a_add_write n' a)).
   Proof.
     intros.
     destruct a; simpl in *.
@@ -1282,7 +1132,8 @@ Module Shadow.
     CoAccess (sh_read cg t h' sh) n1 n2 h.
   Proof.
     intros.
-    destruct H; eauto using co_access_rw, co_access_ww.
+    destruct H.
+    inversion H0; eauto using co_access_def, node_read, node_write.
   Qed.
 
   Let co_access_preservation_write:
@@ -1291,7 +1142,8 @@ Module Shadow.
     CoAccess (sh_write cg t h' sh) n1 n2 h.
   Proof.
     intros.
-    destruct H; eauto using co_access_rw, co_access_ww.
+    destruct H.
+    inversion H0; eauto using co_access_def, node_read, node_write.
   Qed.
 
   Lemma co_access_preservation:
@@ -1303,6 +1155,7 @@ Module Shadow.
     intros.
     inversion H0; subst; clear H0; eauto.
   Qed.
+
   End Props.
 End Shadow.
 
@@ -1328,18 +1181,6 @@ Module Races.
     Shadow.Reduces cg sh o sh' ->
     Reduces (s, cg, sh) (s', cg', sh').
 
-  Inductive HasRace h s : Prop :=
-  | has_race_def:
-    forall n1 n2,
-    Shadow.CoAccess (r_shadow s) n1 n2 h ->
-    CG.MHP (r_dag s) n1 n2 ->
-    HasRace h s.
-
-  Inductive Race s : Prop :=
-    race_def:
-      forall h,
-      HasRace h s ->
-      Race s.
 End Races.
 
 Module Vector.
