@@ -278,15 +278,8 @@ Section Defs.
   Structure node := {
     node_task: tid;
     node_dag_id: nat;
-    node_spawn_id: nat;
-    node_continue_id: nat
+    node_known: list tid
   }.
-
-  Definition node_sc v := (node_spawn_id v, node_continue_id v).
-
-  (** Spawn-Continue order *)
-
-  Definition sc_lt x y := NAT_PAIR.lt (node_sc x) (node_sc y).
 
   (** DAG id order *)
 
@@ -304,7 +297,7 @@ Section Defs.
 
   Inductive Check : triplet -> Prop :=
   | check_spawn:
-    forall x y dx sx cx dx',
+    forall x y dx dx' l,
     dx < dx' ->
     x <> y ->
     Check
@@ -315,14 +308,12 @@ Section Defs.
         {|
           node_task := x;
           node_dag_id := dx;
-          node_spawn_id := sx;
-          node_continue_id := cx
+          node_known := l
         |},
         {|
           node_task := x;
           node_dag_id := dx';
-          node_spawn_id := sx;
-          node_continue_id := S cx
+          node_known := y::l
         |}
       );
       inter :=
@@ -330,19 +321,17 @@ Section Defs.
         {|
           node_task := x;
           node_dag_id := dx;
-          node_spawn_id := sx;
-          node_continue_id := cx
+          node_known := l
         |},
         {|
           node_task := y;
           node_dag_id := S dx';
-          node_spawn_id := S sx;
-          node_continue_id := 0
+          node_known := l
         |}
       )
     |}
   | check_join:
-    forall x y dx sx cx dx' cy sy dy,
+    forall x y dx dx' dy lx ly,
     dx < dx' ->
     dy < dx' ->
     x <> y ->
@@ -354,14 +343,12 @@ Section Defs.
         {|
           node_task := x;
           node_dag_id := dx;
-          node_spawn_id := sx;
-          node_continue_id := cx
+          node_known := lx
         |},
         {|
           node_task := x;
           node_dag_id := dx';
-          node_spawn_id := sx;
-          node_continue_id := S cx
+          node_known := ly ++ lx
         |}
       );
       inter :=
@@ -369,14 +356,12 @@ Section Defs.
         {|
           node_task := y;
           node_dag_id := dy;
-          node_spawn_id := sy;
-          node_continue_id := cy
+          node_known := ly
         |},
         {|
           node_task := x;
           node_dag_id := dx';
-          node_spawn_id := sx;
-          node_continue_id := S cx
+          node_known := ly ++ lx
         |}
       )
     |}.
@@ -424,29 +409,6 @@ Section Defs.
     inversion H0.
   Qed.
 
-  Lemma check_intra_sc_lt:
-    forall v,
-    Check v ->
-    sc_lt (fst (intra v)) (snd (intra v)).
-  Proof.
-    intros.
-    unfold sc_lt, node_sc, NAT_PAIR.lt.
-    inversion H; simpl in *; eauto.
-  Qed.
-
-  Lemma check_inter_spawn_sc_lt:
-    forall v,
-    Check v ->
-    ntype v = SPAWN ->
-    sc_lt (fst (inter v)) (snd (inter v)).
-  Proof.
-    intros.
-    unfold sc_lt, node_sc, NAT_PAIR.lt.
-    inversion H; simpl in *; auto.
-    rewrite <- H4 in *.
-    inversion H0.
-  Qed.
-
   Lemma check_dag_lt_intra:
     forall v,
     Check v ->
@@ -479,6 +441,10 @@ Section Defs.
     rewrite <- H4 in *.
     inversion H0.
   Qed.
+
+  Definition to_edges (v:triplet) := inter v :: intra v :: nil.
+
+  Definition cg_edges (vs:list triplet) := flat_map to_edges vs.
 
   Inductive Lookup t n: list triplet -> Prop :=
   | lookup_continue: 
@@ -530,31 +496,43 @@ Section Defs.
     Dangling vs ts ->
     Dangling (v::vs) (remove TID.eq_dec y ts).
 
-  (** Ensure that the CG is a DAG. *)
+  (** Ensure that the triplets are connected. *)
 
-  Inductive DAG : list triplet -> nat -> Prop :=
-  | dag_spawn:
+  Inductive Connected : list triplet -> nat -> Prop :=
+  | connected_spawn:
     forall v,
     node_dag_id (fst (intra v)) = 0 ->
-    DAG (v::nil) 2
-  | dag_cons_spawn:
+    Connected (v::nil) 2
+  | connected_cons_spawn:
     forall vs n x nx v,
-    DAG vs n ->
+    ntype v = SPAWN ->
+    Connected vs n ->
     Lookup x nx vs ->
     fst (inter v) = nx ->
     node_dag_id (snd (inter v)) = S n ->
-    DAG (v::vs) (S (S n))
-  | dag_cons_join:
+    Connected (v::vs) (S (S n))
+  | connected_cons_join:
     forall vs n x y nx ny v,
-    DAG vs n ->
+    ntype v = JOIN ->
+    Connected vs n ->
     Lookup x nx vs ->
     Lookup y ny vs ->
-    DAG (v::vs) (S n).
+    fst (inter v) = ny ->
+    snd (intra v) = nx ->
+    Connected (v::vs) (S n).
 
-  Definition SafeJoin v := prod_curry sc_lt (inter v).
+  Inductive SafeJoin v : Prop :=
+  | safe_join_spawn:
+    ntype v = SPAWN ->
+    SafeJoin v
+  | safe_join_join:
+    ntype v = JOIN ->
+    let l := node_known (fst (intra v)) in
+    let y := node_task (fst (inter v)) in
+    List.In y l ->
+    SafeJoin v.
 
   Definition RaceFree := Forall SafeJoin.
-
 
   Inductive Continue v : edge -> Prop :=
     continue_def:
@@ -593,6 +571,33 @@ Section Defs.
   Let LContinue := ListEdge Continue.
   Let LSpawn := ListEdge Spawn.
   Let LPrec := ListEdge Prec.
+
+  Lemma cg_is_dag:
+    forall vs n,
+    Connected vs n ->
+    Forall Check vs ->
+    DAG dag_lt (cg_edges vs).
+  Proof.
+    intros.
+    induction vs. {
+      inversion H.
+    }
+    inversion H.
+    - subst.
+      simpl.
+      apply Forall_cons.
+      + unfold LtEdge.
+        destruct a as (x, y).
+        
+        simpl in *.
+        destruct inter0 as (a,b).
+        unfold prod_uncurry.
+        unfold LPrec.
+        remember ({| ntype := x; intra := y; inter := (a, b) |}) as v.
+        apply list_edge_def with (x0:=v).
+        * eauto using in_eq.
+        * eauto using prec_
+  Qed.
 
   Require Import Aniceto.Graphs.Graph.
 
@@ -633,6 +638,10 @@ Section Defs.
     SafeSpawn ts v.
 
   Definition Safe ts := List.Forall (SafeSpawn ts) ts.
+
+  (** Is predicate [Safe] equivalent to [CG.RaceFree]? Maybe [CG.RaceFree] implies [Safe] *)
+  (** Is predicate [CG.RaceFree] equivalent to [Shadow.RaceFree]? *)
+
 End Defs.
 End CGExtra.
 
