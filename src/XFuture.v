@@ -265,73 +265,323 @@ Require Import Aniceto.Graphs.DAG.
 Require Import Coq.Relations.Relation_Operators.
 Require Aniceto.Graphs.Graph.
 
+Require Import Coq.Structures.OrderedTypeEx.
+
+Module NAT_PAIR := PairOrderedType Nat_as_OT Nat_as_OT.
+
 
 Module CGExtra.
 
-  Definition node := (tid*nat) % type.
-  Definition edge := (node * node) % type.
 
-  Structure continue_edge := {
-    task: tid;
-    source: nat;
-    target: nat
+Section Defs.
+
+  Structure node := {
+    node_task: tid;
+    node_dag_id: nat;
+    node_spawn_id: nat;
+    node_continue_id: nat
   }.
 
-  Definition source_node c : node :=
-  match c with
-  | {| task:= t; source:= n; target:= _ |} => (t,n)
-  end.
+  Definition node_sc v := (node_spawn_id v, node_continue_id v).
 
-  Definition target_node c : node :=
-  match c with
-  | {| task:= t; source:= _; target:= n |} => (t,n)
-  end.
+  (** Spawn-Continue order *)
 
-  Definition as_edge (e:continue_edge) := (source_node e, target_node e).
+  Definition sc_lt x y := NAT_PAIR.lt (node_sc x) (node_sc y).
 
-  Inductive triangle :=
-  | Spawn : continue_edge -> node -> triangle
-  | Join : continue_edge -> node -> triangle.
+  (** DAG id order *)
+
+  Definition dag_lt x y := node_dag_id x < node_dag_id y.
+
+  Definition edge := (node * node) % type.
+
+  Inductive node_type := SPAWN | JOIN.
+
+  Structure triplet := {
+    ntype: node_type;
+    intra : edge;
+    inter : edge
+  }.
+
+  Inductive Check : triplet -> Prop :=
+  | check_spawn:
+    forall x y dx sx cx dx',
+    dx < dx' ->
+    x <> y ->
+    Check
+    {|
+      ntype := SPAWN;
+      intra :=
+      (
+        {|
+          node_task := x;
+          node_dag_id := dx;
+          node_spawn_id := sx;
+          node_continue_id := cx
+        |},
+        {|
+          node_task := x;
+          node_dag_id := dx';
+          node_spawn_id := sx;
+          node_continue_id := S cx
+        |}
+      );
+      inter :=
+      (
+        {|
+          node_task := x;
+          node_dag_id := dx;
+          node_spawn_id := sx;
+          node_continue_id := cx
+        |},
+        {|
+          node_task := y;
+          node_dag_id := S dx';
+          node_spawn_id := S sx;
+          node_continue_id := 0
+        |}
+      )
+    |}
+  | check_join:
+    forall x y dx sx cx dx' cy sy dy,
+    dx < dx' ->
+    dy < dx' ->
+    x <> y ->
+    Check
+    {|
+      ntype := JOIN;
+      intra :=
+      (
+        {|
+          node_task := x;
+          node_dag_id := dx;
+          node_spawn_id := sx;
+          node_continue_id := cx
+        |},
+        {|
+          node_task := x;
+          node_dag_id := dx';
+          node_spawn_id := sx;
+          node_continue_id := S cx
+        |}
+      );
+      inter :=
+      (
+        {|
+          node_task := y;
+          node_dag_id := dy;
+          node_spawn_id := sy;
+          node_continue_id := cy
+        |},
+        {|
+          node_task := x;
+          node_dag_id := dx';
+          node_spawn_id := sx;
+          node_continue_id := S cx
+        |}
+      )
+    |}.
+
+  Lemma check_intra_eq_task:
+    forall v,
+    Check v ->
+    node_task (fst (intra v)) = node_task (snd (intra v)).
+  Proof.
+    intros.
+    inversion H; simpl in *; auto.
+  Qed.
+
+  Lemma check_inter_neq_task:
+    forall v,
+    Check v ->
+    node_task (fst (inter v)) <> node_task (snd (inter v)).
+  Proof.
+    intros.
+    inversion H; simpl in *; auto.
+  Qed.
+
+  Lemma check_inter_dag_spawn:
+    forall v,
+    Check v ->
+    ntype v = SPAWN ->
+    fst (intra v) = fst (inter v).
+  Proof.
+    intros.
+    inversion H; simpl in *.
+    - trivial.
+    - rewrite <- H4 in *.
+      inversion H0.
+  Qed.
+
+  Lemma check_intra_dag_join:
+    forall v,
+    Check v ->
+    ntype v = JOIN ->
+    snd (intra v) = snd (inter v).
+  Proof.
+    intros.
+    inversion H; simpl in *; trivial.
+    rewrite <- H3 in *.
+    inversion H0.
+  Qed.
+
+  Lemma check_intra_sc_lt:
+    forall v,
+    Check v ->
+    sc_lt (fst (intra v)) (snd (intra v)).
+  Proof.
+    intros.
+    unfold sc_lt, node_sc, NAT_PAIR.lt.
+    inversion H; simpl in *; eauto.
+  Qed.
+
+  Lemma check_inter_spawn_sc_lt:
+    forall v,
+    Check v ->
+    ntype v = SPAWN ->
+    sc_lt (fst (inter v)) (snd (inter v)).
+  Proof.
+    intros.
+    unfold sc_lt, node_sc, NAT_PAIR.lt.
+    inversion H; simpl in *; auto.
+    rewrite <- H4 in *.
+    inversion H0.
+  Qed.
+
+  Lemma check_dag_lt_intra:
+    forall v,
+    Check v ->
+    dag_lt (fst (intra v)) (snd (intra v)).
+  Proof.
+    intros.
+    unfold dag_lt.
+    inversion H; simpl in *; auto.
+  Qed.
+
+  Lemma check_dag_lt_inter:
+    forall v,
+    Check v ->
+    dag_lt (fst (inter v)) (snd (inter v)).
+  Proof.
+    intros.
+    unfold dag_lt.
+    inversion H; simpl in *; auto.
+  Qed.
+
+  Lemma check_dag_lt_spawn:
+    forall v,
+    Check v ->
+    ntype v = SPAWN ->
+    dag_lt (snd (intra v)) (snd (inter v)).
+  Proof.
+    intros.
+    unfold dag_lt.
+    inversion H; simpl in *; auto.
+    rewrite <- H4 in *.
+    inversion H0.
+  Qed.
+
+  Inductive Lookup t n: list triplet -> Prop :=
+  | lookup_continue: 
+    forall v l,
+    snd (intra v) = n ->
+    node_task n = t ->
+    Lookup t n (v::l)
+  | lookup_spawn:
+    forall v l,
+    ntype v = SPAWN ->
+    snd (inter v) = n ->
+    node_task n = t ->
+    Lookup t n (v::l)
+  | lookup_cons:
+    forall v l,
+    Lookup t n l ->
+    Lookup t n (v::l).
+
+  (**
+    Ensure the names are being used properly; no continue edges after a task
+    has been termianted (target of a join).
+    *)
+
+  Inductive Dangling : list triplet -> list tid -> Prop :=
+  | dangling_nil:
+    forall v,
+    ntype v = SPAWN ->
+    let x := node_task (fst (inter v)) in
+    let y := node_task (snd (inter v)) in
+    (* x -> y *)
+    Dangling (v::nil) (y::x::nil)
+  | dangling_cons_spawn:
+    forall v vs ts,
+    ntype v = SPAWN ->
+    let x := node_task (fst (inter v)) in
+    let y := node_task (snd (inter v)) in
+    (* x -> y *)
+    List.In x ts ->
+    ~ List.In y ts ->
+    Dangling vs ts ->
+    Dangling (v::vs) (y::ts)
+  | dangling_cons_join:
+    forall v vs ts,
+    ntype v = JOIN ->
+    let x := node_task (fst (inter v)) in
+    let y := node_task (snd (inter v)) in
+    (* x <- y *)
+    List.In x ts ->
+    Dangling vs ts ->
+    Dangling (v::vs) (remove TID.eq_dec y ts).
+
+  (** Ensure that the CG is a DAG. *)
+
+  Inductive DAG : list triplet -> nat -> Prop :=
+  | dag_spawn:
+    forall v,
+    node_dag_id (fst (intra v)) = 0 ->
+    DAG (v::nil) 2
+  | dag_cons_spawn:
+    forall vs n x nx v,
+    DAG vs n ->
+    Lookup x nx vs ->
+    fst (inter v) = nx ->
+    node_dag_id (snd (inter v)) = S n ->
+    DAG (v::vs) (S (S n))
+  | dag_cons_join:
+    forall vs n x y nx ny v,
+    DAG vs n ->
+    Lookup x nx vs ->
+    Lookup y ny vs ->
+    DAG (v::vs) (S n).
+
+  Definition SafeJoin v := prod_curry sc_lt (inter v).
+
+  Definition RaceFree := Forall SafeJoin.
 
 
-  Definition get_continue n :=
-  match n with
-  | Spawn c _ => c
-  | Join c _ => c
-  end.
+  Inductive Continue v : edge -> Prop :=
+    continue_def:
+      Continue v (intra v).
 
-  Definition fst_edge n := as_edge (get_continue n).
+  Inductive Spawn: triplet -> edge -> Prop :=
+    spawn_def:
+      forall v,
+      ntype v = SPAWN ->
+      Spawn v (intra v).
 
-  Definition snd_edge n :=
-  match n with
-  | Spawn c n => ((source_node c), n)
-  | Join c n => (n, (target_node c))
-  end.
+  Inductive Join: triplet -> edge -> Prop :=
+    join_def:
+      forall v,
+      ntype v = JOIN ->
+      Join v (inter v).
 
-  Inductive ContinueEdge t : edge -> Prop :=
-    continue_edge_def:
-      ContinueEdge t (fst_edge t).
-
-  Inductive SpawnEdge: triangle -> edge -> Prop :=
-    spawn_edge_def:
-      forall c n,
-      SpawnEdge (Spawn c n) ((source_node c), n).
-
-  Inductive JoinEdge: triangle -> edge -> Prop :=
-    join_edge_def:
-      forall c n,
-      JoinEdge (Join c n) (n, (target_node c)).
-
-  Inductive IntraEdge t e : Prop :=
-  | intra_edge_continue:
-    ContinueEdge t e ->
-    IntraEdge t e
-  | intra_edge_spawn:
-    SpawnEdge t e ->
-    IntraEdge t e
-  | intra_edge_join:
-    JoinEdge t e ->
-    IntraEdge t e.
+  Inductive Prec t e : Prop :=
+  | prec_continue:
+    Continue t e ->
+    Prec t e
+  | prec_spawn:
+    Spawn t e ->
+    Prec t e
+  | prec_join:
+    Join t e ->
+    Prec t e.
 
   Inductive ListEdge {A:Type} {B:Type} P l (e:B*B) : Prop :=
   | list_edge_def:
@@ -340,9 +590,9 @@ Module CGExtra.
     P x e ->
     ListEdge P l e.
 
-  Let EContinue := ListEdge ContinueEdge.
-  Let ESpawn := ListEdge SpawnEdge.
-  Let Prec := ListEdge IntraEdge.
+  Let LContinue := ListEdge Continue.
+  Let LSpawn := ListEdge Spawn.
+  Let LPrec := ListEdge Prec.
 
   Require Import Aniceto.Graphs.Graph.
 
@@ -352,7 +602,15 @@ Module CGExtra.
     Walk2 E x y w ->
     Reaches E x y.
 
-  Definition HB (ts:list triangle) := @Reaches node (Prec ts).
+  Require Import Coq.Relations.Relation_Operators.
+
+  (** Reflexive closure of continue. *)
+
+  Definition ClosTransRefl {A:Type} E (x y:A) := Reaches E x y \/ x = y.
+
+  Definition ContinueRefl ts x := ClosTransRefl (LContinue ts) x.
+
+  Definition HB (ts:list triplet) := Reaches (LPrec ts).
 
   Definition PAR ts x y : Prop := ~ HB ts x y /\ ~ HB ts y x.
 
@@ -361,19 +619,21 @@ Module CGExtra.
     with the continuation of the spawn.
     *)
 
-  Inductive SafeSpawn ts t : Prop :=
-  | safe_spawn_def:
-    forall x y x' y',
-    List.In t ts ->
-    SpawnEdge t (x, y) ->
-    ContinueEdge t (x, x') ->
-    (y = y' \/ Reaches (EContinue ts) y y') ->
-    PAR ts x' y' ->
-    SafeSpawn ts t.
+  Inductive SafeSpawn ts : triplet -> Prop :=
+  | safe_spawn_eq:
+    forall v,
+    ntype v = SPAWN ->
+    List.In v ts ->
+    (forall y, ContinueRefl ts (snd (inter v)) y -> PAR ts y (snd (intra v) )) ->
+    SafeSpawn ts v
+  | safe_spawn_skip:
+    forall v,
+    ntype v = JOIN ->
+    List.In v ts ->
+    SafeSpawn ts v.
 
   Definition Safe ts := List.Forall (SafeSpawn ts) ts.
-
-
+End Defs.
 End CGExtra.
 
 Module CG.
