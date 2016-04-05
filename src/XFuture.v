@@ -571,7 +571,7 @@ Section Defs.
   Let LContinue := ListEdge Continue.
   Let LSpawn := ListEdge Spawn.
   Let LPrec := ListEdge Prec.
-
+(*
   Lemma cg_is_dag:
     forall vs n,
     Connected vs n ->
@@ -598,7 +598,7 @@ Section Defs.
         * eauto using in_eq.
         * eauto using prec_
   Qed.
-
+*)
   Require Import Aniceto.Graphs.Graph.
 
   Inductive Reaches {A:Type} E (x y:A) : Prop :=
