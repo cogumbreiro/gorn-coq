@@ -571,34 +571,7 @@ Section Defs.
   Let LContinue := ListEdge Continue.
   Let LSpawn := ListEdge Spawn.
   Let LPrec := ListEdge Prec.
-(*
-  Lemma cg_is_dag:
-    forall vs n,
-    Connected vs n ->
-    Forall Check vs ->
-    DAG dag_lt (cg_edges vs).
-  Proof.
-    intros.
-    induction vs. {
-      inversion H.
-    }
-    inversion H.
-    - subst.
-      simpl.
-      apply Forall_cons.
-      + unfold LtEdge.
-        destruct a as (x, y).
-        
-        simpl in *.
-        destruct inter0 as (a,b).
-        unfold prod_uncurry.
-        unfold LPrec.
-        remember ({| ntype := x; intra := y; inter := (a, b) |}) as v.
-        apply list_edge_def with (x0:=v).
-        * eauto using in_eq.
-        * eauto using prec_
-  Qed.
-*)
+
   Require Import Aniceto.Graphs.Graph.
 
   Inductive Reaches {A:Type} E (x y:A) : Prop :=
@@ -1015,122 +988,8 @@ Module CG.
   Proof.
     intros; split; try intros; eauto.
   Qed.
-(*
-  Let hb_add_edge_inv:
-    forall x n cg n1 n2,
-    MT.MapsTo x n (cg_tasks cg) ->
-    HB
-      {|
-      cg_size := S (cg_size cg);
-      cg_tasks := MT.add x (cg_size cg) (cg_tasks cg);
-      cg_edges := ((x, n), (x, cg_size cg)) :: cg_edges cg |} n1 n2 ->
-    False.
-  Proof.
-    intros.
-    remember (cg_edges cg) as l.
-    remember (((x, n), (x, cg_size cg))) as e.
-    apply clos_trans_to_walk2 with (Edge:=fun e' => List.In e' (e::l)) in H0. {
-      destruct H0 as (w, W2).
-      assert (X:=W2).
-      apply (DAG.dag_walk2_inv_cons_edge (hb_irrefl cg))) with (Lt:=Lt) in X. {
-        destruct H1 as [?|[(w'',(?,(?,?)))|?]].
-      
-    }
-  Qed.
-
-  Let hb_inv_cg_future:
-    forall x y cg n1 n2,
-    HB (cg_future x y cg) n1 n2 ->
-    HB cg n1 n2 \/
-    (exists n, MT.MapsTo x n (cg_tasks cg) /\ n1 = (x,n) /\ n2 = (x, cg_size cg)) \/
-    False.
-  Proof.
-    intros.
-(*    unfold HB, cg_future, Prec in *.*)
-    unfold cg_future in *.
-    destruct (MT_Extra.find_rw x (cg_tasks cg)) as [(rw,?)|(e,(rw,?))];
-    rewrite rw in *; clear rw; try intuition.
-    remember (cg_edges {|
-            cg_size := _;
-            cg_tasks := _;
-            cg_edges := _ |}) as l.
-    simpl in *.
-    apply clos_trans_to_walk2 with (Edge:=fun (e:edge) => List.In e l) in H. {
-      destruct H as (w, W).
-      assert (X:=W).
-      subst.
-      apply DAG.dag_walk2_inv_cons_edge with (Lt:=Lt) in X.
-      - destruct X as [?|[(w',(?,(?,?)))|?]].
-        + subst.
-          inversion W; subst; clear W.
-          right; left.
-          exists e.
-          split; auto.
-          apply starts_with_eq in H.
-          apply ends_with_eq in H1.
-          auto.
-        + subst.
-          remember (y, S (cg_size cg)) as vy.
-          remember (x, cg_size cg) as vx'.
-          remember (x, e) as vx.
-          apply DAG.dag_walk2_inv_cons_edge with (Lt:=Lt) in H1. {
-            destruct H1 as [?|[(w'',(?,(?,?)))|?]].
-            - rewrite H in *; clear H.
-              simpl in W.
-              assert (vc
-              inversion W; subst.
-              clear H1.
-              apply starts_with_eq in H; subst.
-              inversion H2. {
-                subst.
-                apply linked_inv in H5.
-                inversion H5; subst; clear H5.
-                clear H4.
-                
-          }
-    }
-    
-*)
-
-(*
-  Let cg_future_preserves_not_hb:
-    forall cg n1 n2 x y,
-    ~ HB cg n1 n2 ->
-    ~ HB (cg_future x y cg) n1 n2.
-  Proof.
-    intros.
-    apply heq_neq_iff.
-  Qed.
-*)   
 
   Definition MHP cg n1 n2 := ~ HB cg n1 n2 /\ ~ HB cg n2 n1.
-(*
-  Let mhb_preserves_future:
-    forall cg n1 n2 x y,
-    MHP cg n1 n2 ->
-    MHP (cg_future x y cg) n1 n2.
-  Proof.
-    intros.
-    unfold cg_future.
-    destruct (MT_Extra.find_rw x (cg_tasks cg)) as [(rw,?)|(e,(rw,?))];
-    rewrite rw; auto; clear rw.
-    unfold MHP.
-    split.
-    - unfold not; intros.
-      destruct H.
-  Qed.
-
-  Lemma mhb_preservation:
-    forall cg n1 n2 o cg',
-    MHP cg n1 n2 ->
-    Reduces cg o cg' ->
-    MHP cg' n1 n2.
-  Proof.
-    intros.
-    destruct H0.
-    - 
-  Qed.
-*)
 End Defs.
 End CG.
 
