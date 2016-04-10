@@ -77,6 +77,8 @@ Proof.
   auto with *.
 Qed.
 
+Definition eqb (x y:mid) := if MID.eq_dec x y then true else false.
+
 Module MM := FMapAVL.Make MID.
 Module MM_Facts := FMapFacts.Facts MM.
 Module MM_Extra := MapUtil MM.
