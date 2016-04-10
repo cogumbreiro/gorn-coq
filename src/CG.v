@@ -252,29 +252,39 @@ Section Defs.
   | None => None
   end.
 
-  Structure computation_graph := {
-    cg_triplets: list triplet;
-    cg_last_id: nat;
-    cg_running: list tid
-  }.
+  Inductive computation_graph :=
+  | CG_ONE : tid -> computation_graph
+  | CG: list triplet -> nat -> computation_graph.
 
-  Definition cg_edges cg := flat_map to_edges (cg_triplets cg).
+  Definition cg_triplets cg : list triplet :=
+  match cg with
+  | CG_ONE t => nil
+  | CG l _ => l
+  end.
+
+  Definition cg_last_id cg :=
+  match cg with
+  | CG_ONE _ => 0
+  | CG _ n => n
+  end.
+
+  Definition cg_edges cg :=
+  match cg with
+  | CG_ONE _ => nil
+  | CG l _ => flat_map to_edges l
+  end.
 
   Definition cg_lookup t cg :=
-  match (cg_triplets cg) with
-  | nil =>
-    match cg_running cg with
-    | x :: nil => if TID.eq_dec x t then Some (zero_node x) else None
-    | _ => None
-    end
-  | _ :: _ => trips_lookup t (cg_triplets cg)
+  match cg with
+  | CG_ONE x => if TID.eq_dec x t then Some (zero_node x) else None
+  | CG l _ => trips_lookup t l
   end.
 
   Definition cg_future (x y:tid) (cg : computation_graph) : computation_graph :=
   match cg_lookup x cg with
   | Some nx =>
     let (last_id, v) := mk_future (cg_last_id cg) nx y in
-    {| cg_triplets := v :: cg_triplets cg; cg_last_id := last_id; cg_running := y :: cg_running cg |}
+    CG (v :: cg_triplets cg) last_id
   | _ => cg
   end.
 
@@ -285,9 +295,7 @@ Section Defs.
     match cg_lookup y cg with
     | Some ny =>
       let (last_id, v) := mk_join (cg_last_id cg) nx ny in
-      {| cg_triplets := v :: cg_triplets cg;
-         cg_last_id := last_id;
-         cg_running := List.remove TID.eq_dec y (cg_running cg) |}
+      CG (v :: cg_triplets cg) last_id
     | _ => cg
     end
   | _ => cg
@@ -386,6 +394,8 @@ Section Defs.
     let y := node_task (fst (inter v)) in
     List.In y l ->
     SafeJoin v.
+
+  Definition AllSafeJoins cg := Forall SafeJoin (cg_triplets cg).
 
   Inductive Continue v : edge -> Prop :=
     continue_def:
