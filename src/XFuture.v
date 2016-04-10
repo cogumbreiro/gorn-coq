@@ -270,7 +270,7 @@ Require Import Coq.Structures.OrderedTypeEx.
 Module NAT_PAIR := PairOrderedType Nat_as_OT Nat_as_OT.
 
 
-Module CGExtra.
+Module CG.
 
 
 Section Defs.
@@ -280,6 +280,8 @@ Section Defs.
     node_dag_id: nat;
     node_known: list tid
   }.
+
+  Definition zero_node t := {| node_task := t; node_dag_id:= 0; node_known := nil |}.
 
   (** DAG id order *)
 
@@ -366,6 +368,45 @@ Section Defs.
       )
     |}.
 
+  (** Creates a future node *)
+
+  Definition mk_future last_id (x:node) y :=
+    (S (S last_id),
+      {|
+      ntype := SPAWN;
+      intra := (x,
+      {|
+        node_task := (node_task x);
+        node_dag_id := S last_id;
+        node_known := y::(node_known x)
+      |});
+      inter :=
+      (x,
+        {|
+          node_task := y;
+          node_dag_id := S (S last_id);
+          node_known := (node_known x)
+        |}
+      )
+    |}).
+
+  (** Creates a join node *)
+
+  Definition mk_join (last_id:nat) x y :=
+  let x' := {|
+    node_task := (node_task x);
+    node_dag_id := S last_id;
+    node_known := (node_known y) ++ (node_known x)
+    |}
+  in
+    (S last_id,
+    {|
+      ntype := JOIN;
+      intra := (x, x');
+      inter := (y,x')
+    |}
+    ).
+
   Lemma check_intra_eq_task:
     forall v,
     Check v ->
@@ -444,7 +485,70 @@ Section Defs.
 
   Definition to_edges (v:triplet) := inter v :: intra v :: nil.
 
-  Definition cg_edges (vs:list triplet) := flat_map to_edges vs.
+  Definition triplet_lookup t v := 
+  match v with
+  {| ntype := _; intra:=(_,v); inter:=(_,v') |} =>
+    if TID.eq_dec (node_task v') t then Some v'
+    else if TID.eq_dec (node_task v) t then Some v
+    else None
+  end.
+
+  Definition triplet_contains t v := match triplet_lookup t v with Some _ => true | None => false end.
+
+  Definition trips_lookup (t:tid) (l:list triplet) : option node :=
+  match find (triplet_contains t) l with
+  | Some v => triplet_lookup t v
+  | None => None
+  end.
+
+  Structure computation_graph := {
+    cg_triplets: list triplet;
+    cg_last_id: nat;
+    cg_running: list tid
+  }.
+
+  Definition cg_edges cg := flat_map to_edges (cg_triplets cg).
+
+  Definition cg_lookup t cg :=
+  match (cg_triplets cg) with
+  | nil =>
+    match cg_running cg with
+    | x :: nil => if TID.eq_dec x t then Some (zero_node x) else None
+    | _ => None
+    end
+  | _ :: _ => trips_lookup t (cg_triplets cg)
+  end.
+
+  Definition cg_future (x y:tid) (cg : computation_graph) : computation_graph :=
+  match cg_lookup x cg with
+  | Some nx =>
+    let (last_id, v) := mk_future (cg_last_id cg) nx y in
+    {| cg_triplets := v :: cg_triplets cg; cg_last_id := last_id; cg_running := y :: cg_running cg |}
+  | _ => cg
+  end.
+
+
+  Definition cg_force (x y:tid) (cg : computation_graph) : computation_graph :=
+  match cg_lookup x cg with
+  | Some nx =>
+    match cg_lookup y cg with
+    | Some ny =>
+      let (last_id, v) := mk_join (cg_last_id cg) nx ny in
+      {| cg_triplets := v :: cg_triplets cg;
+         cg_last_id := last_id;
+         cg_running := List.remove TID.eq_dec y (cg_running cg) |}
+    | _ => cg
+    end
+  | _ => cg
+  end.
+
+  Inductive Reduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
+  | reduces_spawn:
+    forall cg x y,
+    Reduces cg (x, Lang.FUTURE y) (cg_future x y cg)
+  | reduces_join:
+    forall cg x y,
+    Reduces cg (x, Lang.FORCE y) (cg_force x y cg).
 
   Inductive Lookup t n: list triplet -> Prop :=
   | lookup_continue: 
@@ -532,8 +636,6 @@ Section Defs.
     List.In y l ->
     SafeJoin v.
 
-  Definition RaceFree := Forall SafeJoin.
-
   Inductive Continue v : edge -> Prop :=
     continue_def:
       Continue v (intra v).
@@ -542,7 +644,7 @@ Section Defs.
     spawn_def:
       forall v,
       ntype v = SPAWN ->
-      Spawn v (intra v).
+      Spawn v (inter v).
 
   Inductive Join: triplet -> edge -> Prop :=
     join_def:
@@ -586,39 +688,48 @@ Section Defs.
 
   Definition ClosTransRefl {A:Type} E (x y:A) := Reaches E x y \/ x = y.
 
-  Definition ContinueRefl ts x := ClosTransRefl (LContinue ts) x.
+  Definition ContinueRefl (cg:computation_graph) x := ClosTransRefl (LContinue (cg_triplets cg)) x.
 
-  Definition HB (ts:list triplet) := Reaches (LPrec ts).
+  Definition HB (cg:computation_graph) := Reaches (LPrec (cg_triplets cg)).
 
-  Definition PAR ts x y : Prop := ~ HB ts x y /\ ~ HB ts y x.
+  Definition MHP cg x y : Prop := ~ HB cg x y /\ ~ HB cg y x.
+
+  Inductive Ordered cg n1 n2 : Prop :=
+  | ordered_lr:
+    HB cg n1 n2 ->
+    Ordered cg n1 n2
+  | ordered_rl:
+    HB cg n2 n1 ->
+    Ordered cg n1 n2.
 
   (**
     We have a safe-spawn when the body of the spawn may run in parallel
     with the continuation of the spawn.
     *)
 
-  Inductive SafeSpawn ts : triplet -> Prop :=
+  Inductive SafeSpawn cg : triplet -> Prop :=
   | safe_spawn_eq:
     forall v,
     ntype v = SPAWN ->
-    List.In v ts ->
-    (forall y, ContinueRefl ts (snd (inter v)) y -> PAR ts y (snd (intra v) )) ->
-    SafeSpawn ts v
+    List.In v (cg_triplets cg) ->
+    (forall y, ContinueRefl cg (snd (inter v)) y -> MHP cg y (snd (intra v) )) ->
+    SafeSpawn cg v
   | safe_spawn_skip:
     forall v,
     ntype v = JOIN ->
-    List.In v ts ->
-    SafeSpawn ts v.
+    List.In v (cg_triplets cg) ->
+    SafeSpawn cg v.
 
-  Definition Safe ts := List.Forall (SafeSpawn ts) ts.
+  Definition Safe cg := List.Forall (SafeSpawn cg) (cg_triplets cg).
 
   (** Is predicate [Safe] equivalent to [CG.RaceFree]? Maybe [CG.RaceFree] implies [Safe] *)
   (** Is predicate [CG.RaceFree] equivalent to [Shadow.RaceFree]? *)
 
+    
 End Defs.
-End CGExtra.
+End CG.
 
-Module CG.
+Module CG_Simple.
   Section Defs.
 
   Definition node := (tid*nat) % type.
@@ -991,7 +1102,101 @@ Module CG.
 
   Definition MHP cg n1 n2 := ~ HB cg n1 n2 /\ ~ HB cg n2 n1.
 End Defs.
-End CG.
+End CG_Simple.
+
+Module Shadow_Ext.
+
+  Inductive mtype := READ | WRITE.
+
+  Definition access := (mtype * mid * CG.node) % type.
+
+  Definition access_history := list access.
+
+  Definition is_write (a:access) :=
+  match a with
+  | (WRITE,_,_) => true
+  | _ => false
+  end.
+
+  Definition is_read (a:access) :=
+  match a with
+  | (READ,_,_) => true
+  | _ => false
+  end.
+
+  Definition is_var x (a:access) :=
+  match a with
+  | (_,y,_) => if MID.eq_dec x y then true else false
+  end.
+
+  Definition to_node (a:access) := match a with (_, _, n) => n end.
+
+  Definition ah_reads x ah := filter is_read (filter (is_var x) ah).
+
+  Definition ah_writes x ah := filter is_write (filter (is_var x) ah).
+
+
+  Section Defs.
+  Variable ah:access_history.
+
+  Inductive Reads (n:CG.node) (h:mid) : Prop :=
+  | reads_def:
+    List.In (READ, h, n) ah ->
+    Reads n h.
+
+  Inductive Writes (n:CG.node) (h:mid) : Prop :=
+  | writes_def:
+    List.In (READ, h, n) ah ->
+    Writes n h.
+
+  Inductive Access n h : Prop :=
+  | access_read:
+    Reads n h ->
+    Access n h
+  | access_write:
+    Writes n h ->
+    Access n h.
+
+  Inductive CoAccess (n1 n2:CG.node) (h:mid): Prop :=
+  | co_access_def:
+    Writes n1 h ->
+    Access n2 h ->
+    CoAccess n1 n2 h.
+
+  Variable cg: CG.computation_graph.
+
+  Inductive HasRace h : Prop :=
+  | has_race_def:
+    forall n1 n2,
+    CoAccess n1 n2 h ->
+    CG.MHP cg n1 n2 ->
+    HasRace h.
+
+  Inductive OrderedAccesses h: Prop :=
+  | safe_reads_def:
+    (forall x y,
+      Reads x h ->
+      Writes y h ->
+      CG.Ordered cg x y) ->
+    (forall x y,
+      Writes x h ->
+      Writes y h ->
+      CG.Ordered cg x y) ->
+    OrderedAccesses h.
+
+  Inductive RaceFree : Prop :=
+  | race_free_def:
+    (forall h, OrderedAccesses h) ->
+    RaceFree.
+
+  Inductive Racy : Prop :=
+    racy_def:
+      forall h,
+      HasRace h ->
+      Racy.
+  End Defs.
+
+End Shadow_Ext.
 
 Module Shadow.
   Structure access := {
@@ -1088,6 +1293,11 @@ Module Shadow.
       OrderedAccesses (write_access a) (write_access a) ->
       RaceFree h.
 
+  Inductive RaceFreeMemory : Prop :=
+  | race_free_memory_def:
+    (forall h, MM.In h sh -> RaceFree h) ->
+    RaceFreeMemory.
+
   Inductive Racy : Prop :=
     racy_def:
       forall h,
@@ -1161,7 +1371,7 @@ Module Shadow.
     destruct a; simpl in *.
     auto.
   Qed.
-
+(*
   Let reads_preservation_read:
     forall cg t sh n h h',
     Reads sh n h ->
@@ -1283,7 +1493,7 @@ Module Shadow.
     intros.
     inversion H0; subst; clear H0; eauto.
   Qed.
-
+*)
   End Props.
 End Shadow.
 
@@ -1301,6 +1511,7 @@ Module Races.
   | (_, cg, _) => cg
   end.
 
+(* XXX:
   Inductive Reduces: race_state -> race_state -> Prop :=
   | reduces_def:
     forall s s' cg sh o cg' sh',
@@ -1308,7 +1519,7 @@ Module Races.
     CG.Reduces cg o cg' ->
     Shadow.Reduces cg sh o sh' ->
     Reduces (s, cg, sh) (s', cg', sh').
-
+*)
 End Races.
 
 Module Vector.
