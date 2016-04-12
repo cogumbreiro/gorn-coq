@@ -42,13 +42,13 @@ Section Defs.
 
   Inductive node_type := SPAWN | JOIN.
 
-  Structure triplet := {
+  Structure tee := {
     ntype: node_type;
     intra : edge;
     inter : edge
   }.
 
-  Inductive Check : triplet -> Prop :=
+  Inductive Check : tee -> Prop :=
   | check_spawn:
     forall x y dx dx' l,
     dx < dx' ->
@@ -234,9 +234,9 @@ Section Defs.
     inversion H0.
   Qed.
 
-  Definition to_edges (v:triplet) := inter v :: intra v :: nil.
+  Definition to_edges (v:tee) := inter v :: intra v :: nil.
 
-  Definition triplet_lookup t v := 
+  Definition tee_lookup t v := 
   match v with
   {| ntype := _; intra:=(_,v); inter:=(_,v') |} =>
     if TID.eq_dec (node_task v') t then Some v'
@@ -244,50 +244,60 @@ Section Defs.
     else None
   end.
 
-  Definition triplet_contains t v := match triplet_lookup t v with Some _ => true | None => false end.
-
-  Definition trips_lookup (t:tid) (l:list triplet) : option node :=
-  match find (triplet_contains t) l with
-  | Some v => triplet_lookup t v
-  | None => None
-  end.
+  Definition tee_contains t v := match tee_lookup t v with Some _ => true | None => false end.
 
   Inductive computation_graph :=
   | CG_ONE : tid -> computation_graph
-  | CG: list triplet -> nat -> computation_graph.
+  | CG: list tee -> nat -> MT.t node -> computation_graph.
 
-  Definition cg_triplets cg : list triplet :=
+  Definition cg_tees cg : list tee :=
   match cg with
   | CG_ONE t => nil
-  | CG l _ => l
+  | CG l _ _ => l
   end.
 
   Definition cg_last_id cg :=
   match cg with
   | CG_ONE _ => 0
-  | CG _ n => n
+  | CG _ n _ => n
   end.
 
   Definition cg_edges cg :=
   match cg with
   | CG_ONE _ => nil
-  | CG l _ => flat_map to_edges l
+  | CG l _ _ => flat_map to_edges l
   end.
 
-  Definition cg_lookup t cg :=
+  Definition cg_lookup t cg : option node :=
   match cg with
   | CG_ONE x => if TID.eq_dec x t then Some (zero_node x) else None
-  | CG l _ => trips_lookup t l
+  | CG _ _ m => MT.find t m
+  end.
+
+  Definition initial_nodes t := MT.add t (zero_node t) (@MT.empty node).
+
+  Definition cg_nodes cg :=
+  match cg with
+  | CG _ _ m => m
+  | CG_ONE t => initial_nodes t
+  end.
+
+  Definition add_tee (t:tee) (m: MT.t node) :=
+  match t with
+  | {| ntype := SPAWN; intra:=(_,x); inter:=(_,y) |} =>
+    (MT.add (node_task x) x)
+    (MT.add (node_task y) y m)
+  | {| ntype := JOIN; intra:=(_,x); inter:=_ |} => 
+    MT.add (node_task x) x m
   end.
 
   Definition cg_future (x y:tid) (cg : computation_graph) : computation_graph :=
   match cg_lookup x cg with
   | Some nx =>
     let (last_id, v) := mk_future (cg_last_id cg) nx y in
-    CG (v :: cg_triplets cg) last_id
+    CG (v :: cg_tees cg) last_id (add_tee v (cg_nodes cg))
   | _ => cg
   end.
-
 
   Definition cg_force (x y:tid) (cg : computation_graph) : computation_graph :=
   match cg_lookup x cg with
@@ -295,7 +305,7 @@ Section Defs.
     match cg_lookup y cg with
     | Some ny =>
       let (last_id, v) := mk_join (cg_last_id cg) nx ny in
-      CG (v :: cg_triplets cg) last_id
+      CG (v :: cg_tees cg) last_id (add_tee v (cg_nodes cg))
     | _ => cg
     end
   | _ => cg
@@ -309,29 +319,17 @@ Section Defs.
     forall cg x y,
     Reduces cg (x, Lang.FORCE y) (cg_force x y cg).
 
-  Inductive Lookup t n: list triplet -> Prop :=
-  | lookup_continue: 
-    forall v l,
-    snd (intra v) = n ->
-    node_task n = t ->
-    Lookup t n (v::l)
-  | lookup_spawn:
-    forall v l,
-    ntype v = SPAWN ->
-    snd (inter v) = n ->
-    node_task n = t ->
-    Lookup t n (v::l)
-  | lookup_cons:
-    forall v l,
-    Lookup t n l ->
-    Lookup t n (v::l).
+  Inductive Lookup t n cg: Prop :=
+  | lookup_def: 
+    MT.MapsTo t n (cg_nodes cg) ->
+    Lookup t n cg.
 
   (**
     Ensure the names are being used properly; no continue edges after a task
     has been termianted (target of a join).
     *)
 
-  Inductive Dangling : list triplet -> list tid -> Prop :=
+  Inductive Dangling : list tee -> list tid -> Prop :=
   | dangling_nil:
     forall v,
     ntype v = SPAWN ->
@@ -359,9 +357,11 @@ Section Defs.
     Dangling vs ts ->
     Dangling (v::vs) (remove TID.eq_dec y ts).
 
-  (** Ensure that the triplets are connected. *)
+  (** Ensure that the tees are connected. *)
 
-  Inductive Connected : list triplet -> nat -> Prop :=
+  Variable cg: computation_graph.
+
+  Inductive Connected : list tee -> nat -> Prop :=
   | connected_spawn:
     forall v,
     node_dag_id (fst (intra v)) = 0 ->
@@ -370,7 +370,7 @@ Section Defs.
     forall vs n x nx v,
     ntype v = SPAWN ->
     Connected vs n ->
-    Lookup x nx vs ->
+    Lookup x nx cg ->
     fst (inter v) = nx ->
     node_dag_id (snd (inter v)) = S n ->
     Connected (v::vs) (S (S n))
@@ -378,8 +378,8 @@ Section Defs.
     forall vs n x y nx ny v,
     ntype v = JOIN ->
     Connected vs n ->
-    Lookup x nx vs ->
-    Lookup y ny vs ->
+    Lookup x nx cg ->
+    Lookup y ny cg ->
     fst (inter v) = ny ->
     snd (intra v) = nx ->
     Connected (v::vs) (S n).
@@ -395,19 +395,19 @@ Section Defs.
     List.In y l ->
     SafeJoin v.
 
-  Definition AllSafeJoins cg := Forall SafeJoin (cg_triplets cg).
+  Definition AllSafeJoins cg := Forall SafeJoin (cg_tees cg).
 
   Inductive Continue v : edge -> Prop :=
     continue_def:
       Continue v (intra v).
 
-  Inductive Spawn: triplet -> edge -> Prop :=
+  Inductive Spawn: tee -> edge -> Prop :=
     spawn_def:
       forall v,
       ntype v = SPAWN ->
       Spawn v (inter v).
 
-  Inductive Join: triplet -> edge -> Prop :=
+  Inductive Join: tee -> edge -> Prop :=
     join_def:
       forall v,
       ntype v = JOIN ->
@@ -449,9 +449,9 @@ Section Defs.
 
   Definition ClosTransRefl {A:Type} E (x y:A) := Reaches E x y \/ x = y.
 
-  Definition ContinueRefl (cg:computation_graph) x := ClosTransRefl (LContinue (cg_triplets cg)) x.
+  Definition ContinueRefl (cg:computation_graph) x := ClosTransRefl (LContinue (cg_tees cg)) x.
 
-  Definition HB (cg:computation_graph) := Reaches (LPrec (cg_triplets cg)).
+  Definition HB (cg:computation_graph) := Reaches (LPrec (cg_tees cg)).
 
   Definition MHP cg x y : Prop := ~ HB cg x y /\ ~ HB cg y x.
 
@@ -468,24 +468,31 @@ Section Defs.
     with the continuation of the spawn.
     *)
 
-  Inductive SafeSpawn cg : triplet -> Prop :=
+  Inductive SafeSpawn cg : tee -> Prop :=
   | safe_spawn_eq:
     forall v,
     ntype v = SPAWN ->
-    List.In v (cg_triplets cg) ->
+    List.In v (cg_tees cg) ->
     (forall y, ContinueRefl cg (snd (inter v)) y -> MHP cg y (snd (intra v) )) ->
     SafeSpawn cg v
   | safe_spawn_skip:
     forall v,
     ntype v = JOIN ->
-    List.In v (cg_triplets cg) ->
+    List.In v (cg_tees cg) ->
     SafeSpawn cg v.
 
-  Definition Safe cg := List.Forall (SafeSpawn cg) (cg_triplets cg).
+  Definition Safe cg := List.Forall (SafeSpawn cg) (cg_tees cg).
 
   (** Is predicate [Safe] equivalent to [CG.RaceFree]? Maybe [CG.RaceFree] implies [Safe] *)
   (** Is predicate [CG.RaceFree] equivalent to [Shadow.RaceFree]? *)
 
+  Inductive Lt (cg:computation_graph) x y : Prop :=
+  | lt_def:
+    forall n,
+    Lookup x n cg ->
+    List.In y (node_known n) ->
+    Lt cg x y.
     
+
 End Defs.
 End CG.
