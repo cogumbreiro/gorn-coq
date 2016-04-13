@@ -21,11 +21,7 @@ Require Import Lang.
 Module NAT_PAIR := PairOrderedType Nat_as_OT Nat_as_OT.
 
 
-Section CG.
-
-
-Section Defs.
-
+Module Node.
   Structure node := {
     node_task: tid;
     node_dag_id: nat;
@@ -33,6 +29,19 @@ Section Defs.
   }.
 
   Definition zero_node t := {| node_task := t; node_dag_id:= 0; node_known := nil |}.
+
+  Inductive WellFormed n : Prop :=
+  | well_formed_def:
+    ~ List.In (node_task n) (node_known n) ->
+    WellFormed n.
+End Node.
+
+Section CG.
+
+
+Section Defs.
+
+  Import Node.
 
   (** DAG id order *)
 
@@ -125,6 +134,29 @@ Section Defs.
     (S (S last_id),
       {|
       ntype := SPAWN;
+      source := x;
+      continue := {|
+        node_task := (node_task x);
+        node_dag_id := S last_id;
+        node_known := y::(node_known x)
+      |};
+      intra := (,
+      );
+      inter :=
+      (x,
+        {|
+          node_task := y;
+          node_dag_id := S (S last_id);
+          node_known := (node_known x)
+        |}
+      )
+    |}).
+
+(*
+  Definition mk_future last_id (x:node) y :=
+    (S (S last_id),
+      {|
+      ntype := SPAWN;
       intra := (x,
       {|
         node_task := (node_task x);
@@ -140,7 +172,7 @@ Section Defs.
         |}
       )
     |}).
-
+*)
   (** Creates a join node *)
 
   Definition mk_join (last_id:nat) x y :=
@@ -359,43 +391,73 @@ Section Defs.
 
   (** Ensure that the tees are connected. *)
 
-  Variable cg: computation_graph.
+  Inductive Nodes : computation_graph -> Prop :=
+  | nodes_cg_one:
+    forall t,
+    Nodes (CG_ONE t)
+  | nodes_cg_spawn:
+    forall n v,
+    let t := node_task (fst (intra v)) in
+    Nodes (CG (v::nil) n  ((add_tee v) (initial_nodes t)))
+  | nodes_cg_cons:
+    forall l n m v n',
+    Nodes (CG l n m) ->
+    Nodes (CG (v::l) n' (add_tee v m)).
 
-  Inductive Connected : list tee -> nat -> Prop :=
-  | connected_spawn:
+  Inductive WellFormed : tee -> Prop :=
+  | well_formed_spawn:
+    forall x y x',
+    Node.WellFormed x ->
+    Node.WellFormed y ->
+    Node.WellFormed x' ->
+    (* Reason about task names *)
+    node_task x = node_task x' ->
+    node_task x <> node_task y ->
+    (* Propagate known *)
+    node_known x' = node_task y :: node_known x ->
+    node_known y = node_known x ->
+    WellFormed {| ntype := SPAWN; intra := (x, x'); inter := (x, y) |}
+  | well_formed_join:
+    forall x y x',
+    Node.WellFormed x ->
+    Node.WellFormed y ->
+    Node.WellFormed x' ->
+    (* Reason about task names *)
+    node_task x = node_task x' ->
+    node_task x <> node_task y ->
+    node_known x' = node_known x ++ node_known y ->
+    List.In (node_task y) (node_known x) ->
+    WellFormed {| ntype := JOIN; intra := (x, x'); inter := (y, x') |}.
+
+  Inductive CG_WellFormed : computation_graph -> Prop :=
+  | cg_well_formed_one:
+    forall t,
+    CG_WellFormed (CG_ONE t)
+  | cg_well_formed_spawn:
     forall v,
     node_dag_id (fst (intra v)) = 0 ->
-    Connected (v::nil) 2
-  | connected_cons_spawn:
-    forall vs n x nx v,
+    WellFormed v ->
+    let t := node_task (fst (intra v)) in
+    CG_WellFormed (CG (v::nil) 2  ((add_tee v) (initial_nodes t)))
+  | cg_well_formed_cons_spawn:
+    forall vs n x nx v m,
+    WellFormed v ->
     ntype v = SPAWN ->
-    Connected vs n ->
-    Lookup x nx cg ->
+    CG_WellFormed (CG vs n m) ->
+    Lookup x nx (CG vs n m) ->
     fst (inter v) = nx ->
     node_dag_id (snd (inter v)) = S n ->
-    Connected (v::vs) (S (S n))
-  | connected_cons_join:
-    forall vs n x y nx ny v,
+    CG_WellFormed (CG (v::vs) (S (S n)) (add_tee v m))
+  | cg_well_formed_cons_join:
+    forall vs n x y nx ny v m,
+    WellFormed v ->
     ntype v = JOIN ->
-    Connected vs n ->
-    Lookup x nx cg ->
-    Lookup y ny cg ->
+    CG_WellFormed (CG vs n m) ->
+    Lookup x nx (CG vs n m) ->
+    Lookup y ny (CG vs n m) ->
     fst (inter v) = ny ->
     snd (intra v) = nx ->
-    Connected (v::vs) (S n).
-
-  Inductive SafeJoin v : Prop :=
-  | safe_join_spawn:
-    ntype v = SPAWN ->
-    SafeJoin v
-  | safe_join_join:
-    ntype v = JOIN ->
-    let l := node_known (fst (intra v)) in
-    let y := node_task (fst (inter v)) in
-    List.In y l ->
-    SafeJoin v.
-
-  Definition AllSafeJoins cg := Forall SafeJoin (cg_tees cg).
+    CG_WellFormed (CG (v::vs) (S n) (add_tee v m)).
 
   Inductive Continue v : edge -> Prop :=
     continue_def:
@@ -437,62 +499,201 @@ Section Defs.
 
   Require Import Aniceto.Graphs.Graph.
 
-  Inductive Reaches {A:Type} E (x y:A) : Prop :=
-  | reaches_def:
-    forall w,
-    Walk2 E x y w ->
-    Reaches E x y.
+  Variable cg: computation_graph.
 
-  Require Import Coq.Relations.Relation_Operators.
+  Definition ContinueRefl x := ClosTransRefl (LContinue (cg_tees cg)) x.
 
-  (** Reflexive closure of continue. *)
+  Definition HB := Reaches (LPrec (cg_tees cg)).
 
-  Definition ClosTransRefl {A:Type} E (x y:A) := Reaches E x y \/ x = y.
+  Definition MHP x y : Prop := ~ HB x y /\ ~ HB y x.
 
-  Definition ContinueRefl (cg:computation_graph) x := ClosTransRefl (LContinue (cg_tees cg)) x.
-
-  Definition HB (cg:computation_graph) := Reaches (LPrec (cg_tees cg)).
-
-  Definition MHP cg x y : Prop := ~ HB cg x y /\ ~ HB cg y x.
-
-  Inductive Ordered cg n1 n2 : Prop :=
+  Inductive Ordered n1 n2 : Prop :=
   | ordered_lr:
-    HB cg n1 n2 ->
-    Ordered cg n1 n2
+    HB n1 n2 ->
+    Ordered n1 n2
   | ordered_rl:
-    HB cg n2 n1 ->
-    Ordered cg n1 n2.
+    HB n2 n1 ->
+    Ordered n1 n2.
 
   (**
     We have a safe-spawn when the body of the spawn may run in parallel
     with the continuation of the spawn.
     *)
 
-  Inductive SafeSpawn cg : tee -> Prop :=
+  Inductive SafeSpawn : tee -> Prop :=
   | safe_spawn_eq:
     forall v,
     ntype v = SPAWN ->
     List.In v (cg_tees cg) ->
-    (forall y, ContinueRefl cg (snd (inter v)) y -> MHP cg y (snd (intra v) )) ->
-    SafeSpawn cg v
+    (forall y, ContinueRefl (snd (inter v)) y -> MHP y (snd (intra v) )) ->
+    SafeSpawn v
   | safe_spawn_skip:
     forall v,
     ntype v = JOIN ->
     List.In v (cg_tees cg) ->
-    SafeSpawn cg v.
+    SafeSpawn v.
 
-  Definition Safe cg := List.Forall (SafeSpawn cg) (cg_tees cg).
+  Definition Safe := List.Forall SafeSpawn (cg_tees cg).
 
   (** Is predicate [Safe] equivalent to [CG.RaceFree]? Maybe [CG.RaceFree] implies [Safe] *)
   (** Is predicate [CG.RaceFree] equivalent to [Shadow.RaceFree]? *)
 
-  Inductive Lt (cg:computation_graph) x y : Prop :=
+  Inductive Lt x y : Prop :=
   | lt_def:
     forall n,
     Lookup x n cg ->
     List.In y (node_known n) ->
-    Lt cg x y.
-    
-
+    Lt x y.
 End Defs.
+
+Section Props.
+  Import Node.
+
+  Lemma cg_one_inv_lookup:
+    forall x n y,
+    Lookup x n (CG_ONE y) ->
+    x = y /\ n = zero_node x.
+  Proof.
+    intros.
+    destruct H.
+    simpl in H.
+    unfold initial_nodes in *.
+    apply MT_Facts.add_mapsto_iff in H.
+    destruct H.
+    - intuition.
+      subst.
+      trivial.
+    - destruct H.
+      apply MT_Facts.empty_mapsto_iff in H0.
+      inversion H0.
+  Qed.
+
+  Lemma lookup_inv:
+    forall x t l n n' m,
+    Lookup x n (CG (t :: l) n' (add_tee t m)) ->
+    (node_task (snd (intra t)) = x /\ (snd (intra t)) = n) \/
+    (node_task (snd (intra t)) <> x /\ MT.MapsTo x n (MT.add (node_task (snd (inter t))) (snd (inter t)) m)) \/
+    (MT.MapsTo x n (MT.add (node_task (snd (intra t))) (snd (intra t)) m)).
+  Proof.
+    intros.
+    destruct H.
+    simpl in H.
+    unfold add_tee in *.
+    destruct t.
+    destruct intra0 as (a, a').
+    destruct inter0 as (b, c).
+    simpl in *.
+    destruct ntype0.
+    - apply MT_Facts.add_mapsto_iff in H.
+      destruct H as [(?,?)|?].
+      + subst.
+        intuition.
+      + intuition.
+    - intuition.
+  Qed.
+
+  Let lt_trans_absurd_one:
+    forall t x y,
+    ~ Lt (CG_ONE t) x y.
+  Proof.
+    intros.
+    unfold not; intros.
+    inversion H.
+    apply cg_one_inv_lookup in H0.
+    destruct H0.
+    subst.
+    inversion H1.
+  Qed.
+
+  Let lt_trans_absurd_nil:
+    forall n m x y,
+    Nodes (CG nil n m) ->
+    ~ Lt (CG nil n m) x y.
+  Proof.
+    intros.
+    unfold not; intros.
+    destruct H0.
+    inversion H.
+  Qed.
+
+  Let check_absurd_snd_intra:
+    forall t,
+    CG.WellFormed t ->
+    ~ List.In (node_task (snd (intra t))) (node_known (snd (intra t))).
+  Proof.
+    intros.
+    unfold not; intros.
+    inversion H.
+    + subst.
+      simpl in *.
+      destruct H3; contradiction.
+    + subst.
+      simpl in *.
+      destruct H3; contradiction.
+  Qed.
+(*
+  Let check_absurd_snd_inter:
+    forall t,
+    CG.WellFormed t ->
+    ~ List.In (node_task (snd (inter t))) (node_known (snd (intra t))).
+  Proof.
+    intros.
+    unfold not; intros.
+    inversion H.
+    + subst.
+      simpl in *.
+      destruct H3.
+      contradiction H3.
+      auto using in_
+      destruct H2; contradiction.
+    + subst.
+      simpl in *.
+      destruct H3; contradiction.
+  Qed.
+*)
+  Let lt_trans_cg:
+    forall l n m,
+    CG_WellFormed (CG l n m) ->
+    forall x y z,
+    Lt (CG l n m) x y ->
+    Lt (CG l n m) y z ->
+    Lt (CG l n m) x z.
+  Proof.
+    induction l; intros. {
+      inversion H.
+    }
+    inversion H; subst; clear H.
+    - destruct H0.
+      destruct H1.
+      apply lookup_inv in H.
+      destruct H as [(?,?)|[?|?]].
+      + subst.
+        apply lookup_inv in H1.
+        destruct H1 as [(?,?)|[(?,?)|?]].
+        * subst.
+          apply check_absurd_snd_intra in H0; auto.
+          inversion H0.
+        * apply MT_Facts.add_mapsto_iff in H1.
+          destruct H1 as [(?,?)|(?,?)]. {
+            subst.
+            apply check_absurd_snd_inter in H0; auto.
+            inversion H0.
+          }
+          
+  Qed.
+
+  Lemma lt_trans cg:
+    forall x y z,
+    Lt cg x y ->
+    Lt cg y z ->
+    Lt cg x z.
+  Proof.
+    intros.
+    destruct cg.
+    - apply lt_trans_one_absurd in H.
+      inversion H.
+    - 
+  Qed.
+
+End Props.
 End CG.
