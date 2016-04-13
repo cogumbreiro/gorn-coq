@@ -134,13 +134,11 @@ Section Defs.
     (S (S last_id),
       {|
       ntype := SPAWN;
-      source := x;
-      continue := {|
+      intra := (x,{|
         node_task := (node_task x);
         node_dag_id := S last_id;
         node_known := y::(node_known x)
-      |};
-      intra := (,
+      |}
       );
       inter :=
       (x,
@@ -651,6 +649,7 @@ Section Props.
       destruct H3; contradiction.
   Qed.
 *)
+(*
   Let lt_trans_cg:
     forall l n m,
     CG_WellFormed (CG l n m) ->
@@ -694,6 +693,7 @@ Section Props.
       inversion H.
     - 
   Qed.
+*)
 
 End Props.
 End CG.
