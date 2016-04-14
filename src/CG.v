@@ -40,7 +40,7 @@ Module Trace.
     op_dst: tid
   }.
 
-  Definition trace := list op.
+  Definition trace := list (option op).
 End Trace.
 
 Section CG.
@@ -291,11 +291,15 @@ Section Defs.
   | cg_of_nil:
     forall x,
     CGOf nil (make_cg x)
-  | cg_of_cons:
+  | cg_of_cons_some:
     forall o l cg,
     CGOf l cg ->
     TeeOf cg o -> 
-    CGOf (o::l) (cg_eval o cg).
+    CGOf (Some o::l) (cg_eval o cg)
+  | cg_of_cons_none:
+    forall l cg,
+    CGOf l cg ->
+    CGOf (None::l) cg.
 
   Inductive Reduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
   | reduces_spawn:
@@ -320,12 +324,16 @@ Section Defs.
     List.In x ts ->
     ~ List.In y ts ->
     Dangling vs ts ->
-    Dangling ({|op_t:=SPAWN; op_src:=x; op_dst:=y |}::vs) (y::ts)
+    Dangling (Some {|op_t:=SPAWN; op_src:=x; op_dst:=y |}::vs) (y::ts)
   | dangling_cons_join:
     forall vs ts x y,
     List.In x ts ->
     Dangling vs ts ->
-    Dangling ({|op_t:=JOIN; op_src:=x; op_dst:=y |}::vs) (remove TID.eq_dec y ts).
+    Dangling (Some {|op_t:=JOIN; op_src:=x; op_dst:=y |}::vs) (remove TID.eq_dec y ts)
+  | dangling_cons_tau:
+    forall vs ts,
+    Dangling vs ts ->
+    Dangling (None::vs) ts.
 
   Inductive Continue v : edge -> Prop :=
     continue_def:
@@ -503,11 +511,15 @@ Module M := FMapAVL.Make Nat_as_OT.
   | known_of_nil:
     forall x,
     KnownOf nil (make_known x)
-  | known_of_cons_spawn:
-    forall (o:op_type) (x y:tid) l k,
+  | known_of_cons_some:
+    forall o x y l k,
     Check k {| op_t:=o; op_src:=x; op_dst:=y |} ->
     KnownOf l k ->
-    KnownOf ({| op_t:=o; op_src:=x; op_dst:=y |}::l) ((eval o) x y k).
+    KnownOf (Some {| op_t:=o; op_src:=x; op_dst:=y |}::l) ((eval o) x y k)
+  | known_of_cons_none:
+    forall l k,
+    KnownOf l k ->
+    KnownOf (None::l) k.
 
   Definition WellFormed (k:known) := forall t l, MT.MapsTo t l k -> ~ List.In t l.
 
