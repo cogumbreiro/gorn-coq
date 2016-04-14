@@ -6,6 +6,7 @@ Require Import HJ.Cid.
 Require Import HJ.Var.
 Require Import HJ.Dep.
 
+
 (* ----- end of boiler-plate code ---- *)
 
 Set Implicit Arguments.
@@ -24,23 +25,29 @@ Module NAT_PAIR := PairOrderedType Nat_as_OT Nat_as_OT.
 Module Node.
   Structure node := {
     node_task: tid;
-    node_dag_id: nat;
-    node_known: list tid
+    node_dag_id: nat
   }.
 
-  Definition zero_node t := {| node_task := t; node_dag_id:= 0; node_known := nil |}.
-
-  Inductive WellFormed n : Prop :=
-  | well_formed_def:
-    ~ List.In (node_task n) (node_known n) ->
-    WellFormed n.
+  Definition zero_node t := {| node_task := t; node_dag_id:= 0 |}.
 End Node.
+
+Module Trace.
+  Inductive op_type := SPAWN | JOIN.
+
+  Structure op := {
+    op_t: op_type;
+    op_src: tid;
+    op_dst: tid
+  }.
+
+  Definition trace := list op.
+End Trace.
 
 Section CG.
 
 
 Section Defs.
-
+  Import Trace.
   Import Node.
 
   (** DAG id order *)
@@ -49,144 +56,66 @@ Section Defs.
 
   Definition edge := (node * node) % type.
 
-  Inductive node_type := SPAWN | JOIN.
-
   Structure tee := {
-    ntype: node_type;
+    ntype: op_type;
     intra : edge;
     inter : edge
   }.
 
   Inductive Check : tee -> Prop :=
   | check_spawn:
-    forall x y dx dx' l,
-    dx < dx' ->
+    forall x y dx last_id,
+    dx < last_id ->
     x <> y ->
     Check
     {|
       ntype := SPAWN;
       intra :=
       (
-        {|
-          node_task := x;
-          node_dag_id := dx;
-          node_known := l
-        |},
-        {|
-          node_task := x;
-          node_dag_id := dx';
-          node_known := y::l
-        |}
+        {| node_task := x; node_dag_id := dx |},
+        {| node_task := x; node_dag_id := last_id |}
       );
       inter :=
       (
-        {|
-          node_task := x;
-          node_dag_id := dx;
-          node_known := l
-        |},
-        {|
-          node_task := y;
-          node_dag_id := S dx';
-          node_known := l
-        |}
+        {| node_task := x; node_dag_id := dx |},
+        {| node_task := y; node_dag_id := S last_id |}
       )
     |}
   | check_join:
-    forall x y dx dx' dy lx ly,
-    dx < dx' ->
-    dy < dx' ->
+    forall x y dx last_id dy,
+    dx < last_id ->
+    dy < last_id ->
     x <> y ->
     Check
     {|
       ntype := JOIN;
       intra :=
       (
-        {|
-          node_task := x;
-          node_dag_id := dx;
-          node_known := lx
-        |},
-        {|
-          node_task := x;
-          node_dag_id := dx';
-          node_known := ly ++ lx
-        |}
+        {| node_task := x; node_dag_id := dx |},
+        {| node_task := x; node_dag_id := last_id |}
       );
       inter :=
       (
-        {|
-          node_task := y;
-          node_dag_id := dy;
-          node_known := ly
-        |},
-        {|
-          node_task := x;
-          node_dag_id := dx';
-          node_known := ly ++ lx
-        |}
+        {| node_task := y; node_dag_id := dy |},
+        {| node_task := x; node_dag_id := last_id |}
       )
     |}.
 
   (** Creates a future node *)
 
-  Definition mk_future last_id (x:node) y :=
-    (S (S last_id),
-      {|
-      ntype := SPAWN;
-      intra := (x,{|
-        node_task := (node_task x);
-        node_dag_id := S last_id;
-        node_known := y::(node_known x)
-      |}
-      );
-      inter :=
-      (x,
-        {|
-          node_task := y;
-          node_dag_id := S (S last_id);
-          node_known := (node_known x)
-        |}
-      )
-    |}).
+  Definition tee_last_id (t:tee) :=
+  node_dag_id (snd (inter t)).
 
-(*
-  Definition mk_future last_id (x:node) y :=
-    (S (S last_id),
-      {|
-      ntype := SPAWN;
-      intra := (x,
-      {|
-        node_task := (node_task x);
-        node_dag_id := S last_id;
-        node_known := y::(node_known x)
-      |});
-      inter :=
-      (x,
-        {|
-          node_task := y;
-          node_dag_id := S (S last_id);
-          node_known := (node_known x)
-        |}
-      )
-    |}).
-*)
-  (** Creates a join node *)
+  Definition mk_spawn last_id (x:node) y :=
+  {|
+    ntype := SPAWN;
+    intra := (x, {| node_task := (node_task x); node_dag_id := S last_id |} );
+    inter := (x, {| node_task := y; node_dag_id := S (S last_id) |})
+  |}.
 
   Definition mk_join (last_id:nat) x y :=
-  let x' := {|
-    node_task := (node_task x);
-    node_dag_id := S last_id;
-    node_known := (node_known y) ++ (node_known x)
-    |}
-  in
-    (S last_id,
-    {|
-      ntype := JOIN;
-      intra := (x, x');
-      inter := (y,x')
-    |}
-    ).
+  let x' := {| node_task := (node_task x); node_dag_id := S last_id |}
+  in {| ntype := JOIN; intra := (x, x'); inter := (y,x') |}.
 
   Lemma check_intra_eq_task:
     forall v,
@@ -276,43 +205,27 @@ Section Defs.
 
   Definition tee_contains t v := match tee_lookup t v with Some _ => true | None => false end.
 
-  Inductive computation_graph :=
-  | CG_ONE : tid -> computation_graph
-  | CG: list tee -> nat -> MT.t node -> computation_graph.
+  Structure computation_graph := {
+    cg_tees : list tee;
+    cg_nodes : MT.t node;
+    cg_last_id : nat
+  }.
 
-  Definition cg_tees cg : list tee :=
-  match cg with
-  | CG_ONE t => nil
-  | CG l _ _ => l
-  end.
-
-  Definition cg_last_id cg :=
-  match cg with
-  | CG_ONE _ => 0
-  | CG _ n _ => n
-  end.
+  Definition make_cg t := {|
+    cg_tees := nil;
+    cg_nodes := MT.add t (Build_node t 0) (@MT.empty node);
+    cg_last_id := 0
+  |}.
 
   Definition cg_edges cg :=
-  match cg with
-  | CG_ONE _ => nil
-  | CG l _ _ => flat_map to_edges l
-  end.
+  flat_map to_edges (cg_tees cg).
 
   Definition cg_lookup t cg : option node :=
-  match cg with
-  | CG_ONE x => if TID.eq_dec x t then Some (zero_node x) else None
-  | CG _ _ m => MT.find t m
-  end.
+  MT.find t (cg_nodes cg).
 
   Definition initial_nodes t := MT.add t (zero_node t) (@MT.empty node).
 
-  Definition cg_nodes cg :=
-  match cg with
-  | CG _ _ m => m
-  | CG_ONE t => initial_nodes t
-  end.
-
-  Definition add_tee (t:tee) (m: MT.t node) :=
+  Definition cg_nodes_add (t:tee) (m: MT.t node) :=
   match t with
   | {| ntype := SPAWN; intra:=(_,x); inter:=(_,y) |} =>
     (MT.add (node_task x) x)
@@ -321,141 +234,98 @@ Section Defs.
     MT.add (node_task x) x m
   end.
 
-  Definition cg_future (x y:tid) (cg : computation_graph) : computation_graph :=
+  Definition tee_spawn (x y:tid) (cg : computation_graph) : option tee :=
   match cg_lookup x cg with
-  | Some nx =>
-    let (last_id, v) := mk_future (cg_last_id cg) nx y in
-    CG (v :: cg_tees cg) last_id (add_tee v (cg_nodes cg))
+  | Some nx => Some (mk_spawn (cg_last_id cg) nx y)
+  | _ => None
+  end.
+
+  Definition tee_join (x y:tid) (cg : computation_graph) : option tee :=
+  match (cg_lookup x cg, cg_lookup y cg)  with
+  | (Some nx, Some ny) => Some (mk_join (cg_last_id cg) nx ny)
+  | _ => None
+  end.
+
+  Definition cg_add (v:tee) (cg : computation_graph) : computation_graph :=
+    {| cg_tees := v :: cg_tees cg;
+       cg_last_id := (tee_last_id v);
+       cg_nodes := cg_nodes_add v (cg_nodes cg) |}.
+
+  Definition tee_eval o : computation_graph -> option tee :=
+  match o with
+  | {| op_t := e; op_src := x; op_dst := y |} =>
+    let f := (match e with
+    | SPAWN => tee_spawn
+    | JOIN => tee_join
+    end) in
+    f x y
+  end.
+
+  Definition cg_eval (o:op) cg :=
+  match (tee_eval o cg) with
+  | Some v => cg_add v cg
   | _ => cg
   end.
 
-  Definition cg_force (x y:tid) (cg : computation_graph) : computation_graph :=
-  match cg_lookup x cg with
-  | Some nx =>
-    match cg_lookup y cg with
-    | Some ny =>
-      let (last_id, v) := mk_join (cg_last_id cg) nx ny in
-      CG (v :: cg_tees cg) last_id (add_tee v (cg_nodes cg))
-    | _ => cg
-    end
-  | _ => cg
-  end.
-
-  Inductive Reduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
-  | reduces_spawn:
-    forall cg x y,
-    Reduces cg (x, Lang.FUTURE y) (cg_future x y cg)
-  | reduces_join:
-    forall cg x y,
-    Reduces cg (x, Lang.FORCE y) (cg_force x y cg).
+  Definition cg_spawn x y := cg_eval {|op_t:=SPAWN; op_src:=x; op_dst:=y|}.
+  Definition cg_join x y := cg_eval {|op_t:=JOIN; op_src:=x; op_dst:=y|}.
 
   Inductive Lookup t n cg: Prop :=
   | lookup_def: 
     MT.MapsTo t n (cg_nodes cg) ->
     Lookup t n cg.
 
+  Inductive TeeOf cg : op -> Prop :=
+  | tee_of_spawn:
+    forall x y,
+    MT.In x (cg_nodes cg) ->
+    ~ MT.In y (cg_nodes cg) ->
+    TeeOf cg {| op_t:=SPAWN; op_src:=x; op_dst:=y |}
+  | tee_of_join:
+    forall x y,
+    MT.In x (cg_nodes cg) ->
+    MT.In y (cg_nodes cg) ->
+    TeeOf cg {| op_t:=JOIN; op_src:=x; op_dst:=y |}.
+
+  Inductive CGOf: trace -> computation_graph -> Prop :=
+  | cg_of_nil:
+    forall x,
+    CGOf nil (make_cg x)
+  | cg_of_cons:
+    forall o l cg,
+    CGOf l cg ->
+    TeeOf cg o -> 
+    CGOf (o::l) (cg_eval o cg).
+
+  Inductive Reduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
+  | reduces_spawn:
+    forall cg x y,
+    Reduces cg (x, Lang.FUTURE y) (cg_spawn x y cg)
+  | reduces_join:
+    forall cg x y,
+    Reduces cg (x, Lang.FORCE y) (cg_join x y cg).
+
   (**
     Ensure the names are being used properly; no continue edges after a task
     has been termianted (target of a join).
     *)
 
-  Inductive Dangling : list tee -> list tid -> Prop :=
+  Inductive Dangling : trace -> list tid -> Prop :=
   | dangling_nil:
-    forall v,
-    ntype v = SPAWN ->
-    let x := node_task (fst (inter v)) in
-    let y := node_task (snd (inter v)) in
-    (* x -> y *)
-    Dangling (v::nil) (y::x::nil)
+    forall x,
+    Dangling nil (x::nil)
   | dangling_cons_spawn:
-    forall v vs ts,
-    ntype v = SPAWN ->
-    let x := node_task (fst (inter v)) in
-    let y := node_task (snd (inter v)) in
+    forall vs ts x y,
     (* x -> y *)
     List.In x ts ->
     ~ List.In y ts ->
     Dangling vs ts ->
-    Dangling (v::vs) (y::ts)
+    Dangling ({|op_t:=SPAWN; op_src:=x; op_dst:=y |}::vs) (y::ts)
   | dangling_cons_join:
-    forall v vs ts,
-    ntype v = JOIN ->
-    let x := node_task (fst (inter v)) in
-    let y := node_task (snd (inter v)) in
-    (* x <- y *)
+    forall vs ts x y,
     List.In x ts ->
     Dangling vs ts ->
-    Dangling (v::vs) (remove TID.eq_dec y ts).
-
-  (** Ensure that the tees are connected. *)
-
-  Inductive Nodes : computation_graph -> Prop :=
-  | nodes_cg_one:
-    forall t,
-    Nodes (CG_ONE t)
-  | nodes_cg_spawn:
-    forall n v,
-    let t := node_task (fst (intra v)) in
-    Nodes (CG (v::nil) n  ((add_tee v) (initial_nodes t)))
-  | nodes_cg_cons:
-    forall l n m v n',
-    Nodes (CG l n m) ->
-    Nodes (CG (v::l) n' (add_tee v m)).
-
-  Inductive WellFormed : tee -> Prop :=
-  | well_formed_spawn:
-    forall x y x',
-    Node.WellFormed x ->
-    Node.WellFormed y ->
-    Node.WellFormed x' ->
-    (* Reason about task names *)
-    node_task x = node_task x' ->
-    node_task x <> node_task y ->
-    (* Propagate known *)
-    node_known x' = node_task y :: node_known x ->
-    node_known y = node_known x ->
-    WellFormed {| ntype := SPAWN; intra := (x, x'); inter := (x, y) |}
-  | well_formed_join:
-    forall x y x',
-    Node.WellFormed x ->
-    Node.WellFormed y ->
-    Node.WellFormed x' ->
-    (* Reason about task names *)
-    node_task x = node_task x' ->
-    node_task x <> node_task y ->
-    node_known x' = node_known x ++ node_known y ->
-    List.In (node_task y) (node_known x) ->
-    WellFormed {| ntype := JOIN; intra := (x, x'); inter := (y, x') |}.
-
-  Inductive CG_WellFormed : computation_graph -> Prop :=
-  | cg_well_formed_one:
-    forall t,
-    CG_WellFormed (CG_ONE t)
-  | cg_well_formed_spawn:
-    forall v,
-    node_dag_id (fst (intra v)) = 0 ->
-    WellFormed v ->
-    let t := node_task (fst (intra v)) in
-    CG_WellFormed (CG (v::nil) 2  ((add_tee v) (initial_nodes t)))
-  | cg_well_formed_cons_spawn:
-    forall vs n x nx v m,
-    WellFormed v ->
-    ntype v = SPAWN ->
-    CG_WellFormed (CG vs n m) ->
-    Lookup x nx (CG vs n m) ->
-    fst (inter v) = nx ->
-    node_dag_id (snd (inter v)) = S n ->
-    CG_WellFormed (CG (v::vs) (S (S n)) (add_tee v m))
-  | cg_well_formed_cons_join:
-    forall vs n x y nx ny v m,
-    WellFormed v ->
-    ntype v = JOIN ->
-    CG_WellFormed (CG vs n m) ->
-    Lookup x nx (CG vs n m) ->
-    Lookup y ny (CG vs n m) ->
-    fst (inter v) = ny ->
-    snd (intra v) = nx ->
-    CG_WellFormed (CG (v::vs) (S n) (add_tee v m)).
+    Dangling ({|op_t:=JOIN; op_src:=x; op_dst:=y |}::vs) (remove TID.eq_dec y ts).
 
   Inductive Continue v : edge -> Prop :=
     continue_def:
@@ -536,17 +406,11 @@ Section Defs.
   (** Is predicate [Safe] equivalent to [CG.RaceFree]? Maybe [CG.RaceFree] implies [Safe] *)
   (** Is predicate [CG.RaceFree] equivalent to [Shadow.RaceFree]? *)
 
-  Inductive Lt x y : Prop :=
-  | lt_def:
-    forall n,
-    Lookup x n cg ->
-    List.In y (node_known n) ->
-    Lt x y.
 End Defs.
 
 Section Props.
   Import Node.
-
+(*
   Lemma cg_one_inv_lookup:
     forall x n y,
     Lookup x n (CG_ONE y) ->
@@ -589,6 +453,71 @@ Section Props.
       + intuition.
     - intuition.
   Qed.
+*)
+
+End Props.
+End CG.
+
+
+Module Known.
+Require Import Coq.Structures.OrderedTypeEx.
+Require Import Coq.Structures.OrderedType.
+Require Import Coq.FSets.FMapAVL.
+Module M := FMapAVL.Make Nat_as_OT.
+  Import Trace.
+  Section Defs.
+  Definition known := MT.t (list tid).
+  Definition make_known (x:tid) : known := (MT.add x nil (@MT.empty (list tid))).
+
+  Definition spawn (x y:tid) (k:known) : known :=
+  match MT.find x k with
+  | Some l => (MT.add x (y::l)) (MT.add y l k)
+  | _ => k
+  end.
+
+  Definition join (x y:tid) (k:known) : known :=
+  match (MT.find x k, MT.find y k) with
+  | (Some lx,Some ly) =>
+    MT.add x (ly ++ lx) k
+  | _ => k
+  end.
+
+  Definition eval (o:op_type) :=
+  match o with SPAWN => spawn | JOIN => join end.
+
+  Inductive Check (k:known) : op -> Prop :=
+  | check_spawn:
+    forall x y,
+    MT.In x k ->
+    ~ MT.In y k ->
+    Check k {| op_t := SPAWN; op_src:= x; op_dst:= y|}
+  | check_join:
+    forall x y lx ly,
+    MT.MapsTo x lx k ->
+    MT.MapsTo y ly k ->
+    List.In y lx ->
+    ~ List.In x ly ->
+    Check k {| op_t := JOIN; op_src := x; op_dst:= y|}.
+
+  Inductive KnownOf : trace -> known -> Prop :=
+  | known_of_nil:
+    forall x,
+    KnownOf nil (make_known x)
+  | known_of_cons_spawn:
+    forall (o:op_type) (x y:tid) l k,
+    Check k {| op_t:=o; op_src:=x; op_dst:=y |} ->
+    KnownOf l k ->
+    KnownOf ({| op_t:=o; op_src:=x; op_dst:=y |}::l) ((eval o) x y k).
+
+  Definition WellFormed (k:known) := forall t l, MT.MapsTo t l k -> ~ List.In t l.
+
+(*
+  Inductive Lt x y : Prop :=
+  | lt_def:
+    forall n,
+    Lookup x n cg ->
+    List.In y (node_known n) ->
+    Lt x y.
 
   Let lt_trans_absurd_one:
     forall t x y,
@@ -694,6 +623,14 @@ Section Props.
     - 
   Qed.
 *)
+*)
+(*
+  Inductive WellFormed n : Prop :=
+  | well_formed_def:
+    ~ List.In (node_task n) (node_known n) ->
+    WellFormed n.
+*)
 
-End Props.
-End CG.
+
+End Defs.
+End Known.
