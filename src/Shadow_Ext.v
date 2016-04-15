@@ -19,62 +19,106 @@ Require Import Coq.Structures.OrderedTypeEx.
 Require Lang.
 Require CG.
 
-Section Shadow_Ext.
-
+Module Trace.
   Inductive mode := READ | WRITE.
-
   Structure access := {
-    a_node : CG.node;
-    a_mode : mode;
-    a_mid: mid
+    a_t : mode;
+    a_src : CG.Node.node;
+    a_dst : mid
   }.
 
-  Definition access_history := list access.
+  Definition e_to_a cg (e:Lang.effect) :=
+  match e with
+  | (t, Lang.WRITE m) =>
+    match CG.cg_lookup t cg with
+    | Some n => Some {| a_t:= WRITE; a_src:=n; a_dst:= m |}
+    | _ => None
+    end
+  | (t, Lang.READ m) =>
+    match CG.cg_lookup t cg with
+    | Some n => Some {| a_t:= READ; a_src:=n; a_dst:= m |}
+    | _ => None
+    end
+  | _ => None
+  end.
 
-  Definition is_write (a:access) :=
-  match a_mode a with
-  | WRITE => true
+End Trace.
+
+Section Shadow_Ext.
+  Import Trace.
+
+  Definition access_history := list (option access).
+
+  Definition mode_eq m1 m2 :=
+  match (m1, m2) with
+  | (READ, READ) => true
+  | (WRITE, WRITE) => true
   | _ => false
   end.
 
-  Definition is_read (a:access) :=
-  match a_mode a with
-  | READ => true
-  | _ => false
+  Definition a_match x m (a:option access) :=
+  match a with
+  | Some a =>
+    andb (Mid.eqb x (a_dst a)) (mode_eq m (a_t a))
+  | None => false
   end.
 
-  Definition ah_reads x ah := filter is_read (filter (fun a => Mid.eqb x (a_mid a)) ah).
+  Definition ah_filter (x:mid) (m:mode) (ah:access_history) := filter (a_match x m) ah.
 
-  Definition ah_writes x ah := filter is_write (filter (fun a => Mid.eqb x (a_mid a)) ah).
+  Definition ah_reads (x:mid) (ah:access_history) := ah_filter x READ ah.
+
+  Definition ah_writes x ah := ah_filter x READ ah.
 
   Section Defs.
-  Variable ah:access_history.
-  Variable cg:CG.computation_graph.
 
-  Definition ah_add_access (r:mode) (t:tid) (m:mid) (ah:access_history) : access_history :=
-  match CG.cg_lookup t cg with
-  | Some n => {| a_mode := r; a_node := n; a_mid := m |} :: ah
-  | _ => ah
+  Definition is_access (o:Lang.op) :=
+  match o with
+  | Lang.WRITE _ => true
+  | Lang.READ _ => true
+  | _ => false
   end.
 
-  Definition ah_add_read := ah_add_access READ.
-  Definition ah_add_write := ah_add_access WRITE.
+  Inductive AccessPre cg : Lang.effect -> Prop :=
+  | access_pre_true:
+    forall x o,
+    MT.In x (CG.cg_nodes cg) ->
+    is_access o = true ->
+    AccessPre cg (x, o)
+  | access_pre_false:
+    forall x o,
+    is_access o = false ->
+    AccessPre cg (x, o).
 
-  Inductive Reduces ah: Lang.effect -> access_history -> Prop :=
+  Definition ah_add cg e ah := e_to_a cg e::ah.
+
+  Inductive AccessHistory: list CG.computation_graph -> list Lang.effect -> access_history -> Prop :=
+  | access_history_nil:
+    forall cg,
+    AccessHistory (cg::nil) nil nil
+  | access_of_cons_read:
+    forall t (ah:access_history) l cg e,
+    AccessHistory l t ah ->
+    AccessPre cg e ->
+    AccessHistory (cg::l) (e::t) (ah_add cg e ah).
+
+  Variable ah:access_history.
+
+  Variable cg:CG.computation_graph.
+
+
+
+  Inductive Reduces cg ah e: access_history -> Prop :=
   | reduces_write:
-    forall t m,
-    Reduces ah (t, Lang.WRITE m) (ah_add_write t m ah)
-  | reduces_read:
-    forall t m,
-    Reduces ah (t, Lang.READ m) (ah_add_read t m ah).
+    AccessPre cg e ->
+    Reduces cg ah e (ah_add cg e ah).
 
-  Definition Access a t h := List.In {| a_mode:=a; a_node:=t; a_mid:=h|} ah. 
+  Definition Access a t h := List.In (Some {| a_t:=a; a_src:=t; a_dst:=h|}) ah. 
 
   Definition Writes t h := Access WRITE t h.
 
   Definition Reads t h := Access READ t h.
 
-  Inductive CoAccess (x y:CG.node) (h:mid): Prop :=
+  Inductive CoAccess (x y:CG.Node.node) (h:mid): Prop :=
   | co_access_def:
     forall a,
     Writes x h ->
