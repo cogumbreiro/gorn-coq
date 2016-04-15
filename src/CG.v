@@ -275,31 +275,18 @@ Section Defs.
     MT.MapsTo t n (cg_nodes cg) ->
     Lookup t n cg.
 
-  Inductive TeeOf cg : op -> Prop :=
-  | tee_of_spawn:
-    forall x y,
-    MT.In x (cg_nodes cg) ->
-    ~ MT.In y (cg_nodes cg) ->
-    TeeOf cg {| op_t:=SPAWN; op_src:=x; op_dst:=y |}
-  | tee_of_join:
-    forall x y,
-    MT.In x (cg_nodes cg) ->
-    MT.In y (cg_nodes cg) ->
-    TeeOf cg {| op_t:=JOIN; op_src:=x; op_dst:=y |}.
-
-  Inductive CGOf: trace -> computation_graph -> Prop :=
-  | cg_of_nil:
+  Inductive CG: trace -> computation_graph -> Prop :=
+  | cg_nil:
     forall x,
-    CGOf nil (make_cg x)
-  | cg_of_cons_some:
+    CG nil (make_cg x)
+  | cg_cons_some:
     forall o l cg,
-    CGOf l cg ->
-    TeeOf cg o -> 
-    CGOf (Some o::l) (cg_eval o cg)
-  | cg_of_cons_none:
+    CG l cg ->
+    CG (Some o::l) (cg_eval o cg)
+  | cg_cons_none:
     forall l cg,
-    CGOf l cg ->
-    CGOf (None::l) cg.
+    CG l cg ->
+    CG (None::l) cg.
 
   Inductive Reduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
   | reduces_spawn:
