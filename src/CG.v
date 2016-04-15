@@ -261,14 +261,15 @@ Section Defs.
     f x y
   end.
 
-  Definition cg_eval (o:op) cg :=
-  match (tee_eval o cg) with
-  | Some v => cg_add v cg
-  | _ => cg
+  Definition cg_eval (o:option op) cg :=
+  match o with
+  | Some o =>
+    match (tee_eval o cg) with
+    | Some v => cg_add v cg
+    | _ => cg
+    end
+  | None => cg
   end.
-
-  Definition cg_spawn x y := cg_eval {|op_t:=SPAWN; op_src:=x; op_dst:=y|}.
-  Definition cg_join x y := cg_eval {|op_t:=JOIN; op_src:=x; op_dst:=y|}.
 
   Inductive Lookup t n cg: Prop :=
   | lookup_def: 
@@ -279,22 +280,29 @@ Section Defs.
   | cg_nil:
     forall x,
     CG nil (make_cg x)
-  | cg_cons_some:
+  | cg_cons:
     forall o l cg,
     CG l cg ->
-    CG (Some o::l) (cg_eval o cg)
-  | cg_cons_none:
-    forall l cg,
-    CG l cg ->
-    CG (None::l) cg.
+    CG (o::l) (cg_eval o cg).
+
+  Definition is_evt (o:Lang.op) :=
+  match o with
+  | Lang.FUTURE _ => true
+  | Lang.FORCE _ => true
+  | _ => false
+  end.
+
+  Definition from_evt e :=
+  match e with
+  | (x, Lang.FUTURE y) => Some {|op_t:=SPAWN; op_src:=x; op_dst:=y|}
+  | (x, Lang.FORCE y) => Some {|op_t:=JOIN; op_src:=x; op_dst:=y|}
+  | _ => None
+  end.
 
   Inductive Reduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
-  | reduces_spawn:
-    forall cg x y,
-    Reduces cg (x, Lang.FUTURE y) (cg_spawn x y cg)
-  | reduces_join:
-    forall cg x y,
-    Reduces cg (x, Lang.FORCE y) (cg_join x y cg).
+  | reduces_def:
+    forall cg e,
+    Reduces cg e (cg_eval (from_evt e) cg).
 
   (**
     Ensure the names are being used properly; no continue edges after a task
