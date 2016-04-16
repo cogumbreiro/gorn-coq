@@ -431,6 +431,25 @@ Module WellFormed.
     eauto using NoDup_cons.
   Qed.
 
+  Inductive Joins: trace -> list tid -> Prop :=
+  | joins_nil:
+    Joins nil nil
+  | joins_cons_spawn:
+    forall ts l x y,
+    ~ List.In x l ->
+    ~ List.In y l ->
+    Joins ts l ->
+    Joins (Some {|op_t:=SPAWN; op_src:=x; op_dst:=y |}::ts) l
+  | joins_cons_join:
+    forall ts l x y,
+    ~ List.In x l ->
+    Joins ts l ->
+    Joins (Some {|op_t:=JOIN; op_src:=x; op_dst:=y |}::ts) l
+  | joins_cons_none:
+    forall ts l,
+    Joins ts l ->
+    Joins (None::ts) l.
+
   Inductive Running : trace -> tid -> list tid -> Prop :=
   | running_nil:
     forall x,
@@ -640,6 +659,8 @@ Module M := FMapAVL.Make Nat_as_OT.
 
   Require Import Bijection.
   Import WellFormed.
+
+  (** The spawn-tree is a DAG *)
 
   Lemma spawn_edges_dag:
     forall t a vs es,
