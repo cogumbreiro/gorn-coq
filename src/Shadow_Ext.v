@@ -89,28 +89,76 @@ Section Shadow_Ext.
     is_access o = false ->
     AccessPre cg (x, o).
 
+  Inductive RaceFreeAccess cg : option access -> option access -> Prop :=
+  | race_free_access_lhs_none:
+    forall a,
+    RaceFreeAccess cg a None
+  | race_free_access_rhs_none:
+    forall a,
+    RaceFreeAccess cg None a
+  | race_free_access_mismatch:
+    forall a b,
+    a_dst a <> a_dst b ->
+    RaceFreeAccess cg (Some a) (Some b)
+  | race_free_access_read_read:
+    forall a b,
+    a_dst a = a_dst b ->
+    a_t a = READ ->
+    a_t b = READ ->
+    RaceFreeAccess cg (Some a) (Some b)
+  | race_free_access_lhs_write:
+    forall a b,
+    a_dst a = a_dst b ->
+    a_t a = WRITE ->
+    CG.Ordered cg (a_src a) (a_src b) ->
+    RaceFreeAccess cg (Some a) (Some b)
+  | race_free_access_rhs_write:
+    forall a b,
+    a_dst a = a_dst b ->
+    a_t b = WRITE ->
+    CG.Ordered cg (a_src a) (a_src b) ->
+    RaceFreeAccess cg (Some a) (Some b).
+
+  Definition RaceFreeCons cg ah a  := Forall (RaceFreeAccess cg a) ah.
+
   Definition ah_add cg e ah := e_to_a cg e::ah.
 
   Inductive AccessHistory: list CG.computation_graph -> list Lang.effect -> access_history -> Prop :=
   | access_history_nil:
     forall cg,
     AccessHistory (cg::nil) nil nil
-  | access_of_cons_read:
+  | access_of_cons:
     forall t (ah:access_history) l cg e,
     AccessHistory l t ah ->
     AccessPre cg e ->
     AccessHistory (cg::l) (e::t) (ah_add cg e ah).
 
-  Variable ah:access_history.
+  Inductive RaceFreeAccessHistory: list CG.computation_graph -> list Lang.effect -> access_history -> Prop :=
+  | race_free_access_history_nil:
+    forall cg,
+    RaceFreeAccessHistory (cg::nil) nil nil
+  | race_free_access_of_cons:
+    forall t (ah:access_history) l cg e,
+    RaceFreeAccessHistory l t ah ->
+    AccessPre cg e ->
+    RaceFreeCons cg ah (e_to_a cg e) ->
+    RaceFreeAccessHistory (cg::l) (e::t) (e_to_a cg e::ah).
 
-  Variable cg:CG.computation_graph.
-
-
+  Inductive RaceFreeReduces cg ah e: access_history -> Prop :=
+  | race_free_reduces_def:
+    AccessPre cg e ->
+    RaceFreeCons cg ah (e_to_a cg e) ->
+    RaceFreeReduces cg ah e (e_to_a cg e::ah).
 
   Inductive Reduces cg ah e: access_history -> Prop :=
   | reduces_write:
     AccessPre cg e ->
     Reduces cg ah e (ah_add cg e ah).
+
+
+  Variable cg:CG.computation_graph.
+
+  Variable ah:access_history.
 
   Definition Access a t h := List.In (Some {| a_t:=a; a_src:=t; a_dst:=h|}) ah. 
 
@@ -131,6 +179,7 @@ Section Shadow_Ext.
     CoAccess n1 n2 h ->
     CG.MHP cg n1 n2 ->
     HasRace h.
+
 
   Inductive OrderedAccesses h: Prop :=
   | safe_reads_def:
