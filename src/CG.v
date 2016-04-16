@@ -309,27 +309,6 @@ Section Defs.
     has been termianted (target of a join).
     *)
 
-  Inductive Dangling : trace -> list tid -> Prop :=
-  | dangling_nil:
-    forall x,
-    Dangling nil (x::nil)
-  | dangling_cons_spawn:
-    forall vs ts x y,
-    (* x -> y *)
-    List.In x ts ->
-    ~ List.In y ts ->
-    Dangling vs ts ->
-    Dangling (Some {|op_t:=SPAWN; op_src:=x; op_dst:=y |}::vs) (y::ts)
-  | dangling_cons_join:
-    forall vs ts x y,
-    List.In x ts ->
-    Dangling vs ts ->
-    Dangling (Some {|op_t:=JOIN; op_src:=x; op_dst:=y |}::vs) (remove TID.eq_dec y ts)
-  | dangling_cons_tau:
-    forall vs ts,
-    Dangling vs ts ->
-    Dangling (None::vs) ts.
-
   Inductive Continue v : edge -> Prop :=
     continue_def:
       Continue v (intra v).
@@ -411,56 +390,181 @@ Section Defs.
 
 End Defs.
 
-Section Props.
-  Import Node.
-(*
-  Lemma cg_one_inv_lookup:
-    forall x n y,
-    Lookup x n (CG_ONE y) ->
-    x = y /\ n = zero_node x.
-  Proof.
-    intros.
-    destruct H.
-    simpl in H.
-    unfold initial_nodes in *.
-    apply MT_Facts.add_mapsto_iff in H.
-    destruct H.
-    - intuition.
-      subst.
-      trivial.
-    - destruct H.
-      apply MT_Facts.empty_mapsto_iff in H0.
-      inversion H0.
-  Qed.
-
-  Lemma lookup_inv:
-    forall x t l n n' m,
-    Lookup x n (CG (t :: l) n' (add_tee t m)) ->
-    (node_task (snd (intra t)) = x /\ (snd (intra t)) = n) \/
-    (node_task (snd (intra t)) <> x /\ MT.MapsTo x n (MT.add (node_task (snd (inter t))) (snd (inter t)) m)) \/
-    (MT.MapsTo x n (MT.add (node_task (snd (intra t))) (snd (intra t)) m)).
-  Proof.
-    intros.
-    destruct H.
-    simpl in H.
-    unfold add_tee in *.
-    destruct t.
-    destruct intra0 as (a, a').
-    destruct inter0 as (b, c).
-    simpl in *.
-    destruct ntype0.
-    - apply MT_Facts.add_mapsto_iff in H.
-      destruct H as [(?,?)|?].
-      + subst.
-        intuition.
-      + intuition.
-    - intuition.
-  Qed.
-*)
-
-End Props.
 End CG.
 
+Module WellFormed.
+  Import Trace.
+
+  Inductive Spawns : trace -> tid -> list tid -> Prop :=
+  | spawns_nil:
+    forall x,
+    Spawns nil x (x::nil)
+  | spawns_cons_spawn:
+    forall ts l z x y,
+    (* x -> y *)
+    List.In x l ->
+    ~ List.In y l ->
+    Spawns ts z l ->
+    Spawns (Some {|op_t:=SPAWN; op_src:=x; op_dst:=y |}::ts) z (y::l)
+  | spawns_cons_join:
+    forall ts l x y z,
+    List.In x l ->
+    List.In y l ->
+    Spawns ts z l ->
+    Spawns (Some {|op_t:=JOIN; op_src:=x; op_dst:=y |}::ts) z l
+  | spawns_cons_none:
+    forall ts l z,
+    Spawns ts z l ->
+    Spawns (None::ts) z l.
+
+  Lemma spawns_no_dup:
+    forall ts x l,
+    Spawns ts x l  ->
+    NoDup l.
+  Proof.
+    induction ts; intros. {
+      inversion H.
+      subst.
+      auto using NoDup_cons, NoDup_nil.
+    }
+    inversion H; subst; clear H; 
+    eauto using NoDup_cons.
+  Qed.
+
+  Inductive Running : trace -> tid -> list tid -> Prop :=
+  | running_nil:
+    forall x,
+    Running nil x (x::nil)
+  | running_cons_spawn:
+    forall ts l x y z,
+    (* x -> y *)
+    List.In x l ->
+    ~ List.In y l ->
+    Running ts z l ->
+    Running (Some {|op_t:=SPAWN; op_src:=x; op_dst:=y |}::ts) z (y::l)
+  | running_cons_join:
+    forall ts l x y z,
+    List.In x l ->
+    Running ts z l ->
+    Running (Some {|op_t:=JOIN; op_src:=x; op_dst:=y |}::ts) z (remove TID.eq_dec y l)
+  | running_cons_none:
+    forall ts l z,
+    Running ts z l ->
+    Running (None::ts) z l.
+
+  Lemma in_remove_simpl:
+    forall {A:Type} (x y:A) l eq_dec,
+    List.In x (remove eq_dec y l) ->
+    List.In x l.
+  Proof.
+    induction l; intros; auto.
+    simpl in H.
+    destruct (eq_dec y a).
+    - subst.
+      eauto using in_cons.
+    - inversion H.
+      + subst.
+        auto using in_eq.
+      + eauto using in_cons.
+  Qed.
+
+  Lemma no_dup_remove:
+    forall {A:Type} (l:list A),
+    NoDup l ->
+    forall (x:A) eq_dec,
+    NoDup (remove eq_dec x l).
+  Proof.
+    induction l; intros; auto.
+    inversion H; subst; clear H.
+    simpl.
+    destruct (eq_dec x a).
+    - eauto.
+    - apply NoDup_cons.
+      + unfold not; intros.
+        contradiction H2.
+        eauto using in_remove_simpl.
+      + eauto.
+  Qed.
+
+  Lemma incl_cons_cons:
+    forall {A:Type} l l',
+    incl l l' ->
+    forall (x:A),
+    incl (x :: l) (x :: l').
+  Proof.
+    intros.
+    eauto using incl_cons, in_eq, incl_tl.
+  Qed.
+
+  Lemma incl_remove:
+    forall {A:Type} l l',
+    incl l l' ->
+    forall eq_dec (x:A),
+    incl (remove eq_dec x l) l'.
+  Proof.
+    intros.
+    unfold incl in *; intros.
+    apply in_remove_simpl in H0.
+    auto.
+  Qed.
+
+  Lemma running_incl_spawned:
+    forall ts ks rs x,
+    Running ts x rs ->
+    Spawns ts x ks ->
+    incl rs ks.
+  Proof.
+    induction ts; intros. {
+      inversion H.
+      inversion H0.
+      auto using incl_refl.
+    }
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    - eauto using incl_cons_cons.
+    - inversion H0.
+      eauto using incl_remove.
+    - inversion H0.
+      eauto.
+  Qed.
+
+
+  Lemma no_dup_cons_nil:
+    forall {A:Type} (x:A),
+    NoDup (x :: nil).
+  Proof.
+    intros.
+    apply NoDup_cons.
+    - intuition.
+    - auto using NoDup_nil.
+  Qed.
+
+  Lemma running_no_dup:
+    forall ts rs x,
+    Running ts x rs ->
+    NoDup rs.
+  Proof.
+    induction ts; intros; inversion H; subst.
+    - auto using no_dup_cons_nil.
+    - eauto using NoDup_cons.
+    - eauto using no_dup_remove.
+    - eauto.
+  Qed.
+
+  Lemma incl_rw_nil:
+    forall {A:Type} (l:list A),
+    incl l nil ->
+    l = nil.
+  Proof.
+    unfold incl.
+    intros.
+    destruct l; auto.
+    assert (X: List.In a (a::l)) by auto using in_eq.
+    apply H in X.
+    inversion X.
+  Qed.
+
+End WellFormed.
 
 Module Known.
 Require Import Coq.Structures.OrderedTypeEx.
@@ -502,142 +606,65 @@ Module M := FMapAVL.Make Nat_as_OT.
     ~ List.In x ly ->
     Check k {| op_t := JOIN; op_src := x; op_dst:= y|}.
 
-  Inductive KnownOf : trace -> known -> Prop :=
-  | known_of_nil:
+  Inductive Known : trace -> known -> Prop :=
+  | known_nil:
     forall x,
-    KnownOf nil (make_known x)
-  | known_of_cons_some:
+    Known nil (make_known x)
+  | known_cons_some:
     forall o x y l k,
     Check k {| op_t:=o; op_src:=x; op_dst:=y |} ->
-    KnownOf l k ->
-    KnownOf (Some {| op_t:=o; op_src:=x; op_dst:=y |}::l) ((eval o) x y k)
-  | known_of_cons_none:
+    Known l k ->
+    Known (Some {| op_t:=o; op_src:=x; op_dst:=y |}::l) ((eval o) x y k)
+  | known_cons_none:
     forall l k,
-    KnownOf l k ->
-    KnownOf (None::l) k.
+    Known l k ->
+    Known (None::l) k.
 
   Definition WellFormed (k:known) := forall t l, MT.MapsTo t l k -> ~ List.In t l.
 
-(*
-  Inductive Lt x y : Prop :=
-  | lt_def:
-    forall n,
-    Lookup x n cg ->
-    List.In y (node_known n) ->
-    Lt x y.
+  Inductive SpawnEdges : trace -> list (tid*tid) -> Prop :=
+  | spawn_edges_nil:
+    SpawnEdges nil nil
+  | spawn_edges_cons_spawn:
+    forall x y l e,
+    SpawnEdges l e ->
+    SpawnEdges (Some {| op_t:=SPAWN; op_src:=x; op_dst:=y|}::l) ((x,y)::e)
+  | spawn_edges_cons_join:
+    forall l e x y,
+    SpawnEdges l e ->
+    SpawnEdges (Some {| op_t:=JOIN; op_src:=x; op_dst:=y|}::l) e
+  | spawn_edges_cons_none:
+    forall l e,
+    SpawnEdges l e ->
+    SpawnEdges (None::l) e.
 
-  Let lt_trans_absurd_one:
-    forall t x y,
-    ~ Lt (CG_ONE t) x y.
-  Proof.
-    intros.
-    unfold not; intros.
-    inversion H.
-    apply cg_one_inv_lookup in H0.
-    destruct H0.
-    subst.
-    inversion H1.
-  Qed.
+  Require Import Bijection.
+  Import WellFormed.
 
-  Let lt_trans_absurd_nil:
-    forall n m x y,
-    Nodes (CG nil n m) ->
-    ~ Lt (CG nil n m) x y.
+  Lemma spawn_edges_dag:
+    forall t a vs es,
+    Spawns t a vs ->
+    SpawnEdges t es ->
+    DAG (Bijection.Lt vs) es.
   Proof.
-    intros.
-    unfold not; intros.
-    destruct H0.
-    inversion H.
-  Qed.
-
-  Let check_absurd_snd_intra:
-    forall t,
-    CG.WellFormed t ->
-    ~ List.In (node_task (snd (intra t))) (node_known (snd (intra t))).
-  Proof.
-    intros.
-    unfold not; intros.
-    inversion H.
-    + subst.
-      simpl in *.
-      destruct H3; contradiction.
-    + subst.
-      simpl in *.
-      destruct H3; contradiction.
-  Qed.
-(*
-  Let check_absurd_snd_inter:
-    forall t,
-    CG.WellFormed t ->
-    ~ List.In (node_task (snd (inter t))) (node_known (snd (intra t))).
-  Proof.
-    intros.
-    unfold not; intros.
-    inversion H.
-    + subst.
-      simpl in *.
-      destruct H3.
-      contradiction H3.
-      auto using in_
-      destruct H2; contradiction.
-    + subst.
-      simpl in *.
-      destruct H3; contradiction.
-  Qed.
-*)
-(*
-  Let lt_trans_cg:
-    forall l n m,
-    CG_WellFormed (CG l n m) ->
-    forall x y z,
-    Lt (CG l n m) x y ->
-    Lt (CG l n m) y z ->
-    Lt (CG l n m) x z.
-  Proof.
-    induction l; intros. {
-      inversion H.
+    induction t; intros;
+    inversion H0; subst; clear H0;
+    inversion H; subst; clear H; eauto. {
+     apply Forall_nil.
     }
-    inversion H; subst; clear H.
-    - destruct H0.
-      destruct H1.
-      apply lookup_inv in H.
-      destruct H as [(?,?)|[?|?]].
-      + subst.
-        apply lookup_inv in H1.
-        destruct H1 as [(?,?)|[(?,?)|?]].
-        * subst.
-          apply check_absurd_snd_intra in H0; auto.
-          inversion H0.
-        * apply MT_Facts.add_mapsto_iff in H1.
-          destruct H1 as [(?,?)|(?,?)]. {
-            subst.
-            apply check_absurd_snd_inter in H0; auto.
-            inversion H0.
-          }
-          
+    assert (dag: DAG (Lt l) e) by eauto.
+    apply Forall_cons.
+    - simpl.
+      apply in_to_index_of in H3; destruct H3 as (n, (?,?)).
+      assert (IndexOf y (length l) (y::l)) by eauto using index_of_eq.
+      apply lt_def with (xn:=n) (yn:=length l); auto using index_of_cons.
+    - unfold DAG in *.
+      apply Forall_impl with (P:=LtEdge (Lt l)); auto.
+      intros.
+      destruct a as (v,w).
+      simpl in *.
+      auto using lt_cons.
   Qed.
-
-  Lemma lt_trans cg:
-    forall x y z,
-    Lt cg x y ->
-    Lt cg y z ->
-    Lt cg x z.
-  Proof.
-    intros.
-    destruct cg.
-    - apply lt_trans_one_absurd in H.
-      inversion H.
-    - 
-  Qed.
-*)
-*)
-(*
-  Inductive WellFormed n : Prop :=
-  | well_formed_def:
-    ~ List.In (node_task n) (node_known n) ->
-    WellFormed n.
-*)
-
 
 End Defs.
 End Known.
