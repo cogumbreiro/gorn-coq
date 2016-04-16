@@ -1,6 +1,9 @@
+Set Implicit Arguments.
 
-Module Vector.
-  Section Defs.
+Require Import Coq.Lists.List.
+Require Omega.
+
+Section Defs.
   Variable A:Type.
 
   Inductive IndexOf (x:A) : nat -> list A -> Prop :=
@@ -61,6 +64,26 @@ Module Vector.
     - simpl.
       assert (n < length l) by eauto.
       eauto.
+  Qed.
+
+  Lemma in_to_index_of:
+    forall l x,
+    In x l ->
+    exists n, n < length l /\ IndexOf x n l.
+  Proof.
+    induction l; intros. {
+      inversion H.
+    }
+    destruct H.
+    - subst.
+      exists (length l).
+      simpl.
+      eauto using index_of_eq.
+    - apply IHl in H.
+      destruct H as (n, (?,?)).
+      exists n.
+      simpl.
+      eauto using index_of_cons.
   Qed.
 
   Lemma index_of_bij:
@@ -151,7 +174,25 @@ Module Vector.
     eauto using index_of_neq.
   Qed.
 
-  End Defs.
-End Vector.
+  Lemma lt_absurd_nil:
+    forall x y,
+    ~ Lt nil x y.
+  Proof.
+    intuition.
+    destruct H.
+    inversion H.
+  Qed.
+
+  Lemma lt_cons:
+    forall z l x y,
+    Lt l x y ->
+    Lt (z :: l) x y.
+  Proof.
+    intros.
+    inversion H.
+    eauto using lt_def, index_of_cons.
+  Qed.
+
+End Defs.
 
 
