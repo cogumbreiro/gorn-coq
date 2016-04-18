@@ -30,10 +30,13 @@ Module Races.
     r_ah: access_history
   }.
 
+  Section Defs.
+  Variable cf:MC.t Lang.code_fragment.
+
   Inductive Reduces: state -> Lang.effect -> state -> Prop :=
   | reduces_def:
     forall s s' cg sh o cg' sh',
-    Lang.Reduces s o s' ->
+    Lang.Reduces cf s o s' ->
     CG.Reduces cg o cg' ->
     Shadow_Ext.Reduces cg sh o sh' ->
     Reduces {| r_state:=s; r_cg:=cg; r_ah:=sh|} o {|r_state:=s';r_cg:=cg'; r_ah:=sh'|}.
@@ -41,7 +44,7 @@ Module Races.
   Inductive RaceFreeReduces: state -> Lang.effect -> state -> Prop :=
   | race_free_reduces_def:
     forall s s' cg sh o cg' sh',
-    Lang.Reduces s o s' ->
+    Lang.Reduces cf s o s' ->
     CG.Reduces cg o cg' ->
     Shadow_Ext.Reduces cg sh o sh' ->
     RaceFreeReduces {| r_state:=s; r_cg:=cg; r_ah:=sh|} o {|r_state:=s';r_cg:=cg'; r_ah:=sh'|}.
@@ -55,5 +58,5 @@ Module Races.
     ReducesTrace s t s' ->
     RaceFreeReduces s' e s'' ->
     ReducesTrace s (e::t) s''.
-
+  End Defs.
 End Races.
