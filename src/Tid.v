@@ -12,6 +12,10 @@ Inductive tid := taskid : nat -> tid.
 
 Definition tid_nat r := match r with | taskid n => n end.
 
+Definition tid_first := taskid 0.
+
+Definition tid_next m := taskid (S (tid_nat m)).
+
 Module TID <: UsualOrderedType.
   Definition t := tid.
   Definition eq := @eq tid.
