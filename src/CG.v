@@ -585,11 +585,12 @@ Module WellFormed.
 
 End WellFormed.
 
-Module Known.
 Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.FSets.FMapAVL.
 Module M := FMapAVL.Make Nat_as_OT.
+
+Module Known.
   Import Trace.
   Section Defs.
   Definition known := MT.t (list tid).
