@@ -12,6 +12,10 @@ Inductive mid := memid : nat -> mid.
 
 Definition mid_nat r := match r with | memid n => n end.
 
+Definition mid_first := memid 0.
+
+Definition mid_next m := memid (S (mid_nat m)).
+
 Module MID <: UsualOrderedType.
   Definition t := mid.
   Definition eq := @eq t.
