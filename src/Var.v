@@ -8,6 +8,10 @@ Inductive var := varid : nat -> var.
 
 Definition var_nat r := match r with | varid n => n end.
 
+Definition var_first := varid 0.
+
+Definition var_next m := varid (S (var_nat m)).
+
 Module VAR <: UsualOrderedType.
   Definition t := var.
   Definition eq := @eq t.
