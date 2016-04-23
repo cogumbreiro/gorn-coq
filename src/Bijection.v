@@ -163,6 +163,17 @@ Section Defs.
     omega.
   Qed.
 
+  Lemma lt_irrefl (l:list A) (N:NoDup l):
+    forall x,
+    ~ Lt l x x.
+  Proof.
+    intros.
+    intuition.
+    inversion H.
+    assert (xn=yn) by eauto using index_of_fun.
+    intuition.
+  Qed.
+
   Lemma lt_neq (l:list A) (N:NoDup l):
     forall x y,
     Lt l x y ->
