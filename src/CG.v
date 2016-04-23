@@ -471,61 +471,7 @@ Module WellFormed.
     Running ts z l ->
     Running (None::ts) z l.
 
-  Lemma in_remove_simpl:
-    forall {A:Type} (x y:A) l eq_dec,
-    List.In x (remove eq_dec y l) ->
-    List.In x l.
-  Proof.
-    induction l; intros; auto.
-    simpl in H.
-    destruct (eq_dec y a).
-    - subst.
-      eauto using in_cons.
-    - inversion H.
-      + subst.
-        auto using in_eq.
-      + eauto using in_cons.
-  Qed.
-
-  Lemma no_dup_remove:
-    forall {A:Type} (l:list A),
-    NoDup l ->
-    forall (x:A) eq_dec,
-    NoDup (remove eq_dec x l).
-  Proof.
-    induction l; intros; auto.
-    inversion H; subst; clear H.
-    simpl.
-    destruct (eq_dec x a).
-    - eauto.
-    - apply NoDup_cons.
-      + unfold not; intros.
-        contradiction H2.
-        eauto using in_remove_simpl.
-      + eauto.
-  Qed.
-
-  Lemma incl_cons_cons:
-    forall {A:Type} l l',
-    incl l l' ->
-    forall (x:A),
-    incl (x :: l) (x :: l').
-  Proof.
-    intros.
-    eauto using incl_cons, in_eq, incl_tl.
-  Qed.
-
-  Lemma incl_remove:
-    forall {A:Type} l l',
-    incl l l' ->
-    forall eq_dec (x:A),
-    incl (remove eq_dec x l) l'.
-  Proof.
-    intros.
-    unfold incl in *; intros.
-    apply in_remove_simpl in H0.
-    auto.
-  Qed.
+  Require Import Aniceto.List.
 
   Lemma running_incl_spawned:
     forall ts ks rs x,
@@ -541,21 +487,10 @@ Module WellFormed.
     inversion H; subst; clear H.
     inversion H0; subst; clear H0.
     - eauto using incl_cons_cons.
-    - inversion H0.
-      eauto using incl_remove.
+    - inversion H0; subst.
+      eauto using remove_incl, incl_tran.
     - inversion H0.
       eauto.
-  Qed.
-
-
-  Lemma no_dup_cons_nil:
-    forall {A:Type} (x:A),
-    NoDup (x :: nil).
-  Proof.
-    intros.
-    apply NoDup_cons.
-    - intuition.
-    - auto using NoDup_nil.
   Qed.
 
   Lemma running_no_dup:
@@ -568,19 +503,6 @@ Module WellFormed.
     - eauto using NoDup_cons.
     - eauto using no_dup_remove.
     - eauto.
-  Qed.
-
-  Lemma incl_rw_nil:
-    forall {A:Type} (l:list A),
-    incl l nil ->
-    l = nil.
-  Proof.
-    unfold incl.
-    intros.
-    destruct l; auto.
-    assert (X: List.In a (a::l)) by auto using in_eq.
-    apply H in X.
-    inversion X.
   Qed.
 
 End WellFormed.
@@ -626,19 +548,19 @@ Module Known.
     ~ List.In x ly ->
     Check k {| op_t := JOIN; op_src := x; op_dst:= y|}.
 
-  Inductive Known : trace -> known -> Prop :=
+  Inductive Known : trace -> tid -> known -> Prop :=
   | known_nil:
     forall x,
-    Known nil (make_known x)
+    Known nil x (make_known x)
   | known_cons_some:
-    forall o x y l k,
+    forall o x y l k z,
     Check k {| op_t:=o; op_src:=x; op_dst:=y |} ->
-    Known l k ->
-    Known (Some {| op_t:=o; op_src:=x; op_dst:=y |}::l) ((eval o) x y k)
+    Known l z k ->
+    Known (Some {| op_t:=o; op_src:=x; op_dst:=y |}::l) z ((eval o) x y k)
   | known_cons_none:
-    forall l k,
-    Known l k ->
-    Known (None::l) k.
+    forall l z k,
+    Known l z k ->
+    Known (None::l) z k.
 
   Definition WellFormed (k:known) := forall t l, MT.MapsTo t l k -> ~ List.In t l.
 
@@ -686,6 +608,21 @@ Module Known.
       destruct a as (v,w).
       simpl in *.
       auto using lt_cons.
+  Qed.
+
+  Lemma spawn_supremum:
+    forall t a vs es,
+    Spawns t a vs ->
+    SpawnEdges t es ->
+    DAG (Bijection.Lt vs) es ->
+    es <> nil ->
+    exists x, forall y, ~ Reaches (Edge es) x y.
+  Proof.
+    intros.
+    apply dag_supremum with (Lt := Bijection.Lt vs); auto.
+    - auto using TID.eq_dec.
+    - eauto using lt_irrefl, spawns_no_dup.
+    - eauto using lt_trans, spawns_no_dup.
   Qed.
 
 End Defs.
