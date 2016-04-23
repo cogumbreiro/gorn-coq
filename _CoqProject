@@ -8,7 +8,6 @@ src/Cid.v
 src/Races.v
 src/Lang.v
 src/CG.v
-src/CG_Simple.v
 src/Shadow_Ext.v
 src/XFuture.v
 src/Bijection.v
