@@ -580,12 +580,21 @@ Module Known.
     SpawnEdges l e ->
     SpawnEdges (None::l) e.
 
+
+  Definition to_spawn_edge e :=
+  match e with
+  | Some {| op_t:=SPAWN; op_src:=x; op_dst:=y|} => Some (x,y)
+  | _ => None
+  end.
+
+  Definition spawn_edges (ts:trace) := List.omap to_spawn_edge ts.
+
   Require Import Bijection.
   Import WellFormed.
 
   (** The spawn-tree is a DAG *)
 
-  Lemma spawn_edges_dag:
+  Let spawn_edges_dag:
     forall t a vs es,
     Spawns t a vs ->
     SpawnEdges t es ->
@@ -610,7 +619,7 @@ Module Known.
       auto using lt_cons.
   Qed.
 
-  Lemma spawn_supremum:
+  Let spawn_supremum:
     forall t a vs es,
     Spawns t a vs ->
     SpawnEdges t es ->
@@ -618,6 +627,50 @@ Module Known.
     es <> nil ->
     exists x, forall y, ~ Reaches (Edge es) x y.
   Proof.
+    intros.
+    apply dag_supremum with (Lt := Bijection.Lt vs); auto.
+    - auto using TID.eq_dec.
+    - eauto using lt_irrefl, spawns_no_dup.
+    - eauto using lt_trans, spawns_no_dup.
+  Qed.
+
+  Let vertex_mem (vs:list tid) (x:tid) := ListSet.set_mem TID.eq_dec x vs.
+
+  Let edge_mem vs (e:tid*tid) := let (x,y) := e in andb (vertex_mem vs x) (vertex_mem vs y).
+
+  Let restrict_vertices vs es := filter (edge_mem vs) es.
+
+  Let restrict_vertices_incl:
+    forall vs es,
+    incl (restrict_vertices vs es) es.
+  Proof.
+    intros.
+    unfold restrict_vertices.
+    auto using List.filter_incl.
+  Qed.
+
+  Let spawn_running_edges_dag:
+    forall t a vs rs es,
+    Spawns t a vs ->
+    Running t a rs ->
+    SpawnEdges t es ->
+    DAG (Bijection.Lt vs) (restrict_vertices rs es).
+  Proof.
+    eauto using dag_incl.
+  Qed.
+
+  Lemma spawn_running_supremum:
+    forall t a vs rs es,
+    Spawns t a vs ->
+    Running t a rs ->
+    SpawnEdges t es ->
+    restrict_vertices rs es <> nil ->
+    DAG (Bijection.Lt vs) (restrict_vertices rs es) /\
+    exists x, forall y, ~ Reaches (Edge (restrict_vertices rs es)) x y.
+  Proof.
+    intros.
+    assert (DAG (Bijection.Lt vs) (restrict_vertices rs es)) by eauto.
+    split; auto.
     intros.
     apply dag_supremum with (Lt := Bijection.Lt vs); auto.
     - auto using TID.eq_dec.
