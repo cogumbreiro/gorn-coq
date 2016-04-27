@@ -493,6 +493,53 @@ Module WellFormed.
       eauto.
   Qed.
 
+  Lemma running_not_in_joins:
+    forall ts js rs x,
+    Running ts x rs ->
+    Joins ts js ->
+    forall y, List.In y rs -> ~ List.In y js.
+  Proof.
+    induction ts; intros. {
+      inversion H; inversion H0;
+      intuition.
+    }
+    destruct a as [(a,src,dst)|].
+    - destruct a; inversion H; inversion H0; subst; clear H H0.
+      + destruct H1; subst; eauto.
+      + eauto using remove_in.
+    - inversion H; inversion H0; subst; clear H H0.
+      eauto.
+  Qed.
+
+  Lemma joins_not_in_running:
+    forall ts js rs x,
+    Running ts x rs ->
+    Joins ts js ->
+    forall y, List.In y js -> ~ List.In y rs.
+  Proof.
+    induction ts; intros. {
+      inversion H; inversion H0; subst.
+      inversion H1.
+    }
+    destruct a as [(a,src,dst)|].
+    - destruct a; inversion H; inversion H0; subst; clear H H0.
+      + unfold not; intros Hx.
+        destruct Hx.
+        * subst.
+          contradiction.
+        * assert (Hx := IHts _ _ _ H9 H16 _ H1).
+          contradiction.
+      + unfold not; intros Hx.
+        apply remove_in in Hx.
+        assert (Hy := IHts _ _ _ H8 H14 _ H1).
+        contradiction.
+    - inversion H; inversion H0.
+      eauto.
+  Qed.
+
+  Require Import Coq.Lists.ListSet.
+  Require Import Aniceto.ListSet.
+
   Lemma running_no_dup:
     forall ts rs x,
     Running ts x rs ->
