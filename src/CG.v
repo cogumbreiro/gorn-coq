@@ -609,7 +609,11 @@ Module Known.
     Safe l z k ->
     Safe (None::l) z k.
 
-  Definition WellFormed (k:known) := forall t l, MT.MapsTo t l k -> ~ List.In t l.
+  Inductive WellFormed (k:known) :=
+  | well_formed_def:
+    (forall t l, MT.MapsTo t l k -> ~ List.In t l) ->
+    (forall x y l, MT.MapsTo x l k -> List.In y l -> MT.In y k) ->
+    WellFormed k.
 
   Inductive SpawnEdges : trace -> list (tid*tid) -> Prop :=
   | spawn_edges_nil:
@@ -656,8 +660,7 @@ Module Known.
     apply Forall_cons.
     - simpl.
       apply in_to_index_of in H3; destruct H3 as (n, (?,?)).
-      assert (IndexOf y (length l) (y::l)) by eauto using index_of_eq.
-      apply lt_def with (xn:=n) (yn:=length l); auto using index_of_cons.
+      eauto using index_of_eq, lt_def, index_of_cons.
     - unfold DAG in *.
       apply Forall_impl with (P:=LtEdge (Lt l)); auto.
       intros.
@@ -685,7 +688,21 @@ Module Known.
 
   Let edge_mem vs (e:tid*tid) := let (x,y) := e in andb (vertex_mem vs x) (vertex_mem vs y).
 
+  Definition edge_eq_dec := Pair.pair_eq_dec TID.eq_dec.
+
   Let restrict_vertices vs es := filter (edge_mem vs) es.
+
+
+  (* TODO: MOVE ME *)
+  Lemma in_impl:
+    forall {A:Type} (E F:A*A -> Prop) (X:forall e, E e -> F e) (x:A),
+    In E x ->
+    In F x.
+  Proof.
+    intros.
+    destruct H as (e, (?,?)).
+    eauto using in_def.
+  Qed.
 
   Let restrict_vertices_incl:
     forall vs es,
@@ -694,6 +711,28 @@ Module Known.
     intros.
     unfold restrict_vertices.
     auto using List.filter_incl.
+  Qed.
+
+  Lemma in_incl:
+    forall {A:Type} (x:A) l l',
+    incl l' l ->
+    List.In x l' ->
+    List.In x l.
+  Proof.
+    intros.
+    unfold incl in *; auto.
+  Qed.
+
+  Let restrict_vertices_in:
+    forall rs es x,
+    In (Edge (restrict_vertices rs es)) x ->
+    In (Edge es) x.
+  Proof.
+    intros.
+    apply in_impl with (E:=Edge (restrict_vertices rs es)); auto.
+    intros.
+    unfold Edge in *.
+    eauto using in_incl, restrict_vertices_incl.
   Qed.
 
   Let spawn_running_edges_dag:
@@ -764,6 +803,67 @@ Module Known.
     auto using MT.add_1.
   Qed.
 
+  Let make_known_inv_maps_to:
+    forall x y l,
+    MT.MapsTo x l (make_known y) ->
+    x = y /\ l = nil.
+  Proof.
+    intros.
+    unfold make_known in *.
+    apply MT_Facts.add_mapsto_iff in H.
+    destruct H as [(?,?)|(?,?)]; auto.
+    apply MT_Facts.empty_mapsto_iff in H0.
+    contradiction.
+  Qed.
+
+  Let spawn_inv_maps_to:
+    forall x y z l k,
+    MT.MapsTo z l (spawn x y k) ->
+    MT.MapsTo z l k \/
+    (z = x /\ exists l', l = y :: l' /\ MT.MapsTo x l' k) \/
+    (x <> z /\ y = z /\ MT.MapsTo x l k).
+  Proof.
+    intros.
+    unfold spawn in *.
+    destruct (MT_Extra.find_rw x k) as [(He,n)|(?,(He,?))]; rewrite He in *.
+    - auto.
+    - apply MT_Facts.add_mapsto_iff in H.
+      destruct H as [(?,?)|(?,?)].
+      + right; left.
+        intuition.
+        exists x0.
+        intuition.
+      + apply MT_Facts.add_mapsto_iff in H1.
+        destruct H1 as [(?,?)|(?,?)].
+        * right; right.
+          subst; auto.
+        * intuition.
+  Qed.
+
+  Let join_inv_maps_to:
+    forall x y z l k,
+    MT.MapsTo z l (join x y k) ->
+    MT.MapsTo z l k \/
+    (exists lx ly, MT.MapsTo x lx k /\ MT.MapsTo y ly k /\ l = ly ++ lx /\ z = x).
+  Proof.
+    unfold join.
+    intros.
+    destruct (MT_Extra.find_rw x k) as [(He,n)|(?,(He,?))]; rewrite He in *. {
+      intuition.
+    }
+    destruct (MT_Extra.find_rw y k) as [(He',n)|(?,(He',?))]; rewrite He' in *. {
+      intuition.
+    }
+    clear He He'.
+    apply MT_Facts.add_mapsto_iff in H.
+    destruct H as [(?,?)|(?,?)].
+    - subst.
+      right.
+      exists x0.
+      eauto.
+    - intuition.
+  Qed.
+
   Let spawn_mapsto_neq:
     forall (x y:tid) l (k:known),
     y <> x ->
@@ -778,6 +878,23 @@ Module Known.
       eauto using MT.add_2, MT.add_1.
   Qed.
 
+  Let spawn_mapsto_inv_1:
+    forall x y l k,
+    MT.In x k ->
+    MT.MapsTo x l (spawn x y k) ->
+    exists l', (l = y::l' /\ MT.MapsTo x l' k).
+  Proof.
+    unfold spawn.
+    intros.
+    destruct (MT_Extra.find_rw x k) as [(He,n)|(?,(He,?))]; rewrite He in *.
+    - contradiction.
+    - apply MT_Facts.add_mapsto_iff in H0.
+      destruct H0 as [(?,?)|(?,?)].
+      + subst.
+        eauto.
+      + contradiction H0; auto.
+  Qed.
+
   Let spawn_mapsto_eq:
     forall x y k l,
     MT.MapsTo x l k ->
@@ -789,6 +906,40 @@ Module Known.
     - contradiction n; eauto using MT_Extra.mapsto_to_in.
     - assert (x0 = l) by eauto using MT_Facts.MapsTo_fun; subst.
       eauto using MT.add_1.
+  Qed.
+
+  Let spawn_mapsto_eq_spawned:
+    forall x y k l,
+    MT.MapsTo x l k ->
+    x <> y ->
+    MT.MapsTo y l (spawn x y k).
+  Proof.
+    intros.
+    unfold spawn.
+    destruct (MT_Extra.find_rw x k) as [(He,n)|(?,(He,?))]; rewrite He.
+    - contradiction n; eauto using MT_Extra.mapsto_to_in.
+    - assert (x0 = l) by eauto using MT_Facts.MapsTo_fun; subst.
+      eauto using MT.add_2, MT.add_1.
+  Qed.
+
+  Let spawn_mapsto_eq_spawner:
+    forall x y k l,
+    MT.In x k ->
+    x <> y ->
+    MT.MapsTo y l (spawn x y k) ->
+    MT.MapsTo x l k.
+  Proof.
+    intros.
+    unfold spawn in *.
+    destruct (MT_Extra.find_rw x k) as [(He,n)|(?,(He,?))]; rewrite He in *.
+    - contradiction n; eauto using MT_Extra.mapsto_to_in.
+    - clear He H.
+      apply MT_Facts.add_mapsto_iff in H1.
+      destruct H1 as [(?,?)|(?,?)].
+      + contradiction.
+      + apply MT_Facts.add_mapsto_iff in H1.
+        destruct H1 as [(?,?)|(?,?)]; subst; auto.
+        contradiction H1; trivial.
   Qed.
 
   Let spawn_mapsto_neq_neq:
@@ -805,6 +956,20 @@ Module Known.
     - eauto using MT.add_2.
   Qed.
 
+  Let spawn_mapsto_inv_neq_neq:
+    forall x y z l k,
+    z <> x ->
+    z <> y ->
+    MT.MapsTo z l (spawn x y k) ->
+    MT.MapsTo z l k.
+  Proof.
+    unfold spawn.
+    intros.
+    destruct (MT_Extra.find_rw x k) as [(He,n)|(?,(He,?))]; rewrite He in *.
+    - auto.
+    - repeat (apply MT.add_3 in H1; auto).
+  Qed.
+
   Let spawn_in:
     forall x y z k,
     MT.In z k ->
@@ -815,6 +980,21 @@ Module Known.
     destruct (MT_Extra.find_rw x k) as [(He,n)|(?,(He,?))];
     rewrite He;
     auto using MT_Extra.add_in.
+  Qed.
+
+  Let spawn_in_spawned:
+    forall x y k,
+    MT.In x k ->
+    MT.In y (spawn x y k).
+  Proof.
+    intros.
+    unfold spawn.
+    destruct (MT_Extra.find_rw x k) as [(He,n)|(?,(He,?))];
+    rewrite He.
+    - contradiction.
+    - apply MT_Extra.add_in.
+      rewrite MT_Facts.add_in_iff.
+      auto.
   Qed.
 
   Let join_in:
@@ -863,7 +1043,244 @@ Module Known.
       eauto using MT_Extra.mapsto_to_in.
     + simpl; eauto.
   Qed.
+
+  Let make_known_is_well_formed:
+    forall x,
+    WellFormed (make_known x).
+  Proof.
+    intros.
+    apply well_formed_def.
+    - intros.
+      apply make_known_inv_maps_to in H; destruct H; subst.
+      auto.
+    - intros.
+      apply make_known_inv_maps_to in H; destruct H; subst.
+      inversion H0.
+  Qed.
+
+  Let well_formed_not_refl:
+    forall x l k,
+    WellFormed k ->
+    MT.MapsTo x l k ->
+    ~ List.In x l.
+  Proof.
+    intros; inversion H; eauto.
+  Qed.
+
+  Let well_formed_range_in_dom:
+    forall x y l k,
+    WellFormed k ->
+    MT.MapsTo x l k ->
+    List.In y l ->
+    MT.In y k.
+  Proof.
+    intros; inversion H; eauto.
+  Qed.
+
+  Let spawn_is_well_formed:
+    forall x y k,
+    WellFormed k ->
+    ~ MT.In y k ->
+    WellFormed (spawn x y k).
+  Proof.
+    intros.
+    apply well_formed_def; intros. {
+    intros.
+    apply spawn_inv_maps_to in H1.
+    destruct H1 as [?|[(?,(?,(?,?)))|(?,(?,?))]]; subst; auto.
+    - eauto.
+    - unfold not; intros.
+      destruct H1.
+      + subst.
+        contradiction H0.
+        eauto using MT_Extra.mapsto_to_in.
+      + assert (~ List.In x x0) by eauto.
+        contradiction.
+    - unfold not; intros.
+      contradiction H0.
+      eauto.
+    }
+    apply spawn_inv_maps_to in H1.
+    destruct H1 as [?|[(?,(?,(?,?)))|(?,(?,?))]]; subst; eauto.
+    destruct H2; subst; eauto using MT_Extra.mapsto_to_in.
+  Qed.
 (*
+  Let well_formed_inv_spawn:
+    forall x y k,
+    ~ MT.In y k ->
+    WellFormed (spawn x y k) ->
+    WellFormed k.
+  Proof.
+    intros.
+    inversion H0.
+    apply well_formed_def; intros.
+    - destruct (TID.eq_dec t x), (TID.eq_dec t y); rewrite tid_eq_rw in *; auto; repeat subst.
+      + apply spawn_mapsto_eq with (y:=y) in H3.
+        apply well_formed_not_refl in H3; auto.
+        contradiction H3; auto using in_eq.
+      + apply spawn_mapsto_eq with (y:=y) in H3.
+        apply well_formed_not_refl in H3; auto.
+        unfold not; intros.
+        contradiction H3; auto using in_cons.
+      + assert (N: ~ MT.In y k) by eauto.
+        contradiction N; eauto using MT_Extra.mapsto_to_in.
+    - destruct (TID.eq_dec y0 x0); rewrite tid_eq_rw in *; auto; repeat subst.
+      + eauto using MT_Extra.mapsto_to_in.
+      + assert 
+        assert (MT.In y (spawn x y k)). {
+          apply H2 with (x:=x0) (l:=l).
+        }
+
+  Qed.
+*)
+  Let join_is_well_formed:
+    forall x y l k,
+    WellFormed k ->
+    MT.MapsTo y l k ->
+    ~ List.In x l ->
+    WellFormed (join x y k).
+  Proof.
+    intros.
+    apply well_formed_def.
+    - intros.
+      apply join_inv_maps_to in H2.
+      destruct H2 as [?|(?,(?,(?,(?,(?,?)))))].
+      + eauto.
+      + subst.
+        assert (x1 = l) by eauto using MT_Facts.MapsTo_fun; subst.
+        unfold not; intros.
+        apply in_app_iff in H4.
+        destruct H4.
+        * contradiction.
+        * assert (~ List.In x x0) by eauto.
+          contradiction.
+    - intros.
+      apply join_inv_maps_to in H2.
+      destruct H2 as [?|(?,(?,(?,(?,(?,?)))))].
+      + eauto.
+      + subst.
+        apply in_app_iff in H3; destruct H3; eauto.
+  Qed.
+
+  Let safe_to_well_formed:
+    forall t x k,
+    Safe t x k ->
+    WellFormed k.
+  Proof.
+    induction t; intros. {
+      inversion H; subst; auto.
+    }
+    inversion H; subst; clear H.
+    - destruct o.
+      + simpl.
+        inversion H2; eauto.
+      + simpl.
+        inversion H2; eauto.
+    - eauto.
+  Qed.
+
+  (* This does not hold: 
+  Let known_to_spawn_edge:
+    forall t a es k l x y,
+    SpawnEdges t es ->
+    Safe t a k ->
+    MT.MapsTo x l k ->
+    List.In y l ->
+    Edge es (x, y).
+  *)
+
+
+  (** TODO: Move me *)
+  Lemma reaches_impl:
+    forall {A:Type} (x y:A) (E F:(A*A)->Prop),
+    (forall e, E e -> F e) ->
+    Reaches E x y ->
+    Reaches F x y.
+  Proof.
+    intros.
+    inversion H0.
+    eauto using walk2_impl, reaches_def.
+  Qed.
+
+  Let edge_cons:
+    forall {A:Type} es (e e':A*A),
+    Edge es e ->
+    Edge (e' :: es) e.
+  Proof.
+    unfold Edge.
+    auto using in_cons.
+  Qed.
+
+  Let reaches_cons:
+    forall {A:Type} (x y:A) e es,
+    Reaches (Edge es) x y ->
+    Reaches (Edge (e :: es)) x y.
+  Proof.
+    eauto using reaches_impl.
+  Qed.
+
+  Lemma edge_to_reaches:
+    forall {A:Type} (x y:A) (E:A*A->Prop),
+    E (x,y) ->
+    Reaches E x y.
+  Proof.
+    intros.
+    eauto using reaches_def, edge_to_walk2.
+  Qed.
+
+  Let known_to_spawn_edge:
+    forall t a es k l x y,
+    SpawnEdges t es ->
+    Safe t a k ->
+    MT.MapsTo x l k ->
+    List.In y l ->
+    WellFormed k ->
+    Reaches (Edge es) x y.
+  Proof.
+    induction t; intros. {
+      inversion H0; subst.
+      assert (X: x = a /\ l = nil) by eauto.
+      destruct X; subst.
+      inversion H2.
+    }
+    inversion H; subst; clear H.
+    - inversion H0; subst; clear H0.
+      inversion H10; subst; clear H10.
+      simpl in *.
+      destruct (TID.eq_dec x x0), (TID.eq_dec y y0); rewrite tid_eq_rw in *; subst.
+      + apply edge_to_reaches.
+        unfold Edge.
+        auto using in_eq.
+      + apply spawn_mapsto_inv_1 in H1; auto.
+        destruct H1 as (l', (?,?)); subst.
+        assert (List.In y l'). {
+          destruct H2.
+          - contradiction n; auto.
+          - auto.
+        }
+        eauto.
+      + assert (X: MT.MapsTo x l k0 \/ x = y0 /\ MT.MapsTo x0 l k0). {
+          apply spawn_inv_maps_to in H1.
+          destruct H1 as [?|[(?,(?,(?,?)))|(?,(?,?))]]; subst; auto.
+          contradiction n; auto.
+        }
+        destruct X as [?|(?,?)].
+        * eauto.
+        * subst.
+          contradiction H5.
+          eauto.
+      + destruct (TID.eq_dec x y0); rewrite tid_eq_rw in *; subst. {
+          apply spawn_mapsto_eq_spawner in H1; auto.
+          assert (Reaches (Edge e) x0 y) by eauto.
+          unfold not; intros.
+          subst.
+        }
+        apply spawn_mapsto_inv_neq_neq in H1; auto.
+        eauto.
+        unfold not; intros.
+        subst.
+  Qed.
+
   Let progress:
     forall t a vs rs es k,
     Spawns t a vs ->
@@ -871,7 +1288,7 @@ Module Known.
     SpawnEdges t es ->
     Safe t a k ->
     restrict_vertices rs es <> nil ->
-    exists x l, MT.MapsTo x l k -> forall y, List.In y l -> ~ List.In y rs.
+    exists x l, MT.MapsTo x l k /\ forall y, List.In y l -> ~ List.In y rs.
   Proof.
     intros.
     assert (Hx: DAG (Bijection.Lt vs) (restrict_vertices rs es) /\
@@ -879,8 +1296,20 @@ Module Known.
     forall y, ~ Reaches (Edge (restrict_vertices rs es)) x y) by eauto.
     destruct Hx as (Hx, (x, (Hin, Hy))).
     exists x.
+    assert (i: MT.In x k) by eauto using in_spawns_in_known.
+    apply MT_Extra.in_to_mapsto in i.
+    destruct i as (l, mt).
+    exists l.
+    split; auto.
+    intros.
+    assert (~ Reaches (Edge (restrict_vertices rs es)) x y) by eauto; clear Hy.
+    assert (Edge es (x, y)). {
+      unfold Edge in *.
+      
+    }
+    unfold not; intros.
     
   Qed.
-*)
+
 End Defs.
 End Known.
