@@ -368,7 +368,9 @@ Section Defs.
   (**
     We have a safe-spawn when the body of the spawn may run in parallel
     with the continuation of the spawn.
-    *)
+    *
+
+  XXX: We no longer need this, do we?
 
   Inductive SafeSpawn : tee -> Prop :=
   | safe_spawn_eq:
@@ -384,7 +386,7 @@ Section Defs.
     SafeSpawn v.
 
   Definition Safe := List.Forall SafeSpawn (cg_tees cg).
-
+  *)
   (** Is predicate [Safe] equivalent to [CG.RaceFree]? Maybe [CG.RaceFree] implies [Safe] *)
   (** Is predicate [CG.RaceFree] equivalent to [Shadow.RaceFree]? *)
 
@@ -416,20 +418,6 @@ Module WellFormed.
     forall ts l z,
     Spawns ts z l ->
     Spawns (None::ts) z l.
-
-  Lemma spawns_no_dup:
-    forall ts x l,
-    Spawns ts x l  ->
-    NoDup l.
-  Proof.
-    induction ts; intros. {
-      inversion H.
-      subst.
-      auto using NoDup_cons, NoDup_nil.
-    }
-    inversion H; subst; clear H; 
-    eauto using NoDup_cons.
-  Qed.
 
   Inductive Joins: trace -> list tid -> Prop :=
   | joins_nil:
@@ -473,6 +461,20 @@ Module WellFormed.
 
   Require Import Aniceto.List.
 
+  Lemma spawns_no_dup:
+    forall ts x l,
+    Spawns ts x l  ->
+    NoDup l.
+  Proof.
+    induction ts; intros. {
+      inversion H.
+      subst.
+      auto using NoDup_cons, NoDup_nil.
+    }
+    inversion H; subst; clear H; 
+    eauto using NoDup_cons.
+  Qed.
+
   Lemma running_incl_spawned:
     forall ts ks rs x,
     Running ts x rs ->
@@ -491,6 +493,18 @@ Module WellFormed.
       eauto using remove_incl, incl_tran.
     - inversion H0.
       eauto.
+  Qed.
+
+  Lemma in_running_in_spawn:
+    forall ts vs rs x y,
+    Running ts x rs ->
+    Spawns ts x vs ->
+    List.In y rs ->
+    List.In y vs.
+  Proof.
+    intros.
+    assert (incl rs vs) by eauto using running_incl_spawned.
+    auto.
   Qed.
 
   Lemma running_not_in_joins:
@@ -559,11 +573,107 @@ Require Import Coq.Structures.OrderedType.
 Require Import Coq.FSets.FMapAVL.
 Module M := FMapAVL.Make Nat_as_OT.
 
+Module Restriction.
+  Section Defs.
+
+  Let vertex_mem (vs:list tid) (x:tid) := ListSet.set_mem TID.eq_dec x vs.
+
+  Let edge_mem vs (e:tid*tid) := let (x,y) := e in andb (vertex_mem vs x) (vertex_mem vs y).
+
+  Definition edge_eq_dec := Pair.pair_eq_dec TID.eq_dec.
+
+  Definition restriction vs es := filter (edge_mem vs) es.
+
+  (* TODO: MOVE ME Aniceto.List *)
+  Lemma in_impl:
+    forall {A:Type} (E F:A*A -> Prop) (X:forall e, E e -> F e) (x:A),
+    In E x ->
+    In F x.
+  Proof.
+    intros.
+    destruct H as (e, (?,?)).
+    eauto using in_def.
+  Qed.
+
+  Lemma restriction_incl:
+    forall vs es,
+    incl (restriction vs es) es.
+  Proof.
+    intros.
+    unfold restriction.
+    auto using List.filter_incl.
+  Qed.
+
+  (** XXX: Move me to Aniceto.List. *)
+  Lemma in_incl:
+    forall {A:Type} (x:A) l l',
+    incl l' l ->
+    List.In x l' ->
+    List.In x l.
+  Proof.
+    intros.
+    unfold incl in *; auto.
+  Qed.
+
+  Let vertex_mem_to_prop:
+    forall x l,
+    vertex_mem l x = true ->
+    List.In x l.
+  Proof.
+    unfold vertex_mem.
+    intros.
+    apply ListSet.set_mem_correct1 in H.
+    auto.
+  Qed.
+
+  Let edge_mem_to_prop:
+    forall rs x1 x2,
+    edge_mem rs (x1, x2) = true ->
+    List.In x1 rs /\ List.In x2 rs.
+  Proof.
+    unfold edge_mem.
+    intros.
+    remember (vertex_mem _ x1) as b1.
+    remember (vertex_mem _ x2) as b2.
+    symmetry in Heqb1; symmetry in Heqb2.
+    destruct b1, b2; subst; try inversion H.
+    auto using vertex_mem_to_prop.
+  Qed.
+
+  Let restriction_inv_edge:
+    forall x1 x2 rs es,
+    List.In (x1, x2) (restriction rs es) ->
+    List.In x1 rs /\ List.In x2 rs.
+  Proof.
+    unfold restriction.
+    intros.
+    apply filter_In in H.
+    destruct H.
+    auto.
+  Qed.
+
+  Lemma restriction_in:
+    forall rs es x,
+    In (Edge (restriction rs es)) x ->
+    List.In x rs.
+  Proof.
+    unfold Edge.
+    intros.
+    destruct H as ((x1,x2),(He,inP)).
+    apply restriction_inv_edge in He.
+    destruct He.
+    destruct inP; simpl in *; subst; auto.
+  Qed.
+
+  End Defs.
+End Restriction.
+
 Module Known.
   Import Trace.
+  Import Restriction.
   Section Defs.
   Definition known := MT.t (list tid).
-  Definition make_known (x:tid) : known := (MT.add x nil (@MT.empty (list tid))).
+  Definition make (x:tid) : known := (MT.add x nil (@MT.empty (list tid))).
 
   Definition spawn (x y:tid) (k:known) : known :=
   match MT.find x k with
@@ -578,42 +688,49 @@ Module Known.
   | _ => k
   end.
 
-  Definition eval (o:op_type) :=
-  match o with SPAWN => spawn | JOIN => join end.
+  Definition eval (o:option op) :=
+  match o with
+  | Some o =>
+    let f := match op_t o with
+      | SPAWN => spawn
+      | JOIN => join 
+      end
+    in
+    f (op_src o) (op_dst o)
+  | _ => fun k => k
+  end.
 
-  Inductive Check (k:known) : op -> Prop :=
+  Inductive Check (k:known) : option op -> Prop :=
   | check_spawn:
     forall x y,
     MT.In x k ->
     ~ MT.In y k ->
-    Check k {| op_t := SPAWN; op_src:= x; op_dst:= y|}
+    Check k (Some {| op_t := SPAWN; op_src:= x; op_dst:= y|})
   | check_join:
     forall x y lx ly,
     MT.MapsTo x lx k ->
     MT.MapsTo y ly k ->
     List.In y lx ->
     ~ List.In x ly ->
-    Check k {| op_t := JOIN; op_src := x; op_dst:= y|}.
+    Check k (Some {| op_t := JOIN; op_src := x; op_dst:= y|})
+  | check_none:
+    Check k None.
+
+  Fixpoint from_trace x ts :=
+  match ts with
+  | nil => make x
+  | o :: ts => eval o (from_trace x ts)
+  end.
 
   Inductive Safe : trace -> tid -> known -> Prop :=
   | safe_nil:
     forall x,
-    Safe nil x (make_known x)
-  | safe_cons_some:
-    forall o x y l k z,
-    Check k {| op_t:=o; op_src:=x; op_dst:=y |} ->
+    Safe nil x (make x)
+  | safe_cons:
+    forall o l z k,
+    Check k o ->
     Safe l z k ->
-    Safe (Some {| op_t:=o; op_src:=x; op_dst:=y |}::l) z ((eval o) x y k)
-  | safe_cons_none:
-    forall l z k,
-    Safe l z k ->
-    Safe (None::l) z k.
-
-  Inductive WellFormed (k:known) :=
-  | well_formed_def:
-    (forall t l, MT.MapsTo t l k -> ~ List.In t l) ->
-    (forall x y l, MT.MapsTo x l k -> List.In y l -> MT.In y k) ->
-    WellFormed k.
+    Safe (o::l) z (eval o k).
 
   Inductive SpawnEdges : trace -> list (tid*tid) -> Prop :=
   | spawn_edges_nil:
@@ -629,8 +746,7 @@ Module Known.
   | spawn_edges_cons_none:
     forall l e,
     SpawnEdges l e ->
-    SpawnEdges (None::l) e.
-
+    SpawnEdges (None::l) e.  
 
   Definition to_spawn_edge e :=
   match e with
@@ -639,6 +755,12 @@ Module Known.
   end.
 
   Definition spawn_edges (ts:trace) := List.omap to_spawn_edge ts.
+
+  Inductive WellFormed (k:known) :=
+  | well_formed_def:
+    (forall t l, MT.MapsTo t l k -> ~ List.In t l) ->
+    (forall x y l, MT.MapsTo x l k -> List.In y l -> MT.In y k) ->
+    WellFormed k.
 
   Require Import Bijection.
   Import WellFormed.
@@ -684,65 +806,14 @@ Module Known.
     - eauto using lt_trans, spawns_no_dup.
   Qed.
 
-  Let vertex_mem (vs:list tid) (x:tid) := ListSet.set_mem TID.eq_dec x vs.
-
-  Let edge_mem vs (e:tid*tid) := let (x,y) := e in andb (vertex_mem vs x) (vertex_mem vs y).
-
-  Definition edge_eq_dec := Pair.pair_eq_dec TID.eq_dec.
-
-  Let restrict_vertices vs es := filter (edge_mem vs) es.
-
-
-  (* TODO: MOVE ME *)
-  Lemma in_impl:
-    forall {A:Type} (E F:A*A -> Prop) (X:forall e, E e -> F e) (x:A),
-    In E x ->
-    In F x.
-  Proof.
-    intros.
-    destruct H as (e, (?,?)).
-    eauto using in_def.
-  Qed.
-
-  Let restrict_vertices_incl:
-    forall vs es,
-    incl (restrict_vertices vs es) es.
-  Proof.
-    intros.
-    unfold restrict_vertices.
-    auto using List.filter_incl.
-  Qed.
-
-  Lemma in_incl:
-    forall {A:Type} (x:A) l l',
-    incl l' l ->
-    List.In x l' ->
-    List.In x l.
-  Proof.
-    intros.
-    unfold incl in *; auto.
-  Qed.
-
-  Let restrict_vertices_in:
-    forall rs es x,
-    In (Edge (restrict_vertices rs es)) x ->
-    In (Edge es) x.
-  Proof.
-    intros.
-    apply in_impl with (E:=Edge (restrict_vertices rs es)); auto.
-    intros.
-    unfold Edge in *.
-    eauto using in_incl, restrict_vertices_incl.
-  Qed.
-
   Let spawn_running_edges_dag:
     forall t a vs rs es,
     Spawns t a vs ->
     Running t a rs ->
     SpawnEdges t es ->
-    DAG (Bijection.Lt vs) (restrict_vertices rs es).
+    DAG (Bijection.Lt vs) (restriction rs es).
   Proof.
-    eauto using dag_incl.
+    eauto using dag_incl, restriction_incl.
   Qed.
 
   Let spawn_running_supremum:
@@ -750,13 +821,13 @@ Module Known.
     Spawns t a vs ->
     Running t a rs ->
     SpawnEdges t es ->
-    restrict_vertices rs es <> nil ->
-    DAG (Bijection.Lt vs) (restrict_vertices rs es) /\
-    exists x, Graph.In (Edge (restrict_vertices rs es)) x /\
-    forall y, ~ Reaches (Edge (restrict_vertices rs es)) x y.
+    restriction rs es <> nil ->
+    DAG (Bijection.Lt vs) (restriction rs es) /\
+    exists x, Graph.In (Edge (restriction rs es)) x /\
+    forall y, ~ Reaches (Edge (restriction rs es)) x y.
   Proof.
     intros.
-    assert (DAG (Bijection.Lt vs) (restrict_vertices rs es)) by eauto.
+    assert (DAG (Bijection.Lt vs) (restriction rs es)) by eauto.
     split; auto.
     intros.
     apply dag_supremum with (Lt := Bijection.Lt vs); auto.
@@ -794,22 +865,22 @@ Module Known.
       eauto using in_cons.
   Qed.
 
-  Let make_known_mapsto:
+  Let make_mapsto:
     forall x,
-    MT.MapsTo x nil (make_known x).
+    MT.MapsTo x nil (make x).
   Proof.
     intros.
-    unfold make_known.
+    unfold make.
     auto using MT.add_1.
   Qed.
 
-  Let make_known_inv_maps_to:
+  Let make_inv_maps_to:
     forall x y l,
-    MT.MapsTo x l (make_known y) ->
+    MT.MapsTo x l (make y) ->
     x = y /\ l = nil.
   Proof.
     intros.
-    unfold make_known in *.
+    unfold make in *.
     apply MT_Facts.add_mapsto_iff in H.
     destruct H as [(?,?)|(?,?)]; auto.
     apply MT_Facts.empty_mapsto_iff in H0.
@@ -1013,7 +1084,121 @@ Module Known.
     auto using MT_Extra.add_in.
   Qed.
 
-  Let in_spawns_in_known:
+  (** TODO: Move me *)
+  Lemma reaches_impl:
+    forall {A:Type} (x y:A) (E F:(A*A)->Prop),
+    (forall e, E e -> F e) ->
+    Reaches E x y ->
+    Reaches F x y.
+  Proof.
+    intros.
+    inversion H0.
+    eauto using walk2_impl, reaches_def.
+  Qed.
+
+  Let edge_cons:
+    forall {A:Type} es (e e':A*A),
+    Edge es e ->
+    Edge (e' :: es) e.
+  Proof.
+    unfold Edge.
+    auto using in_cons.
+  Qed.
+
+  Let reaches_cons:
+    forall {A:Type} (x y:A) e es,
+    Reaches (Edge es) x y ->
+    Reaches (Edge (e :: es)) x y.
+  Proof.
+    eauto using reaches_impl.
+  Qed.
+
+  Lemma edge_to_reaches:
+    forall {A:Type} (x y:A) (E:A*A->Prop),
+    E (x,y) ->
+    Reaches E x y.
+  Proof.
+    intros.
+    eauto using reaches_def, edge_to_walk2.
+  Qed.
+
+  Lemma safe_spec:
+    forall ts x k,
+    Safe ts x k ->
+    k = from_trace x ts.
+  Proof.
+    induction ts; intros. {
+      inversion H; simpl; auto.
+    }
+    inversion H; subst.
+    simpl.
+    assert (RW: k0 = from_trace x ts) by auto.
+    rewrite RW.
+    auto.
+  Qed.
+
+  Lemma safe_fun:
+    forall ts x k1 k2,
+    Safe ts x k1 ->
+    Safe ts x k2 ->
+    k1 = k2.
+  Proof.
+    intros.
+    assert (R1 :  k1 = from_trace x ts) by auto using safe_spec.
+    assert (R2 :  k2 = from_trace x ts) by auto using safe_spec.
+    rewrite R1.
+    rewrite R2.
+    trivial.
+  Qed.
+
+  (** This is not true: it breaks in a spawn
+
+  Let known_to_spawn_edge:
+    forall t a es k l x y,
+    SpawnEdges t es ->
+    Safe t a k ->
+    MT.MapsTo x l k ->
+    List.In y l ->
+    WellFormed k ->
+    Reaches (Edge es) x y.
+  Proof.
+    induction t; intros. {
+      inversion H0; subst.
+      assert (X: x = a /\ l = nil) by eauto.
+      destruct X; subst.
+      inversion H2.
+    }
+    inversion H; subst; clear H.
+    - inversion H0; subst; simpl in *; clear H0.
+      inversion H10; subst; clear H10.
+      simpl in *.
+      (* --- *)
+      assert (X:=H1).
+      apply spawn_inv_maps_to in X.
+      destruct X as [?|[(?,(?,(?,?)))|(?,(?,?))]]; repeat subst.
+      + eauto.
+      + destruct H2. {
+          subst.
+          apply edge_to_reaches.
+          unfold  Edge; auto using in_eq.
+        }
+        apply spawn_mapsto_inv_1 in H1; auto.
+        destruct H1 as (?,(He,?)).
+        inversion He; clear He H6; subst.
+        rename x into l.
+        apply reaches_cons.
+        eauto.
+      + clear H4.
+  Qed.
+  *)
+
+  (* The next thing we have to do is to define a relation R, such that
+     if MT.MapsTo x l k /\ List.In y l -> x R y
+     and then prove that this yields a <
+   *)
+
+
+  Lemma in_spawns_in_known:
     forall t x a vs k,
     Spawns t a vs ->
     Safe t a k ->
@@ -1025,7 +1210,7 @@ Module Known.
       inversion H1.
       - subst.
         inversion H0; subst.
-        eauto using make_known_mapsto, MT_Extra.mapsto_to_in.
+        eauto using make_mapsto, MT_Extra.mapsto_to_in.
       - inversion H2.
     }
     inversion H; subst; clear H; inversion H0; subst; clear H0; simpl; eauto.
@@ -1036,7 +1221,7 @@ Module Known.
         intuition; subst.
         contradiction.
       }
-      inversion H10; subst.
+      inversion H3; subst.
       apply MT_Extra.in_to_mapsto in H2.
       destruct H2 as (l', Hmt).
       assert (MT.MapsTo x l' (spawn x0 x k0)) by eauto using spawn_mapsto_neq.
@@ -1044,17 +1229,17 @@ Module Known.
     + simpl; eauto.
   Qed.
 
-  Let make_known_is_well_formed:
+  Let make_is_well_formed:
     forall x,
-    WellFormed (make_known x).
+    WellFormed (make x).
   Proof.
     intros.
     apply well_formed_def.
     - intros.
-      apply make_known_inv_maps_to in H; destruct H; subst.
+      apply make_inv_maps_to in H; destruct H; subst.
       auto.
     - intros.
-      apply make_known_inv_maps_to in H; destruct H; subst.
+      apply make_inv_maps_to in H; destruct H; subst.
       inversion H0.
   Qed.
 
@@ -1171,12 +1356,9 @@ Module Known.
       inversion H; subst; auto.
     }
     inversion H; subst; clear H.
-    - destruct o.
-      + simpl.
-        inversion H2; eauto.
-      + simpl.
-        inversion H2; eauto.
-    - eauto.
+    destruct a;
+    simpl;
+    inversion H2; eauto.
   Qed.
 
   (* This does not hold: 
@@ -1189,127 +1371,108 @@ Module Known.
     Edge es (x, y).
   *)
 
+End Defs.
+End Known.
 
-  (** TODO: Move me *)
-  Lemma reaches_impl:
-    forall {A:Type} (x y:A) (E F:(A*A)->Prop),
-    (forall e, E e -> F e) ->
-    Reaches E x y ->
-    Reaches F x y.
-  Proof.
-    intros.
-    inversion H0.
-    eauto using walk2_impl, reaches_def.
-  Qed.
 
-  Let edge_cons:
-    forall {A:Type} es (e e':A*A),
-    Edge es e ->
-    Edge (e' :: es) e.
-  Proof.
-    unfold Edge.
-    auto using in_cons.
-  Qed.
+Module KnownGraph.
+  Import Known.
+  Import Trace.
+  Import Restriction.
+  Import WellFormed.
+  Require Import Aniceto.Project.
 
-  Let reaches_cons:
-    forall {A:Type} (x y:A) e es,
-    Reaches (Edge es) x y ->
-    Reaches (Edge (e :: es)) x y.
-  Proof.
-    eauto using reaches_impl.
-  Qed.
 
-  Lemma edge_to_reaches:
-    forall {A:Type} (x y:A) (E:A*A->Prop),
-    E (x,y) ->
-    Reaches E x y.
-  Proof.
-    intros.
-    eauto using reaches_def, edge_to_walk2.
-  Qed.
+  Module P := ProjectList MT.
 
-  Let known_to_spawn_edge:
-    forall t a es k l x y,
-    SpawnEdges t es ->
-    Safe t a k ->
+  Section Defs.
+
+  Definition edges (k:known) := P.project k.
+
+  Require Import Bijection.
+
+  Let SG_DAG vs k := DAG (Bijection.Gt vs) (edges k).
+(*
+  Let safe_dag:
+    forall ts a g o,
+    Safe ts a (sg_known g) ->
+    SG_DAG g ->
+    let g' := eval o g in
+    Safe ts a (sg_known g') ->
+    SG_DAG g'.
+ *)
+
+
+  Inductive SafeLt (k:known) (x y:tid) :=
+  | safe_let_def:
+    forall l,
     MT.MapsTo x l k ->
     List.In y l ->
-    WellFormed k ->
-    Reaches (Edge es) x y.
+    SafeLt k x y.
+
+  Let running_supremum:
+    forall t a rs es,
+    Running t a rs ->
+    restriction rs es <> nil ->
+    DAG (Bijection.Lt rs) (restriction rs es) ->
+    exists x, Graph.In (Edge (restriction rs es)) x /\
+    forall y, ~ Reaches (Edge (restriction rs es)) x y.
   Proof.
-    induction t; intros. {
-      inversion H0; subst.
-      assert (X: x = a /\ l = nil) by eauto.
-      destruct X; subst.
-      inversion H2.
-    }
-    inversion H; subst; clear H.
-    - inversion H0; subst; clear H0.
-      inversion H10; subst; clear H10.
-      simpl in *.
-      destruct (TID.eq_dec x x0), (TID.eq_dec y y0); rewrite tid_eq_rw in *; subst.
-      + apply edge_to_reaches.
-        unfold Edge.
-        auto using in_eq.
-      + apply spawn_mapsto_inv_1 in H1; auto.
-        destruct H1 as (l', (?,?)); subst.
-        assert (List.In y l'). {
-          destruct H2.
-          - contradiction n; auto.
-          - auto.
-        }
-        eauto.
-      + assert (X: MT.MapsTo x l k0 \/ x = y0 /\ MT.MapsTo x0 l k0). {
-          apply spawn_inv_maps_to in H1.
-          destruct H1 as [?|[(?,(?,(?,?)))|(?,(?,?))]]; subst; auto.
-          contradiction n; auto.
-        }
-        destruct X as [?|(?,?)].
-        * eauto.
-        * subst.
-          contradiction H5.
-          eauto.
-      + destruct (TID.eq_dec x y0); rewrite tid_eq_rw in *; subst. {
-          apply spawn_mapsto_eq_spawner in H1; auto.
-          assert (Reaches (Edge e) x0 y) by eauto.
-          unfold not; intros.
-          subst.
-        }
-        apply spawn_mapsto_inv_neq_neq in H1; auto.
-        eauto.
-        unfold not; intros.
-        subst.
+    intros.
+    apply dag_supremum with (Lt := Bijection.Lt rs); auto.
+    - auto using TID.eq_dec.
+    - eauto using lt_irrefl, running_no_dup.
+    - eauto using lt_trans, running_no_dup.
+  Qed.
+
+
+  (** XXX: MOVE ME TO FGRAPHS *)
+  Lemma in_incl:
+    forall {A:Type} (x:A) es es',
+    In (Edge es) x ->
+    incl es es' ->
+    In (Edge es') x.
+  Proof.
+    intros.
+    apply in_impl with (E:=Edge es); auto.
+  Qed.
+
+  Let in_restriction_incl:
+    forall rs es x,
+    In (Edge (restriction rs es)) x ->
+    In (Edge es) x.
+  Proof.
+    intros.
+    eauto using in_incl, restriction_incl.
   Qed.
 
   Let progress:
     forall t a vs rs es k,
     Spawns t a vs ->
     Running t a rs ->
-    SpawnEdges t es ->
     Safe t a k ->
-    restrict_vertices rs es <> nil ->
+    DAG (Bijection.Lt rs) (restriction rs es) ->
+    restriction rs es <> nil ->
     exists x l, MT.MapsTo x l k /\ forall y, List.In y l -> ~ List.In y rs.
   Proof.
     intros.
-    assert (Hx: DAG (Bijection.Lt vs) (restrict_vertices rs es) /\
-    exists x, Graph.In (Edge (restrict_vertices rs es)) x /\
-    forall y, ~ Reaches (Edge (restrict_vertices rs es)) x y) by eauto.
-    destruct Hx as (Hx, (x, (Hin, Hy))).
+    assert (Hx:
+    exists x, Graph.In (Edge (restriction rs es)) x /\
+    forall y, ~ Reaches (Edge (restriction rs es)) x y) by eauto using running_supremum.
+    destruct Hx as (x, (Hin, Hy)).
     exists x.
-    assert (i: MT.In x k) by eauto using in_spawns_in_known.
+    assert (i: MT.In x k) by
+    eauto using in_spawns_in_known, restriction_in, in_running_in_spawn.
     apply MT_Extra.in_to_mapsto in i.
     destruct i as (l, mt).
     exists l.
     split; auto.
     intros.
-    assert (~ Reaches (Edge (restrict_vertices rs es)) x y) by eauto; clear Hy.
+    assert (~ Reaches (Edge (restriction rs es)) x y) by eauto; clear Hy.
     assert (Edge es (x, y)). {
       unfold Edge in *.
       
     }
-    unfold not; intros.
-    
   Qed.
 
-End Defs.
-End Known.
+End.
