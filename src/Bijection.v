@@ -147,6 +147,8 @@ Section Defs.
     xn < yn ->
     Lt l x y.
 
+  Definition Gt (l:list A) (x:A) (y:A) : Prop := Lt l y x.
+
   Lemma lt_trans (l:list A) (N:NoDup l):
     forall x y z,
     Lt l x y ->
@@ -163,6 +165,16 @@ Section Defs.
     omega.
   Qed.
 
+  Lemma gt_trans (l:list A) (N:NoDup l):
+    forall x y z,
+    Gt l x y ->
+    Gt l y z ->
+    Gt l x z.
+  Proof.
+    unfold Gt; intros.
+    eauto using lt_trans.
+  Qed.
+
   Lemma lt_irrefl (l:list A) (N:NoDup l):
     forall x,
     ~ Lt l x x.
@@ -174,6 +186,14 @@ Section Defs.
     intuition.
   Qed.
 
+  Lemma gt_irrefl (l:list A) (N:NoDup l):
+    forall x,
+    ~ Gt l x x.
+  Proof.
+    unfold Gt; intros.
+    eauto using lt_irrefl.
+  Qed.
+
   Lemma lt_neq (l:list A) (N:NoDup l):
     forall x y,
     Lt l x y ->
@@ -183,6 +203,15 @@ Section Defs.
     inversion H; clear H.
     assert (xn <> yn) by omega.
     eauto using index_of_neq.
+  Qed.
+
+  Lemma gt_neq (l:list A) (N:NoDup l):
+    forall x y,
+    Gt l x y ->
+    x <> y.
+  Proof.
+    unfold Gt; intros.
+    apply lt_neq in H; auto.
   Qed.
 
   Lemma lt_absurd_nil:
