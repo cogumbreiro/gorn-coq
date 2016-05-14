@@ -594,7 +594,7 @@ Module Restriction.
     auto using List.filter_incl.
   Qed.
 
-  Let vertex_mem_to_prop:
+  Let vertex_mem_true_to_prop:
     forall x l,
     vertex_mem l x = true ->
     List.In x l.
@@ -605,7 +605,18 @@ Module Restriction.
     auto.
   Qed.
 
-  Let edge_mem_to_prop:
+  Let vertex_mem_false_to_prop:
+    forall x l,
+    vertex_mem l x = false ->
+    ~ List.In x l.
+  Proof.
+    unfold vertex_mem.
+    intros.
+    apply ListSet.set_mem_complete1 in H.
+    auto.
+  Qed.
+
+  Let edge_mem_true_to_prop:
     forall rs x1 x2,
     edge_mem rs (x1, x2) = true ->
     List.In x1 rs /\ List.In x2 rs.
@@ -616,7 +627,33 @@ Module Restriction.
     remember (vertex_mem _ x2) as b2.
     symmetry in Heqb1; symmetry in Heqb2.
     destruct b1, b2; subst; try inversion H.
-    auto using vertex_mem_to_prop.
+    auto using vertex_mem_true_to_prop.
+  Qed.
+
+  Let edge_mem_false_to_prop:
+    forall rs x1 x2,
+    edge_mem rs (x1, x2) = false ->
+    ~ List.In x1 rs \/ ~ List.In x2 rs.
+  Proof.
+    unfold edge_mem.
+    intros.
+    rewrite Bool.andb_false_iff in H.
+    destruct H;
+    eauto using vertex_mem_false_to_prop.
+  Qed.
+
+  Let edge_mem_true_from_prop:
+    forall rs x1 x2,
+    List.In x1 rs ->
+    List.In x2 rs ->
+    edge_mem rs (x1, x2) = true.
+  Proof.
+    intros.
+    remember (edge_mem _ _).
+    symmetry in Heqb.
+    destruct b; auto.
+    apply edge_mem_false_to_prop in Heqb.
+    destruct Heqb; contradiction.
   Qed.
 
   Let restriction_inv_edge:
@@ -631,7 +668,7 @@ Module Restriction.
     auto.
   Qed.
 
-  Lemma restriction_in:
+  Lemma restriction_in_1:
     forall rs es x,
     Graph.In (Edge (restriction rs es)) x ->
     List.In x rs.
@@ -642,6 +679,18 @@ Module Restriction.
     apply restriction_inv_edge in He.
     destruct He.
     destruct inP; simpl in *; subst; auto.
+  Qed.
+
+  Lemma restriction_in_2:
+    forall x1 x2 rs es,
+    List.In (x1, x2) es ->
+    List.In x1 rs ->
+    List.In x2 rs ->
+    List.In (x1, x2) (restriction rs es).
+  Proof.
+    unfold restriction.
+    intros.
+    apply List.filter_true_to_in; auto.
   Qed.
 
   End Defs.
@@ -1352,41 +1401,7 @@ Module KnownGraph.
 
   Require Import Bijection.
 
-  Let KEdge k := FGraph.Edge (edges k).
-
-  Let SG_DAG vs k := DAG (Bijection.Gt vs) (edges k).
-(*
-  Let safe_dag:
-    forall ts a g o,
-    Safe ts a (sg_known g) ->
-    SG_DAG g ->
-    let g' := eval o g in
-    Safe ts a (sg_known g') ->
-    SG_DAG g'.
- *)
-
-
-  Inductive SafeLt (k:known) (x y:tid) :=
-  | safe_let_def:
-    forall l,
-    MT.MapsTo x l k ->
-    List.In y l ->
-    SafeLt k x y.
-
-  Let running_supremum:
-    forall t a rs es,
-    Running t a rs ->
-    restriction rs es <> nil ->
-    DAG (Bijection.Lt rs) (restriction rs es) ->
-    exists x, Graph.In (Edge (restriction rs es)) x /\
-    forall y, ~ Reaches (Edge (restriction rs es)) x y.
-  Proof.
-    intros.
-    apply dag_supremum with (Lt := Bijection.Lt rs); auto.
-    - auto using TID.eq_dec.
-    - eauto using lt_irrefl, running_no_dup.
-    - eauto using lt_trans, running_no_dup.
-  Qed.
+  Let K_Edge k := FGraph.Edge (edges k).
 
   Let in_restriction_incl:
     forall rs es x,
@@ -1401,38 +1416,14 @@ Module KnownGraph.
     forall x y l k,
     MT.MapsTo x l k ->
     List.In y l ->
-    KEdge k (x, y).
+    K_Edge k (x, y).
   Proof.
     intros.
-    unfold KEdge, FGraph.Edge, edges.
+    unfold K_Edge, FGraph.Edge, edges.
     rewrite P.project_spec; eauto.
   Qed.
 
-  Let spawns_gt_trans:
-    forall t a vs k,
-    Spawns t a vs ->
-    SG_DAG vs k ->
-    forall x y z,
-    Gt vs x y ->
-    Gt vs y z ->
-    Gt vs x z.
-  Proof.
-    unfold SG_DAG.
-    intros.
-    eauto using spawns_no_dup, gt_trans.
-  Qed.
-
-  Let spawns_gt_irrefl:
-    forall t a vs k,
-    Spawns t a vs ->
-    SG_DAG vs k ->
-    forall x,
-    ~ Gt vs x x.
-  Proof.
-    unfold SG_DAG.
-    intros.
-    eauto using spawns_no_dup, gt_irrefl.
-  Qed.
+  Let R_DAG rs k := DAG (Bijection.Gt rs) (restriction rs (edges k)).
 
   Let in_edges_to_in_known:
     forall x t a k,
@@ -1451,34 +1442,55 @@ Module KnownGraph.
       eauto using well_formed_range_in_dom, safe_to_well_formed.
   Qed.
 
+  Let R_Edge rs k := Edge (restriction rs (edges k)).
+
+  Let running_supremum:
+    forall t a rs k,
+    Running t a rs ->
+    restriction rs (edges k) <> nil ->
+    R_DAG rs k ->
+    exists x, Graph.In (R_Edge rs k) x /\
+      forall y, ~ Reaches (R_Edge rs k) x y.
+  Proof.
+    intros.
+    apply dag_supremum with (Lt := Bijection.Gt rs); auto.
+    - auto using TID.eq_dec.
+    - eauto using gt_irrefl, running_no_dup.
+    - eauto using gt_trans, running_no_dup.
+  Qed.
+
   Let progress:
     forall t a vs rs k,
     Spawns t a vs ->
     Running t a rs ->
     Safe t a k ->
-    SG_DAG vs k ->
-    edges k <> nil ->
+    R_DAG rs k ->
+    (restriction rs (edges k)) <> nil ->
     exists x l, List.In x rs /\ MT.MapsTo x l k /\ forall y, List.In y l -> ~ List.In y rs.
   Proof.
     intros.
-    unfold SG_DAG in *.
     assert (Hx:
-      exists x, Graph.In (Edge (edges k)) x /\
-      forall y, ~ Reaches (Edge (edges k)) x y). {
-        apply dag_supremum with (Lt:=Gt vs); eauto using TID.eq_dec, spawns_gt_irrefl, spawns_gt_trans.
+      exists x, Graph.In (Edge (restriction rs (edges k))) x /\
+      forall y, ~ Reaches (Edge (restriction rs (edges k))) x y). {
+        eapply running_supremum; eauto.
     }
     destruct Hx as (x, (Hin, Hy)).
     exists x.
     assert (i: MT.In x k) by eauto.
+    assert (List.In x rs) by eauto using restriction_in_1.
     apply MT_Extra.in_to_mapsto in i.
     destruct i as (l, mt).
     exists l.
-    split; auto.
+    repeat split; auto.
     intros.
-    assert (KEdge k (x, y)). {
-      eauto.
+    unfold not; intros.
+    assert (R_Edge rs k (x, y)). {
+      unfold R_Edge.
+      assert (K_Edge k (x, y)) by eauto.
+      apply restriction_in_2; auto.
     }
-    assert (n:~ Reaches (Edge (edges k)) x y) by eauto; clear Hy.
+    unfold R_Edge in *.
+    assert (n:~ Reaches (Edge (restriction rs (edges k))) x y) by eauto; clear Hy.
     contradiction n.
     auto using edge_to_reaches.
   Qed.
