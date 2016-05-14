@@ -574,6 +574,7 @@ Require Import Coq.FSets.FMapAVL.
 Module M := FMapAVL.Make Nat_as_OT.
 
 Module Restriction.
+  Require Import Aniceto.Graphs.FGraph.
   Section Defs.
 
   Let vertex_mem (vs:list tid) (x:tid) := ListSet.set_mem TID.eq_dec x vs.
@@ -584,17 +585,6 @@ Module Restriction.
 
   Definition restriction vs es := filter (edge_mem vs) es.
 
-  (* TODO: MOVE ME Aniceto.List *)
-  Lemma in_impl:
-    forall {A:Type} (E F:A*A -> Prop) (X:forall e, E e -> F e) (x:A),
-    In E x ->
-    In F x.
-  Proof.
-    intros.
-    destruct H as (e, (?,?)).
-    eauto using in_def.
-  Qed.
-
   Lemma restriction_incl:
     forall vs es,
     incl (restriction vs es) es.
@@ -602,17 +592,6 @@ Module Restriction.
     intros.
     unfold restriction.
     auto using List.filter_incl.
-  Qed.
-
-  (** XXX: Move me to Aniceto.List. *)
-  Lemma in_incl:
-    forall {A:Type} (x:A) l l',
-    incl l' l ->
-    List.In x l' ->
-    List.In x l.
-  Proof.
-    intros.
-    unfold incl in *; auto.
   Qed.
 
   Let vertex_mem_to_prop:
@@ -654,7 +633,7 @@ Module Restriction.
 
   Lemma restriction_in:
     forall rs es x,
-    In (Edge (restriction rs es)) x ->
+    Graph.In (Edge (restriction rs es)) x ->
     List.In x rs.
   Proof.
     unfold Edge.
@@ -671,6 +650,8 @@ End Restriction.
 Module Known.
   Import Trace.
   Import Restriction.
+  Require Import Aniceto.Graphs.FGraph.
+
   Section Defs.
   Definition known := MT.t (list tid).
   Definition make (x:tid) : known := (MT.add x nil (@MT.empty (list tid))).
@@ -838,7 +819,7 @@ Module Known.
 
   Let edge_in_absurd_nil:
     forall {A:Type} (x:A),
-    ~ In (Edge nil) x.
+    ~ Graph.In (Edge nil) x.
   Proof.
     intuition.
     destruct H as (?,(n,?)).
@@ -849,7 +830,7 @@ Module Known.
     forall x t a vs es,
     Spawns t a vs ->
     SpawnEdges t es ->
-    In (Edge es) x ->
+    Graph.In (Edge es) x ->
     List.In x vs.
   Proof.
     induction t; intros. {
@@ -861,7 +842,7 @@ Module Known.
     destruct H1 as (e',(He,Hi)).
     destruct He; subst.
     + destruct Hi as [Hi|Hi]; symmetry in Hi; simpl in *; subst; intuition.
-    + assert (In (Edge e) x) by eauto using in_def.
+    + assert (Graph.In (Edge e) x) by eauto using in_def.
       eauto using in_cons.
   Qed.
 
@@ -1084,18 +1065,6 @@ Module Known.
     auto using MT_Extra.add_in.
   Qed.
 
-  (** TODO: Move me *)
-  Lemma reaches_impl:
-    forall {A:Type} (x y:A) (E F:(A*A)->Prop),
-    (forall e, E e -> F e) ->
-    Reaches E x y ->
-    Reaches F x y.
-  Proof.
-    intros.
-    inversion H0.
-    eauto using walk2_impl, reaches_def.
-  Qed.
-
   Let edge_cons:
     forall {A:Type} es (e e':A*A),
     Edge es e ->
@@ -1111,15 +1080,6 @@ Module Known.
     Reaches (Edge (e :: es)) x y.
   Proof.
     eauto using reaches_impl.
-  Qed.
-
-  Lemma edge_to_reaches:
-    forall {A:Type} (x y:A) (E:A*A->Prop),
-    E (x,y) ->
-    Reaches E x y.
-  Proof.
-    intros.
-    eauto using reaches_def, edge_to_walk2.
   Qed.
 
   Lemma safe_spec:
@@ -1252,7 +1212,7 @@ Module Known.
     intros; inversion H; eauto.
   Qed.
 
-  Let well_formed_range_in_dom:
+  Lemma well_formed_range_in_dom:
     forall x y l k,
     WellFormed k ->
     MT.MapsTo x l k ->
@@ -1283,11 +1243,11 @@ Module Known.
         contradiction.
     - unfold not; intros.
       contradiction H0.
-      eauto.
+      eauto using well_formed_range_in_dom.
     }
     apply spawn_inv_maps_to in H1.
-    destruct H1 as [?|[(?,(?,(?,?)))|(?,(?,?))]]; subst; eauto.
-    destruct H2; subst; eauto using MT_Extra.mapsto_to_in.
+    destruct H1 as [?|[(?,(?,(?,?)))|(?,(?,?))]]; subst; eauto using well_formed_range_in_dom.
+    destruct H2; subst; eauto using MT_Extra.mapsto_to_in, well_formed_range_in_dom.
   Qed.
 (*
   Let well_formed_inv_spawn:
@@ -1342,12 +1302,12 @@ Module Known.
     - intros.
       apply join_inv_maps_to in H2.
       destruct H2 as [?|(?,(?,(?,(?,(?,?)))))].
-      + eauto.
+      + eauto using well_formed_range_in_dom.
       + subst.
-        apply in_app_iff in H3; destruct H3; eauto.
+        apply in_app_iff in H3; destruct H3; eauto using well_formed_range_in_dom.
   Qed.
 
-  Let safe_to_well_formed:
+  Lemma safe_to_well_formed:
     forall t x k,
     Safe t x k ->
     WellFormed k.
@@ -1381,6 +1341,7 @@ Module KnownGraph.
   Import Restriction.
   Import WellFormed.
   Require Import Aniceto.Project.
+  Require Import Aniceto.Graphs.FGraph.
 
 
   Module P := ProjectList MT.
@@ -1390,6 +1351,8 @@ Module KnownGraph.
   Definition edges (k:known) := P.project k.
 
   Require Import Bijection.
+
+  Let KEdge k := FGraph.Edge (edges k).
 
   Let SG_DAG vs k := DAG (Bijection.Gt vs) (edges k).
 (*
@@ -1425,54 +1388,99 @@ Module KnownGraph.
     - eauto using lt_trans, running_no_dup.
   Qed.
 
-
-  (** XXX: MOVE ME TO FGRAPHS *)
-  Lemma in_incl:
-    forall {A:Type} (x:A) es es',
-    In (Edge es) x ->
-    incl es es' ->
-    In (Edge es') x.
-  Proof.
-    intros.
-    apply in_impl with (E:=Edge es); auto.
-  Qed.
-
   Let in_restriction_incl:
     forall rs es x,
-    In (Edge (restriction rs es)) x ->
-    In (Edge es) x.
+    Graph.In (Edge (restriction rs es)) x ->
+    Graph.In (Edge es) x.
   Proof.
     intros.
     eauto using in_incl, restriction_incl.
   Qed.
 
+  Let k_edge_def:
+    forall x y l k,
+    MT.MapsTo x l k ->
+    List.In y l ->
+    KEdge k (x, y).
+  Proof.
+    intros.
+    unfold KEdge, FGraph.Edge, edges.
+    rewrite P.project_spec; eauto.
+  Qed.
+
+  Let spawns_gt_trans:
+    forall t a vs k,
+    Spawns t a vs ->
+    SG_DAG vs k ->
+    forall x y z,
+    Gt vs x y ->
+    Gt vs y z ->
+    Gt vs x z.
+  Proof.
+    unfold SG_DAG.
+    intros.
+    eauto using spawns_no_dup, gt_trans.
+  Qed.
+
+  Let spawns_gt_irrefl:
+    forall t a vs k,
+    Spawns t a vs ->
+    SG_DAG vs k ->
+    forall x,
+    ~ Gt vs x x.
+  Proof.
+    unfold SG_DAG.
+    intros.
+    eauto using spawns_no_dup, gt_irrefl.
+  Qed.
+
+  Let in_edges_to_in_known:
+    forall x t a k,
+    Safe t a k ->
+    Graph.In (Edge (edges k)) x ->
+    MT.In x k.
+  Proof.
+    intros.
+    destruct H0 as ((v1,v2), (He,Hp)).
+    destruct Hp; subst; simpl; unfold Edge in *.
+    - rewrite P.project_spec in He; eauto;
+      destruct He as  (l, (mt,?));
+      eauto using MT_Extra.mapsto_to_in.
+    - rewrite P.project_spec in He; eauto.
+      destruct He as  (l, (mt,?)).
+      eauto using well_formed_range_in_dom, safe_to_well_formed.
+  Qed.
+
   Let progress:
-    forall t a vs rs es k,
+    forall t a vs rs k,
     Spawns t a vs ->
     Running t a rs ->
     Safe t a k ->
-    DAG (Bijection.Lt rs) (restriction rs es) ->
-    restriction rs es <> nil ->
-    exists x l, MT.MapsTo x l k /\ forall y, List.In y l -> ~ List.In y rs.
+    SG_DAG vs k ->
+    edges k <> nil ->
+    exists x l, List.In x rs /\ MT.MapsTo x l k /\ forall y, List.In y l -> ~ List.In y rs.
   Proof.
     intros.
+    unfold SG_DAG in *.
     assert (Hx:
-    exists x, Graph.In (Edge (restriction rs es)) x /\
-    forall y, ~ Reaches (Edge (restriction rs es)) x y) by eauto using running_supremum.
+      exists x, Graph.In (Edge (edges k)) x /\
+      forall y, ~ Reaches (Edge (edges k)) x y). {
+        apply dag_supremum with (Lt:=Gt vs); eauto using TID.eq_dec, spawns_gt_irrefl, spawns_gt_trans.
+    }
     destruct Hx as (x, (Hin, Hy)).
     exists x.
-    assert (i: MT.In x k) by
-    eauto using in_spawns_in_known, restriction_in, in_running_in_spawn.
+    assert (i: MT.In x k) by eauto.
     apply MT_Extra.in_to_mapsto in i.
     destruct i as (l, mt).
     exists l.
     split; auto.
     intros.
-    assert (~ Reaches (Edge (restriction rs es)) x y) by eauto; clear Hy.
-    assert (Edge es (x, y)). {
-      unfold Edge in *.
-      
+    assert (KEdge k (x, y)). {
+      eauto.
     }
+    assert (n:~ Reaches (Edge (edges k)) x y) by eauto; clear Hy.
+    contradiction n.
+    auto using edge_to_reaches.
   Qed.
 
 End.
