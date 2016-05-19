@@ -1030,6 +1030,70 @@ Module SafeJoins.
     apply dag_spawn_aux_0; auto using incl_refl.
   Qed.
 
+  Let dag_join_aux_0:
+    forall l k x y,
+    DAG (Edge k) ->
+    x <> y ->
+    Edge k (x,y) ->
+    ~ Edge k (y,x) ->
+    incl l k ->
+    DAG (Edge (copy_from y x l ++ k)).
+  Proof.
+    induction l; intros. { auto. }
+    assert (DAG (Edge (copy_from y x l ++ k))) by
+          eauto using List.incl_strengthten; clear IHl.
+    destruct a as (a,b).
+    destruct (TID.eq_dec a y); rewrite tid_eq_rw in *.
+    - subst.
+      rewrite copy_from_eq. 
+      simpl.
+      assert (x <> b). {
+        unfold not; intros; subst.
+        assert (List.In (y,b) k) by (unfold incl in *; auto using in_eq).
+        assert (Edge k (y,b)) by (unfold Edge; auto).
+        contradiction H2.
+      }
+      apply f_dag_cons_reaches; auto using TID.eq_dec.
+        remember ( _ ++ _ ) as es.
+        assert (Reaches (Edge es) y b). {
+          assert (Edge es (y,b)). {
+            unfold Edge, incl in *.
+            subst.
+            rewrite in_app_iff.
+            eauto using in_eq, in_cons.
+          }
+          auto using edge_to_reaches.
+        }
+        assert (Reaches (Edge es) x y). {
+          assert (Edge es (x,y)). {
+            unfold Edge, incl in *.
+            subst.
+            rewrite in_app_iff.
+            eauto using in_eq, in_cons.
+          }
+          auto using edge_to_reaches.
+        }
+        eauto using reaches_trans.
+    - rewrite copy_from_neq; auto.
+  Qed.
+
+  Let dag_join:
+    forall k x y,
+    DAG (Edge k) ->
+    Edge k (x,y) ->
+    ~ Edge k (y,x) ->
+    DAG (Edge (join x y k)).
+  Proof.
+    intros.
+    unfold join.
+    assert (x <> y). {
+      unfold not; intros; subst.
+      assert (n: Reaches (Edge k) y y) by auto using edge_to_reaches.
+      apply H in n.
+      contradiction.
+    }
+    apply dag_join_aux_0; auto using incl_refl.
+  Qed.
   End Defs.
 End SafeJoins.
 
