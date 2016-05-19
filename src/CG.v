@@ -757,7 +757,7 @@ Module SafeJoins.
     Safe l k ->
     Safe (o::l) (eval o k).
 
-  Import DAG.FDAG.
+  Import Aniceto.Graphs.DAG.
 
   Let copy_from_eq:
     forall x y z k,
@@ -1072,6 +1072,53 @@ Module SafeJoins.
       auto using f_dag_nil.
     }
     auto using eval_preserves_dag.
+  Qed.
+
+  Notation R_Edge rs k := (Edge (restriction rs k)).
+
+  Notation R_DAG rs k := (DAG (R_Edge rs k)).
+
+  Import WellFormed.
+
+  Let running_supremum:
+    forall rs k,
+    restriction rs k <> nil ->
+    R_DAG rs k ->
+    exists x, Graph.In (R_Edge rs k) x /\
+      forall y, ~ Reaches (R_Edge rs k) x y.
+  Proof.
+    intros.
+    apply dag_supremum; auto using TID.eq_dec.
+  Qed.
+
+
+  Let safe_to_r_dag:
+    forall t k rs,
+    Safe t k ->
+    R_DAG rs k.
+  Proof.
+    intros.
+    apply safe_to_dag in H.
+    apply f_dag_incl with (es:=k); auto using restriction_incl.
+  Qed.
+
+  Lemma progress:
+    forall t k rs,
+    Safe t k ->
+    (restriction rs k) <> nil ->
+    exists x, forall y, R_Edge rs k (x,y) -> ~ In (R_Edge rs k) y.
+  Proof.
+    intros.
+    assert (Hx:
+      exists x, Graph.In (R_Edge rs k) x /\
+      forall y, ~ Reaches (R_Edge rs k) x y). {
+        eapply running_supremum; eauto.
+    }
+    destruct Hx as (x, (Hin, Hy)).
+    exists x.
+    intros.
+    contradiction (Hy y).
+    auto using edge_to_reaches.
   Qed.
 
   End Defs.
