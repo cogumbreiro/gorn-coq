@@ -711,7 +711,7 @@ Module SafeJoins.
   Definition copy_from (x y:tid) k := map (fun z => (y, z)) (get_safe_joins x k).
 
   Definition spawn (x y:tid) (k:known) : known :=
-  (x,y) :: copy_from x y k ++ k.
+  copy_from x y k ++ (x,y) :: k.
 
   Definition join (x y:tid) (k:known) : known :=
   copy_from y x k ++ k.
@@ -837,7 +837,7 @@ Module SafeJoins.
   Qed.
 
   Let copy_from_spec_1:
-    forall k x y z, Edge k (x,z) -> Edge (copy_from x y k) (y, z).
+    forall k x y z, List.In (x,z) k -> List.In (y,z) (copy_from x y k).
   Proof.
     induction k as [|(a,b)]; intros. {
       inversion H.
@@ -847,10 +847,8 @@ Module SafeJoins.
       rewrite copy_from_eq.
       destruct H. {
         inversion H; subst.
-        unfold Edge.
         auto using in_eq.
       }
-      unfold Edge in *.
       apply in_cons.
       auto using in_cons.
     }
@@ -863,7 +861,7 @@ Module SafeJoins.
   Qed.
 
   Let copy_from_spec_2:
-    forall k x y z, Edge (copy_from x y k) (y, z) -> Edge k (x,z).
+    forall k x y z, List.In (y,z) (copy_from x y k) -> List.In (x,z) k.
   Proof.
     induction k as [|(a,b)]; intros. {
       inversion H.
@@ -873,14 +871,11 @@ Module SafeJoins.
       rewrite copy_from_eq in *.
       destruct H. {
         inversion H; subst.
-        unfold Edge.
         auto using in_eq.
       }
-      unfold Edge in *.
       eauto using in_cons.
     }
     rewrite copy_from_neq in *; auto.
-    unfold Edge in *.
     eauto using in_cons.
   Qed.
 
@@ -939,7 +934,7 @@ Module SafeJoins.
     destruct a as (a,b).
     destruct (TID.eq_dec a x); rewrite tid_eq_rw in *.
     - subst.
-      rewrite copy_from_eq.
+      rewrite copy_from_eq. 
       simpl.
       assert (y <> b). {
         unfold not; intros; subst.
@@ -950,6 +945,49 @@ Module SafeJoins.
       }
       apply f_dag_cons; auto using TID.eq_dec.
       remember (_ ++ _ :: k) as es.
+      unfold not; intros.
+        (* for b to reach y in ES, then it must pass through (x,y) *)
+        inversion H5 as (w,Hw2).
+        assert (w =  (x,y) :: nil). {
+          inversion Hw2; subst.
+          inversion H7 as ((v,?),(?,?)); simpl in *; subst.
+          rename H9 into E.
+          remember (_ ++ _) as es.
+          assert (v = x). {
+            assert (Hi := E).
+            apply end_to_edge with (Edge:=Edge es) in Hi; auto.
+            subst.
+            unfold Edge in Hi.
+            rewrite in_app_iff in Hi.
+            destruct Hi.
+            - assert (v = y) by eauto; subst.
+              apply copy_from_spec_2 in H9.
+              assert (List.In (x,y) k). {
+                apply List.incl_strengthten in H2.
+                auto.
+              }
+              contradiction H1.
+              assert (Edge k (x,y)) by (unfold Edge;auto).
+              eauto using in_right.
+            - destruct H9 as [X|X]. {
+                inversion X; subst; clear X.
+                auto.
+              }
+              contradiction H1.
+              assert (Edge k (v,y)) by (unfold Edge;auto).
+              eauto using in_right.
+          }
+          subst.
+          assert (List.In (x,y) w) by auto using end_in.
+          apply end_to_append in E.
+          destruct E as (w', ?); subst.
+          destruct w'. {
+            auto.
+          }
+          apply walk2_split_app in Hw2.
+          destruct Hw2.
+          remember (_ ++ (_ :: k)) as es.
+          assert (Reaches (Edge es) b x) by eauto using reaches_def.
       assert (Reaches (Edge es) x b). {
         assert (Edge es (x,b)). {
           unfold Edge, incl in *.
@@ -959,21 +997,29 @@ Module SafeJoins.
         }
         auto using edge_to_reaches.
       }
-      unfold not; intros.
-      (* But if x -> b, then y -> b  and since b -> y, then y -> y -> error*)
-      assert (n:~ Reaches (Edge es) y y) by (unfold DAG in *;auto).
-      contradiction n.
-      assert (Reaches (Edge es) x y). {
-        assert (Edge es (x,y)). {
-          unfold Edge, incl in *.
-          subst.
-          rewrite in_app_iff.
-          eauto using in_eq, in_cons.
-        }
-        auto using edge_to_reaches.
-      }
-      assert (Reaches (Edges es) x y) by eauto using reaches_trans.
-      eauto using reaches_trans.
+         assert (n: Reaches (Edge es) b b) by eauto using reaches_trans.
+         apply H3 in n.
+         contradiction.
+       }
+       subst.
+       assert (b = x). {
+         inversion Hw2; subst.
+         apply starts_with_eq in H6.
+         auto.
+       }
+       subst.
+       remember (_ ++ (_ :: k)) as es.
+       assert (n: Reaches (Edge es) x x). {
+         assert (Edge es (x,x)). {
+           unfold Edge.
+           subst.
+           rewrite in_app_iff.
+           eauto using in_eq, in_cons.
+         }
+         auto using edge_to_reaches.
+       }
+       apply H3 in n; contradiction.
+    - rewrite copy_from_neq; auto.
   Qed.
 
   Let dag_spawn:
@@ -985,43 +1031,9 @@ Module SafeJoins.
   Proof.
     unfold spawn.
     intros.
-    assert (DAG (Edge (copy_from x y k ++ k))). {
-      assert (forall l, incl l k -> DAG (Edge (copy_from x y l ++ k))). {
-        induction l; intros. {
-      }
-      induction k. {
-        simpl in *.
-        auto.
-      }
-      assert (
-      destruct  
-      unfold DAG.
-      intros z; intros.
-      unfold not; intros.
-    }
-    assert (DAG (Edge ((x,y)::k))). {
-      apply f_dag_cons_lt; auto using TID.eq_dec.
-      unfold not; intros X.
-      contradiction H1; eauto using reaches_to_in_fst.
-    }
-    clear H.
-    remember ((x, y) :: k) as es.
-    assert (forall z, Edge es (y,z) ->  Edge es (x z))
-    induction k. {
-      simpl.
-      auto.
-    }
-    destruct a as (a,b).
-    destruct (TID.eq_dec a x). {
-      rewrite tid_eq_rw in e.
-      subst.
-      rewrite copy_from_eq.
-      
-    unfold copy_from.
-    simpl.
-    remember (copy_from x y k) as l.
-    
+    apply dag_spawn_aux_0; auto using incl_refl.
   Qed.
+
   End Defs.
 End SafeJoins.
 
