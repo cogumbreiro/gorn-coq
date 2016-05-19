@@ -946,79 +946,75 @@ Module SafeJoins.
       apply f_dag_cons; auto using TID.eq_dec.
       remember (_ ++ _ :: k) as es.
       unfold not; intros.
-        (* for b to reach y in ES, then it must pass through (x,y) *)
-        inversion H5 as (w,Hw2).
-        assert (w =  (x,y) :: nil). {
-          inversion Hw2; subst.
-          inversion H7 as ((v,?),(?,?)); simpl in *; subst.
-          rename H9 into E.
-          remember (_ ++ _) as es.
-          assert (v = x). {
-            assert (Hi := E).
-            apply end_to_edge with (Edge:=Edge es) in Hi; auto.
-            subst.
-            unfold Edge in Hi.
-            rewrite in_app_iff in Hi.
-            destruct Hi.
-            - assert (v = y) by eauto; subst.
-              apply copy_from_spec_2 in H9.
-              assert (List.In (x,y) k). {
-                apply List.incl_strengthten in H2.
-                auto.
-              }
-              contradiction H1.
-              assert (Edge k (x,y)) by (unfold Edge;auto).
-              eauto using in_right.
-            - destruct H9 as [X|X]. {
-                inversion X; subst; clear X.
-                auto.
-              }
-              contradiction H1.
-              assert (Edge k (v,y)) by (unfold Edge;auto).
-              eauto using in_right.
-          }
+      (* for b to reach y in ES, then it must pass through (x,y) *)
+      inversion H5 as (w,Hw2).
+      assert (w =  (x,y) :: nil). {
+        inversion Hw2; subst.
+        inversion H7 as ((v,?),(?,?)); simpl in *; subst.
+        rename H9 into E.
+        remember (_ ++ _) as es.
+        assert (v = x). {
+          assert (Hi := E).
+          apply end_to_edge with (Edge:=Edge es) in Hi; auto.
           subst.
-          assert (List.In (x,y) w) by auto using end_in.
-          apply end_to_append in E.
-          destruct E as (w', ?); subst.
-          destruct w'. {
-            auto.
+          unfold Edge in Hi.
+          rewrite in_app_iff in Hi.
+          destruct Hi.
+          - assert (v = y) by eauto; subst.
+            apply copy_from_spec_2 in H9.
+            assert (List.In (x,y) k); (apply List.incl_strengthten in H2; auto).
+            contradiction H1.
+            assert (Edge k (x,y)) by (unfold Edge;auto).
+            eauto using in_right.
+          - destruct H9 as [X|X]. {
+              inversion X; subst; auto.
+            }
+            contradiction H1.
+            assert (Edge k (v,y)) by (unfold Edge;auto).
+            eauto using in_right.
+        }
+        subst.
+        assert (List.In (x,y) w) by auto using end_in.
+        apply end_to_append in E.
+        destruct E as (w', ?); subst.
+        destruct w'. {
+          auto.
+        }
+        apply walk2_split_app in Hw2.
+        destruct Hw2.
+        remember (_ ++ (_ :: k)) as es.
+        assert (Reaches (Edge es) b x) by eauto using reaches_def.
+        assert (Reaches (Edge es) x b). {
+          assert (Edge es (x,b)). {
+            unfold Edge, incl in *.
+            subst.
+            rewrite in_app_iff.
+            eauto using in_eq, in_cons.
           }
-          apply walk2_split_app in Hw2.
-          destruct Hw2.
-          remember (_ ++ (_ :: k)) as es.
-          assert (Reaches (Edge es) b x) by eauto using reaches_def.
-      assert (Reaches (Edge es) x b). {
-        assert (Edge es (x,b)). {
-          unfold Edge, incl in *.
+          auto using edge_to_reaches.
+        }
+        assert (n: Reaches (Edge es) b b) by eauto using reaches_trans.
+        apply H3 in n.
+        contradiction.
+      } (* w =  (x,y) :: nil *)
+      subst.
+      assert (b = x). {
+        inversion Hw2; subst.
+        apply starts_with_eq in H6.
+        auto.
+      }
+      subst.
+      remember (_ ++ (_ :: k)) as es.
+      assert (n: Reaches (Edge es) x x). {
+        assert (Edge es (x,x)). {
+          unfold Edge.
           subst.
           rewrite in_app_iff.
           eauto using in_eq, in_cons.
         }
         auto using edge_to_reaches.
       }
-         assert (n: Reaches (Edge es) b b) by eauto using reaches_trans.
-         apply H3 in n.
-         contradiction.
-       }
-       subst.
-       assert (b = x). {
-         inversion Hw2; subst.
-         apply starts_with_eq in H6.
-         auto.
-       }
-       subst.
-       remember (_ ++ (_ :: k)) as es.
-       assert (n: Reaches (Edge es) x x). {
-         assert (Edge es (x,x)). {
-           unfold Edge.
-           subst.
-           rewrite in_app_iff.
-           eauto using in_eq, in_cons.
-         }
-         auto using edge_to_reaches.
-       }
-       apply H3 in n; contradiction.
+      apply H3 in n; contradiction.
     - rewrite copy_from_neq; auto.
   Qed.
 
