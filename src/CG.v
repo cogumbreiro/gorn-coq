@@ -731,6 +731,7 @@ Module SafeJoins.
   Inductive Check (k:known) : option op -> Prop :=
   | check_spawn:
     forall x y,
+    x <> y ->
     ~ In (Edge k) y ->
     Check k (Some {| op_t := SPAWN; op_src:= x; op_dst:= y|})
   | check_join:
@@ -747,66 +748,16 @@ Module SafeJoins.
   | o :: ts => eval o (from_trace ts)
   end.
 
-  Inductive Safe : trace -> tid -> known -> Prop :=
+  Inductive Safe : trace -> known -> Prop :=
   | safe_nil:
-    forall x,
-    Safe nil x nil
+    Safe nil nil
   | safe_cons:
-    forall o l z k,
+    forall o l k,
     Check k o ->
-    Safe l z k ->
-    Safe (o::l) z (eval o k).
+    Safe l k ->
+    Safe (o::l) (eval o k).
 
   Import DAG.FDAG.
-
-  Lemma walk2_to_in_fst:
-    forall {A:Type} E x (y:A) w,
-    Walk2 E x y w ->
-    In E x.
-  Proof.
-    intros.
-    destruct H.
-    inversion H.
-    destruct x as (x,y).
-    destruct H2 as (?,(?,?)).
-    simpl in *.
-    subst.
-    assert (List.In (v1,y) ((v1,y) :: x0)) by auto using in_eq.
-    assert (E (v1,y)) by (eapply walk_to_edge; eauto).
-    eauto using in_left.
-  Qed.
-
-  Lemma walk2_to_in_snd:
-    forall {A:Type} E x (y:A) w,
-    Walk2 E x y w ->
-    In E y.
-  Proof.
-    intros.
-    inversion H; subst; clear H.
-    destruct H1 as ((v1,v2),(?,?)); simpl in *;subst.
-    assert (E (v1,y)) by (eapply walk_to_edge; eauto using end_in).
-    eauto using in_right.
-  Qed.
-
-  Lemma reaches_to_in_fst:
-    forall {A:Type} E x (y:A),
-    Reaches E x y ->
-    In E x.
-  Proof.
-    intros.
-    inversion H.
-    eauto using walk2_to_in_fst.
-  Qed.
-
-  Lemma reaches_to_in_snd:
-    forall {A:Type} E x (y:A),
-    Reaches E x y ->
-    In E y.
-  Proof.
-    intros.
-    inversion H.
-    eauto using walk2_to_in_snd.
-  Qed.
 
   Let copy_from_eq:
     forall x y z k,
@@ -1094,6 +1045,35 @@ Module SafeJoins.
     }
     apply dag_join_aux_0; auto using incl_refl.
   Qed.
+
+  Lemma eval_preserves_dag:
+    forall k o,
+    Check k o ->
+    DAG (Edge k) ->
+    DAG (Edge (eval o k)).
+  Proof.
+    intros.
+    destruct o; auto.
+    inversion H; subst; simpl; auto.
+  Qed.
+
+  (**
+    If the safe-joins graph that yields a trace is well-formed, then
+    the safe-joins graph is a DAG.
+    *)
+
+  Theorem safe_to_dag:
+    forall t k,
+    Safe t k ->
+    DAG (Edge k).
+  Proof.
+    intros.
+    induction H. {
+      auto using f_dag_nil.
+    }
+    auto using eval_preserves_dag.
+  Qed.
+
   End Defs.
 End SafeJoins.
 
