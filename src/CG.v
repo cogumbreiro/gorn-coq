@@ -696,6 +696,336 @@ Module Restriction.
   End Defs.
 End Restriction.
 
+Module SafeJoins.
+  Import Trace.
+  Import Restriction.
+  Require Import Aniceto.Graphs.FGraph.
+
+  Section Defs.
+  Notation known := (list (tid*tid)).
+
+  Definition safe_join_of t (e:tid*tid) := let (x,y) := e in if TID.eq_dec x t then Some y else None.
+
+  Definition get_safe_joins x := List.omap (safe_join_of x).
+
+  Definition copy_from (x y:tid) k := map (fun z => (y, z)) (get_safe_joins x k).
+
+  Definition spawn (x y:tid) (k:known) : known :=
+  (x,y) :: copy_from x y k ++ k.
+
+  Definition join (x y:tid) (k:known) : known :=
+  copy_from y x k ++ k.
+
+  Definition eval (o:option op) :=
+  match o with
+  | Some o =>
+    let f := match op_t o with
+      | SPAWN => spawn
+      | JOIN => join 
+      end
+    in
+    f (op_src o) (op_dst o)
+  | _ => fun k => k
+  end.
+
+  Inductive Check (k:known) : option op -> Prop :=
+  | check_spawn:
+    forall x y,
+    ~ In (Edge k) y ->
+    Check k (Some {| op_t := SPAWN; op_src:= x; op_dst:= y|})
+  | check_join:
+    forall x y,
+    Edge k (x,y) ->
+    ~ Edge k (y,x) ->
+    Check k (Some {| op_t := JOIN; op_src := x; op_dst:= y|})
+  | check_none:
+    Check k None.
+
+  Fixpoint from_trace ts :=
+  match ts with
+  | nil => nil
+  | o :: ts => eval o (from_trace ts)
+  end.
+
+  Inductive Safe : trace -> tid -> known -> Prop :=
+  | safe_nil:
+    forall x,
+    Safe nil x nil
+  | safe_cons:
+    forall o l z k,
+    Check k o ->
+    Safe l z k ->
+    Safe (o::l) z (eval o k).
+
+  Import DAG.FDAG.
+
+  Lemma walk2_to_in_fst:
+    forall {A:Type} E x (y:A) w,
+    Walk2 E x y w ->
+    In E x.
+  Proof.
+    intros.
+    destruct H.
+    inversion H.
+    destruct x as (x,y).
+    destruct H2 as (?,(?,?)).
+    simpl in *.
+    subst.
+    assert (List.In (v1,y) ((v1,y) :: x0)) by auto using in_eq.
+    assert (E (v1,y)) by (eapply walk_to_edge; eauto).
+    eauto using in_left.
+  Qed.
+
+  Lemma walk2_to_in_snd:
+    forall {A:Type} E x (y:A) w,
+    Walk2 E x y w ->
+    In E y.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    destruct H1 as ((v1,v2),(?,?)); simpl in *;subst.
+    assert (E (v1,y)) by (eapply walk_to_edge; eauto using end_in).
+    eauto using in_right.
+  Qed.
+
+  Lemma reaches_to_in_fst:
+    forall {A:Type} E x (y:A),
+    Reaches E x y ->
+    In E x.
+  Proof.
+    intros.
+    inversion H.
+    eauto using walk2_to_in_fst.
+  Qed.
+
+  Lemma reaches_to_in_snd:
+    forall {A:Type} E x (y:A),
+    Reaches E x y ->
+    In E y.
+  Proof.
+    intros.
+    inversion H.
+    eauto using walk2_to_in_snd.
+  Qed.
+
+  Let copy_from_eq:
+    forall x y z k,
+    copy_from x y ((x,z) :: k) = (y,z) :: copy_from x y k.
+  Proof.
+    intros.
+    unfold copy_from.
+    simpl.
+    destruct (TID.eq_dec x x). {
+      auto.
+    }
+    contradiction n.
+    apply TID.eq_refl.
+  Qed.
+
+  Let copy_from_neq:
+    forall x y a b k,
+    a <> x ->
+    copy_from x y ((a,b) :: k) = copy_from x y k.
+  Proof.
+    intros.
+    unfold copy_from.
+    simpl.
+    destruct (TID.eq_dec a x). {
+      contradiction H.
+    }
+    auto.
+  Qed.
+
+  Let copy_from_spec_1:
+    forall k x y z, Edge k (x,z) -> Edge (copy_from x y k) (y, z).
+  Proof.
+    induction k as [|(a,b)]; intros. {
+      inversion H.
+    }
+    destruct (TID.eq_dec a x); rewrite tid_eq_rw in *. {
+      subst.
+      rewrite copy_from_eq.
+      destruct H. {
+        inversion H; subst.
+        unfold Edge.
+        auto using in_eq.
+      }
+      unfold Edge in *.
+      apply in_cons.
+      auto using in_cons.
+    }
+    rewrite copy_from_neq; auto.
+    destruct H. {
+      inversion H.
+      contradiction.
+    }
+    auto.
+  Qed.
+
+  Let copy_from_spec_2:
+    forall k x y z, Edge (copy_from x y k) (y, z) -> Edge k (x,z).
+  Proof.
+    induction k as [|(a,b)]; intros. {
+      inversion H.
+    }
+    destruct (TID.eq_dec a x); rewrite tid_eq_rw in *. {
+      subst.
+      rewrite copy_from_eq in *.
+      destruct H. {
+        inversion H; subst.
+        unfold Edge.
+        auto using in_eq.
+      }
+      unfold Edge in *.
+      eauto using in_cons.
+    }
+    rewrite copy_from_neq in *; auto.
+    unfold Edge in *.
+    eauto using in_cons.
+  Qed.
+
+  Let copy_from_inv_eq:
+    forall a b x y k,
+    List.In (a, b) (copy_from x y k) ->
+    a = y.
+  Proof.
+    induction k as [|(v1,v2)]; intros. {
+      inversion H.
+    }
+    destruct (TID.eq_dec v1 x); rewrite tid_eq_rw in *. {
+      subst.
+      rewrite copy_from_eq in *.
+      destruct H. {
+        inversion H; subst.
+        trivial.
+      }
+      auto.
+    }
+    rewrite copy_from_neq in *; auto.
+  Qed.
+
+  Let reaches_edge_absurd_nil:
+    forall {A:Type} (x:A),
+    ~ Reaches (Edge nil) x x.
+  Proof.
+    intros.
+    unfold not; intros.
+    inversion H.
+    inversion H0.
+    destruct H1 as (?,(?,(?,?))).
+    subst.
+    inversion H3.
+    inversion H6.
+  Qed.
+
+  Require Import Aniceto.Pair.
+
+  Let dag_spawn_aux_0:
+    forall l k x y,
+    DAG (Edge k) ->
+    x <> y ->
+    ~ In (Edge k) y ->
+    incl l k ->
+    DAG (Edge (copy_from x y l ++ (x,y)::k)).
+  Proof.
+    induction l; intros. {
+      simpl in *.
+      apply f_dag_cons; auto using TID.eq_dec.
+      unfold not; intros X.
+      contradiction H1; eauto using reaches_to_in_fst.
+    }
+    assert (DAG (Edge (copy_from x y l ++ (x,y) ::k))) by
+          eauto using List.incl_strengthten; clear IHl.
+    destruct a as (a,b).
+    destruct (TID.eq_dec a x); rewrite tid_eq_rw in *.
+    - subst.
+      rewrite copy_from_eq.
+      simpl.
+      assert (y <> b). {
+        unfold not; intros; subst.
+        assert (List.In (x,b) k) by (unfold incl in *; auto using in_eq).
+        assert (Edge k (x,b)) by (unfold Edge; auto).
+        contradiction H1.
+        eauto using in_right.
+      }
+      apply f_dag_cons; auto using TID.eq_dec.
+      remember (_ ++ _ :: k) as es.
+      assert (Reaches (Edge es) x b). {
+        assert (Edge es (x,b)). {
+          unfold Edge, incl in *.
+          subst.
+          rewrite in_app_iff.
+          eauto using in_eq, in_cons.
+        }
+        auto using edge_to_reaches.
+      }
+      unfold not; intros.
+      (* But if x -> b, then y -> b  and since b -> y, then y -> y -> error*)
+      assert (n:~ Reaches (Edge es) y y) by (unfold DAG in *;auto).
+      contradiction n.
+      assert (Reaches (Edge es) x y). {
+        assert (Edge es (x,y)). {
+          unfold Edge, incl in *.
+          subst.
+          rewrite in_app_iff.
+          eauto using in_eq, in_cons.
+        }
+        auto using edge_to_reaches.
+      }
+      assert (Reaches (Edges es) x y) by eauto using reaches_trans.
+      eauto using reaches_trans.
+  Qed.
+
+  Let dag_spawn:
+    forall k x y,
+    DAG (Edge k) ->
+    x <> y ->
+    ~ In (Edge k) y ->
+    DAG (Edge (spawn x y k)).
+  Proof.
+    unfold spawn.
+    intros.
+    assert (DAG (Edge (copy_from x y k ++ k))). {
+      assert (forall l, incl l k -> DAG (Edge (copy_from x y l ++ k))). {
+        induction l; intros. {
+      }
+      induction k. {
+        simpl in *.
+        auto.
+      }
+      assert (
+      destruct  
+      unfold DAG.
+      intros z; intros.
+      unfold not; intros.
+    }
+    assert (DAG (Edge ((x,y)::k))). {
+      apply f_dag_cons_lt; auto using TID.eq_dec.
+      unfold not; intros X.
+      contradiction H1; eauto using reaches_to_in_fst.
+    }
+    clear H.
+    remember ((x, y) :: k) as es.
+    assert (forall z, Edge es (y,z) ->  Edge es (x z))
+    induction k. {
+      simpl.
+      auto.
+    }
+    destruct a as (a,b).
+    destruct (TID.eq_dec a x). {
+      rewrite tid_eq_rw in e.
+      subst.
+      rewrite copy_from_eq.
+      
+    unfold copy_from.
+    simpl.
+    remember (copy_from x y k) as l.
+    
+  Qed.
+  End Defs.
+End SafeJoins.
+
+
 Module Known.
   Import Trace.
   Import Restriction.
@@ -1160,6 +1490,21 @@ Module Known.
     trivial.
   Qed.
 
+  Lemma spawn_rw:
+    forall x y l k,
+    MT.MapsTo x l k ->
+    ~ MT.In (elt:=list tid) y k ->
+    spawn x y k = MT.add x (y :: l) (MT.add y l k).
+  Proof.
+    intros.
+    unfold spawn.
+    destruct (MT_Extra.find_rw x k) as [(?,?)|(l',(R,?))]. {
+      contradiction H2; eauto using MT_Extra.mapsto_to_in.
+    }
+    rewrite R.
+    assert (l' = l) by eauto using MT_Facts.MapsTo_fun; subst; auto.
+  Qed.
+
   (** This is not true: it breaks in a spawn
 
   Let known_to_spawn_edge:
@@ -1459,7 +1804,63 @@ Module KnownGraph.
     - eauto using gt_trans, running_no_dup.
   Qed.
 
-  Let progress:
+  Let dag_spawn:
+    forall vs k x y,
+    DAG (Gt vs) (edges k) ->
+    MT.In (elt:=list tid) x k ->
+    ~ MT.In (elt:=list tid) y k ->
+    DAG (Gt (vs ++ (y::nil))) (edges (spawn x y k)).
+  Proof.
+    intros.
+    apply MT_Extra.in_to_mapsto in H0.
+    destruct H0 as (l, mt).
+    assert (R:spawn x y k = MT.add x (y :: l) (MT.add y l k)) by auto using spawn_rw.
+    rewrite R.
+    inversion H0; subst.
+    - simpl.
+      inversion H0; subst.
+    unfold spawn.
+  Qed.
+  Let running_is_dag:
+    forall t a vs rs k,
+    Spawns t a vs ->
+    Running t a rs ->
+    Safe t a k ->
+    DAG (Gt vs) (edges k).
+  Proof.
+    induction t; intros. {
+      inversion H1; subst.
+      compute.
+      auto using Forall_nil.
+    }
+    inversion H1; subst; clear H1.
+    destruct a; simpl. {
+      destruct (op_t o); simpl. {
+        
+      }
+    }
+    unfold DAG.
+    rewrite Forall_forall.
+    intros.
+    unfold LtEdge.
+    destruct x as (x,y).
+  Qed.
+
+  Let running_is_dag:
+    forall t a vs rs k,
+    Spawns t a vs ->
+    Running t a rs ->
+    Safe t a k ->
+    R_DAG rs k.
+  Proof.
+    unfold R_DAG.
+    intros.
+    unfold DAG.
+    rewrite Forall_forall.
+    intros.
+  Qed.
+
+  Lemma progress:
     forall t a vs rs k,
     Spawns t a vs ->
     Running t a rs ->
