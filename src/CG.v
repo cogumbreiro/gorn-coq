@@ -1080,7 +1080,7 @@ Module SafeJoins.
 
   Import WellFormed.
 
-  Let running_supremum:
+  Let running_infimum:
     forall rs k,
     restriction rs k <> nil ->
     R_DAG rs k ->
@@ -1088,7 +1088,7 @@ Module SafeJoins.
       forall y, ~ Reaches (R_Edge rs k) x y.
   Proof.
     intros.
-    apply dag_supremum; auto using TID.eq_dec.
+    apply dag_infimum; auto using TID.eq_dec.
   Qed.
 
 
@@ -1112,7 +1112,7 @@ Module SafeJoins.
     assert (Hx:
       exists x, Graph.In (R_Edge rs k) x /\
       forall y, ~ Reaches (R_Edge rs k) x y). {
-        eapply running_supremum; eauto.
+        eapply running_infimum; eauto.
     }
     destruct Hx as (x, (Hin, Hy)).
     exists x.
