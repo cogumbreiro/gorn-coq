@@ -1102,11 +1102,11 @@ Module SafeJoins.
     apply f_dag_incl with (es:=k); auto using restriction_incl.
   Qed.
 
-  Lemma progress:
+  Let progress_0:
     forall t k rs,
     Safe t k ->
     (restriction rs k) <> nil ->
-    exists x, forall y, Edge k (x,y) -> ~ List.In y rs.
+    exists x, List.In x rs /\ forall y, Edge k (x,y) -> ~ List.In y rs.
   Proof.
     intros.
     assert (Hx:
@@ -1116,6 +1116,7 @@ Module SafeJoins.
     }
     destruct Hx as (x, (Hin, Hy)).
     exists x.
+    split; eauto using restriction_in_1.
     unfold not;
     intros y He Hx.
     assert (Hz := Hy y); clear Hy.
@@ -1128,6 +1129,34 @@ Module SafeJoins.
       auto using restriction_in_2.
     }
     auto using edge_to_reaches.
+  Qed.
+
+  Theorem progress:
+    forall t k rs,
+    Safe t k ->
+    rs <> nil ->
+    exists x, List.In x rs /\ forall y, Edge k (x,y) -> ~ List.In y rs.
+  Proof.
+    intros.
+    remember (restriction rs k) as l.
+    destruct l. {
+      subst.
+      destruct rs. { contradiction H0; auto. }
+      exists t0.
+      assert (List.In t0 (t0::rs)) by auto using in_eq.
+      split. { auto. }
+      intros.
+      unfold not; intros.
+      assert (List.In (t0, y) (restriction (t0::rs) k)) by auto using restriction_in_2.
+      rewrite <- Heql in *.
+      inversion H4.
+    }
+    assert (restriction rs k <> nil). {
+      intuition.
+      rewrite H1 in *.
+      inversion Heql.
+    }
+    eauto.
   Qed.
 
   End Defs.
