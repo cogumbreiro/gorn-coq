@@ -737,7 +737,6 @@ Module SafeJoins.
   | check_join:
     forall x y,
     Edge k (x,y) ->
-    ~ Edge k (y,x) ->
     Check k (Some {| op_t := JOIN; op_src := x; op_dst:= y|})
   | check_none:
     Check k None.
@@ -986,7 +985,6 @@ Module SafeJoins.
     DAG (Edge k) ->
     x <> y ->
     Edge k (x,y) ->
-    ~ Edge k (y,x) ->
     incl l k ->
     DAG (Edge (copy_from y x l ++ k)).
   Proof.
@@ -1002,7 +1000,10 @@ Module SafeJoins.
         unfold not; intros; subst.
         assert (List.In (y,b) k) by (unfold incl in *; auto using in_eq).
         assert (Edge k (y,b)) by (unfold Edge; auto).
-        contradiction H2.
+        assert (Reaches (Edge k) y b) by auto using edge_to_reaches.
+        assert (Reaches (Edge k) b y) by auto using edge_to_reaches.
+        assert (n: Reaches (Edge k) y y) by eauto using reaches_trans.
+        apply H in n; contradiction.
       }
       apply f_dag_cons_reaches; auto using TID.eq_dec.
         remember ( _ ++ _ ) as es.
@@ -1032,7 +1033,6 @@ Module SafeJoins.
     forall k x y,
     DAG (Edge k) ->
     Edge k (x,y) ->
-    ~ Edge k (y,x) ->
     DAG (Edge (join x y k)).
   Proof.
     intros.
@@ -1106,7 +1106,7 @@ Module SafeJoins.
     forall t k rs,
     Safe t k ->
     (restriction rs k) <> nil ->
-    exists x, forall y, R_Edge rs k (x,y) -> ~ In (R_Edge rs k) y.
+    exists x, forall y, Edge k (x,y) -> ~ List.In y rs.
   Proof.
     intros.
     assert (Hx:
@@ -1116,8 +1116,17 @@ Module SafeJoins.
     }
     destruct Hx as (x, (Hin, Hy)).
     exists x.
-    intros.
-    contradiction (Hy y).
+    unfold not;
+    intros y He Hx.
+    assert (Hz := Hy y); clear Hy.
+    contradiction Hz; clear Hz.
+    assert (List.In x rs). {
+      eauto using restriction_in_1.
+    }
+    assert (R_Edge rs k (x,y)). {
+      unfold Edge.
+      auto using restriction_in_2.
+    }
     auto using edge_to_reaches.
   Qed.
 
