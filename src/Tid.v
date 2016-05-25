@@ -77,6 +77,7 @@ End TID.
 
 Module MT := FMapAVL.Make TID.
 Module MT_Facts := FMapFacts.Facts MT.
+Module MT_Props := FMapFacts.Properties MT.
 Module MT_Extra := MapUtil MT.
 Module ST := FSetAVL.Make TID.
 Definition set_tid := ST.t.
