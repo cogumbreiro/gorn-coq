@@ -365,31 +365,6 @@ Section Defs.
     HB n2 n1 ->
     Ordered n1 n2.
 
-  (**
-    We have a safe-spawn when the body of the spawn may run in parallel
-    with the continuation of the spawn.
-    *
-
-  XXX: We no longer need this, do we?
-
-  Inductive SafeSpawn : tee -> Prop :=
-  | safe_spawn_eq:
-    forall v,
-    ntype v = SPAWN ->
-    List.In v (cg_tees cg) ->
-    (forall y, ContinueRefl (snd (inter v)) y -> MHP y (snd (intra v) )) ->
-    SafeSpawn v
-  | safe_spawn_skip:
-    forall v,
-    ntype v = JOIN ->
-    List.In v (cg_tees cg) ->
-    SafeSpawn v.
-
-  Definition Safe := List.Forall SafeSpawn (cg_tees cg).
-  *)
-  (** Is predicate [Safe] equivalent to [CG.RaceFree]? Maybe [CG.RaceFree] implies [Safe] *)
-  (** Is predicate [CG.RaceFree] equivalent to [Shadow.RaceFree]? *)
-
 End Defs.
 
 End CG.
