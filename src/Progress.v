@@ -1,22 +1,26 @@
 Require Import Lang.
 Require Import Tid.
 Require Import Cid.
+Require Import Mid.
 
 Section Progress.
   Section Task.
   Variable s: state.
 
   Inductive ERun (t:tid) m : expression -> op -> Prop :=
-(*  | e_run_deref:
+(*  | e_run_malloc:
+    forall v,
+    ERun h t m (Malloc v) (WRITE h) *)
+  | e_run_deref:
     forall x v,
     Eval m v (HeapLabel x) ->
-    ERun h t m (Deref v) (READ x)
-  | e_run_malloc:
-    forall v,
-    ERun h t m (Malloc v) (WRITE h)
-  | e_run_future:
+    MM.In x (fst s) ->
+    ERun t m (Deref v) (READ x)
+(*  | e_run_future:
     forall f vs,
-    ERun h t m (Future f vs) (FUTURE t)*)
+    (forall v, List.In vs -> exists w, Eval m v w) ->
+    ~ MT.In y ->
+    ERun x m (Future f vs) (FUTURE y)*)
   | e_run_force:
     forall v x,
     MT.In x (snd s) ->
@@ -69,7 +73,11 @@ Section Progress.
   | t_run_if:
     forall m v p1 p2 n,
     Eval m v (Num n) ->
-    TRun t (m, (If v p1 p2)) TAU.
+    TRun t (m, (If v p1 p2)) TAU
+  | t_run_ret:
+    forall m v w,
+    Eval m v w ->
+    TRun t (m, Ret v) TAU.
 
   Inductive Run : Prop :=
   | run_def:
@@ -81,35 +89,75 @@ Section Progress.
   Require CG.
 
   Variable s:state.
-  Variable R: Run s.
   Variable t: CG.Trace.trace.
   Variable k: list (tid*tid).
   Variable S: CG.SafeJoins.Safe t k.
-  Variable CF: MC.t code_fragment.
 
-  Variable mt1: MT.t task.
-  Variable mt2: MT.t task.
-  Variable P: MT_Props.Partition (snd s) mt1 mt2.
-  Variable mt1_spec_1: forall k e, MT.MapsTo k e mt1 -> exists o, TRun s k e o.
-  Variable mt2_spec_1: forall x, MT.In x mt2 -> IsStopped s x.
-  Variable N: MT_Extra.keys mt1 <> nil.
   Variable edge_to_task_fst:
     forall x y,
     FGraph.Edge k (x, y) ->
-    MT.In x (snd s).
+    MT.In x (s_tasks s).
+
   Variable edge_to_task_snd:
     forall x y,
     FGraph.Edge k (x, y) ->
-    MT.In y (snd s).
+    MT.In y (s_tasks s).
 
-  Variable run_to_edge:
-    forall x tsk y,
-    TRun s x tsk (FORCE y) ->
-    FGraph.Edge k (x,y).
+  Let get_ret (t:tid) (tsk:task) : option value :=
+  let (m,p) := tsk in
+  match p with
+  | Ret v => Some v
+  | _ => None
+  end.
+
+  Let get_ret_some:
+    forall x m p v,
+    get_ret x (m, p) = Some v ->
+    exists w, p = Ret w.
+  Proof.
+    intros.
+    destruct p; simpl in H; inversion H; subst; eauto.
+  Qed.
+
+  Definition is_running t tsk : bool :=
+  match get_ret t tsk with
+  | Some _ => false
+  | _ => true
+  end. 
+
+  Let stopped_tasks := MT_Props.partition is_running (s_tasks s).
+
+  Let mt1 := fst (stopped_tasks). (* running *)
+  Let mt2 := snd (stopped_tasks). (* stopped *)
+
+  Let is_running_morph:
+    Morphisms.Proper (Morphisms.respectful eq (Morphisms.respectful eq eq)) is_running.
+  Proof.
+    auto with *.
+  Qed.
+
+  Let P: MT_Props.Partition (s_tasks s) mt1 mt2.
+  Proof.
+    eauto using MT_Props.partition_Partition.
+  Qed.
+
+  Variable R: Run s.
+
+  Let mt1_spec_1: forall k e, MT.MapsTo k e mt1 -> exists o, TRun s k e o.
+  Proof.
+    intros.
+    inversion R.
+    destruct P as (_,P').
+    assert (MT.MapsTo k0 e (s_tasks s)). {
+      apply P'.
+      auto.
+    }
+    auto.
+  Qed.
 
   Let v_reduces_alt:
     forall x v w st p,
-    MT.MapsTo x (st,p) (snd s) ->
+    MT.MapsTo x (st,p) (s_tasks s) ->
     Eval st v w ->
     VReduces s x v w.
   Proof.
@@ -117,9 +165,72 @@ Section Progress.
     eauto using v_reduces_def, store_def.
   Qed.
 
+  Let is_stopped_alt:
+    forall x st v w,
+    MT.MapsTo x (st, Ret v) (s_tasks s) ->
+    Eval st v w ->
+    IsStopped s x.
+  Proof.
+    intros.
+    eauto using program_def, stopped_def, is_stopped_def.
+  Qed.
+
+  Let mt2_spec_1: forall x, MT.In x mt2 -> IsStopped s x.
+  Proof.
+    intros.
+    apply MT_Extra.in_to_mapsto in H.
+    destruct H as (e,mt).
+    eapply MT_Props.partition_iff_2 with (m:=s_tasks s) in mt; eauto.
+    destruct mt.
+    unfold is_running in *.
+    remember (get_ret x e) as o.
+    symmetry in Heqo.
+    destruct o. {
+      destruct e.
+      apply get_ret_some in Heqo.
+      destruct Heqo; subst.
+      inversion R as [R1].
+      assert (mt := H).
+      apply R1 in H.
+      destruct H as (o,HT).
+      inversion HT; subst.
+      eauto.
+    }
+    inversion H0.
+  Qed.
+
+  Let mt1_not_stopped: forall x, MT.In x mt1 -> ~ IsStopped s x.
+  Proof.
+    intros.
+    unfold not; intros.
+    apply MT_Extra.in_to_mapsto in H.
+    destruct H as (e,mt).
+    eapply MT_Props.partition_iff_1 with (m:=s_tasks s) in mt; eauto.
+    destruct mt.
+    unfold is_running in *.
+    remember (get_ret x e) as o.
+    symmetry in Heqo.
+    destruct o. {
+      inversion H1.
+    }
+    destruct H0.
+    destruct H0.
+    destruct H0.
+    assert (e=(l, Ret v)) by eauto using MT_Facts.MapsTo_fun; subst.
+    simpl in *.
+    inversion Heqo.
+  Qed.
+
+  Variable run_to_edge:
+    forall x tsk y,
+    TRun s x tsk (FORCE y) ->
+    FGraph.Edge k (x,y).
+
+  Variable CF: MC.t code_fragment.
+
   Let e_progress_force:
     forall x st p v y,
-    MT.MapsTo x (st,p) (snd s) ->
+    MT.MapsTo x (st,p) (s_tasks s) ->
     MT.In y mt2 ->
     ERun s x st (Force v) (FORCE y) ->
     exists w, EReduces CF (s, Force v) (x, FORCE y) (s, w).
@@ -133,24 +244,39 @@ Section Progress.
     eauto using e_reduces_force.
   Qed.
 
+  Let e_progress_read:
+    forall x st p v y,
+    MT.MapsTo x (st,p) (s_tasks s) ->
+    Eval st v (HeapLabel y) ->
+    MM.In y (fst s) ->
+    ERun s x st (Deref v) (READ y) ->
+    exists w, EReduces CF (s, Deref v) (x, READ y) (s, w).
+  Proof.
+    intros.
+    apply MM_Extra.in_to_mapsto in H1.
+    destruct H1.
+    eauto using e_reduces_load.
+  Qed.
+
   Let e_progress:
     forall x st p o e,
-    MT.MapsTo x (st,p) (snd s) ->
+    MT.MapsTo x (st,p) (s_tasks s) ->
     (forall y, o = FORCE y -> MT.In y mt2) ->
     ERun s x st e o ->
     exists w s', EReduces CF (s, e) (x, o) (s', w).
   Proof.
     intros.
-    inversion H1.
-    subst.
-    eapply e_progress_force in H1; eauto.
-    destruct H1.
-    eauto.
+    inversion H1; subst.
+    - eapply e_progress_read in H1; eauto.
+      destruct H1; eauto.
+    - eapply e_progress_force in H1; eauto.
+      destruct H1.
+      eauto.
   Qed.
 
   Let p_prog_seq:
     forall x m p i e o,
-    MT.MapsTo x (m,Seq i p) (snd s) ->
+    MT.MapsTo x (m,Seq i p) (s_tasks s) ->
     Expression i e ->
     ERun s x m e o ->
     (forall y, o = FORCE y -> MT.In y mt2) ->
@@ -165,7 +291,7 @@ Section Progress.
   Let p_prog_if:
     forall st v n x p1 p2,
     Eval st v (Num n) ->
-    MT.MapsTo x (st, If v p1 p2) (snd s) ->
+    MT.MapsTo x (st, If v p1 p2) (s_tasks s) ->
     exists s' p', PReduces CF (s, If v p1 p2) (x,TAU) (s', p').
   Proof.
     intros.
@@ -174,18 +300,25 @@ Section Progress.
     - eauto using i_reduces_if_succ.
   Qed.
 
-  Let t_run_progress:
+  Let p_progress:
     forall x st p o,
-    TRun s x (st,p) o ->
-    MT.MapsTo x (st, p) (snd s) ->
+    MT.MapsTo x (st, p) (s_tasks s) ->
+    MT.MapsTo x (st, p) mt1 -> (* for the ret case *)
     (forall y, o = FORCE y -> MT.In y mt2) ->
+    TRun s x (st,p) o ->
     exists s' p', PReduces CF (s, p) (x,o) (s', p').
   Proof.
     intros.
-    inversion H; subst.
+    inversion H2; subst.
     - eauto.
-    - eauto. 
-  Proof.
+    - eauto.
+    - apply MT_Extra.mapsto_to_in in H0.
+      apply mt1_not_stopped in H0.
+      contradiction H0.
+      eauto.
+  Qed.
+
+  Variable N: MT_Extra.keys mt1 <> nil.
 
   Theorem progress:
     exists e s', Reduces CF s e s'.
@@ -194,11 +327,12 @@ Section Progress.
     apply MT_Extra.keys_spec_1 in Hi.
     apply MT_Extra.in_to_mapsto in Hi.
     destruct Hi as (tsk,Hmt).
-    assert (Hmt_s: MT.MapsTo x tsk (snd s)). {
+    assert (Hmt_s: MT.MapsTo x tsk (s_tasks s)). {
       destruct P as (_,P2).
       rewrite P2.
       eauto.
     }
+    assert (Hmt1:= Hmt).
     apply mt1_spec_1 in Hmt.
     destruct Hmt as (o, TR).
     assert (X: forall y, o = FORCE y -> MT.In y mt2). {
@@ -218,8 +352,11 @@ Section Progress.
       destruct TR; auto.
       contradiction.
     } clear H.
-    eauto.
+    destruct tsk as (m,p).
+    eapply p_progress in TR; eauto.
+    destruct TR as (s',(p',PR)).
+    exists (x,o).
+    eauto using reduces_def, program_def.
   Qed.
-    
 
 End Progress.
