@@ -318,7 +318,21 @@ Section Progress.
       eauto.
   Qed.
 
-  Variable N: MT_Extra.keys mt1 <> nil.
+  Variable N': ~ MT.Empty mt1.
+
+  Let N: MT_Extra.keys mt1 <> nil.
+  Proof.
+    remember (MT_Extra.keys mt1).
+    destruct l.
+    - apply MT_Extra.nonempty_in in N'.
+      destruct N'.
+      apply MT_Extra.keys_spec_2 in H.
+      destruct H as (k', (?,Hi)).
+      subst.
+      rewrite <- Heql in *.
+      inversion Hi.
+    - auto with *.
+  Qed.
 
   Theorem progress:
     exists e s', Reduces CF s e s'.
