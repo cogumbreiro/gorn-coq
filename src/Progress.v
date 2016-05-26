@@ -33,19 +33,43 @@ Section Progress.
     Eval s v (HeapLabel h) ->
     IRun s (Store v (Value v')) (WRITE h).
 *)
+
+
+(*
+  Inductive PRun: (state * program) -> effect -> Prop :=
+  | p_reduces_eval:
+    forall s s' i e w p o,
+    Expression i e ->
+    ERun (s,e) o (s',w) ->
+    PRun (s, Seq i p) o (s', Seq (eval w i) p)
+  | p_reduces_seq:
+    forall s i p s' o,
+    IRun (s,i) o s' ->
+    PRun (s, Seq i p) o (s', p)
+  | i_reduces_if_zero:
+    forall s t v p1 p2,
+    VRun s t v (Num 0) ->
+    PRun (s, If v p1 p2) (t,TAU) (s, p2)
+  | i_reduces_if_succ:
+    forall s t v n p1 p2,
+    VRun s t v (Num (S n)) ->
+    PRun (s, If v p1 p2) (t,TAU) (s, p1).
+*)
+
   Inductive TRun t : task -> op -> Prop :=
   | t_run_e:
-    forall s i p e o,
+    forall m i p e o,
     Expression i e ->
-    ERun t s e o ->
-    TRun t (s,Seq i p) o.
+    ERun t m e o ->
+    TRun t (m, Seq i p) o
 (*  | t_run_i:
     forall s i p o,
     IRun s i o ->
-    TRun t (s,Seq i p) o
+    TRun t (s,Seq i p) o *)
   | t_run_if:
-    forall s v p1 p2,
-    TRun t (s, (If v p1 p2)) TAU. *)
+    forall m v p1 p2 n,
+    Eval m v (Num n) ->
+    TRun t (m, (If v p1 p2)) TAU.
 
   Inductive Run : Prop :=
   | run_def:
@@ -83,19 +107,85 @@ Section Progress.
     TRun s x tsk (FORCE y) ->
     FGraph.Edge k (x,y).
 
-  Let t_run_progress:
-    forall x tsk o,
-    TRun s x tsk o ->
-    MT.MapsTo x tsk (snd s) ->
-    (exists y, o = FORCE y -> MT.In y mt2) ->
-    exists e s', Reduces CF s e s'.
+  Let v_reduces_alt:
+    forall x v w st p,
+    MT.MapsTo x (st,p) (snd s) ->
+    Eval st v w ->
+    VReduces s x v w.
   Proof.
     intros.
-    inversion H; subst; clear H.
-    rename s0 into st.
-    destruct o.
-    - 
+    eauto using v_reduces_def, store_def.
   Qed.
+
+  Let e_progress_force:
+    forall x st p v y,
+    MT.MapsTo x (st,p) (snd s) ->
+    MT.In y mt2 ->
+    ERun s x st (Force v) (FORCE y) ->
+    exists w, EReduces CF (s, Force v) (x, FORCE y) (s, w).
+  Proof.
+    intros.
+    inversion H1.
+    clear H3 H2.
+    apply mt2_spec_1 in H0.
+    destruct H0.
+    exists w.
+    eauto using e_reduces_force.
+  Qed.
+
+  Let e_progress:
+    forall x st p o e,
+    MT.MapsTo x (st,p) (snd s) ->
+    (forall y, o = FORCE y -> MT.In y mt2) ->
+    ERun s x st e o ->
+    exists w s', EReduces CF (s, e) (x, o) (s', w).
+  Proof.
+    intros.
+    inversion H1.
+    subst.
+    eapply e_progress_force in H1; eauto.
+    destruct H1.
+    eauto.
+  Qed.
+
+  Let p_prog_seq:
+    forall x m p i e o,
+    MT.MapsTo x (m,Seq i p) (snd s) ->
+    Expression i e ->
+    ERun s x m e o ->
+    (forall y, o = FORCE y -> MT.In y mt2) ->
+    exists s' p', PReduces CF (s, Seq i p) (x,o) (s', p').
+  Proof.
+    intros.
+    eapply e_progress in H1; eauto.
+    destruct H1 as (w, (s', ER)).
+    eauto using p_reduces_eval.
+  Qed.
+
+  Let p_prog_if:
+    forall st v n x p1 p2,
+    Eval st v (Num n) ->
+    MT.MapsTo x (st, If v p1 p2) (snd s) ->
+    exists s' p', PReduces CF (s, If v p1 p2) (x,TAU) (s', p').
+  Proof.
+    intros.
+    destruct n.
+    - eauto using i_reduces_if_zero.
+    - eauto using i_reduces_if_succ.
+  Qed.
+
+  Let t_run_progress:
+    forall x st p o,
+    TRun s x (st,p) o ->
+    MT.MapsTo x (st, p) (snd s) ->
+    (forall y, o = FORCE y -> MT.In y mt2) ->
+    exists s' p', PReduces CF (s, p) (x,o) (s', p').
+  Proof.
+    intros.
+    inversion H; subst.
+    - eauto.
+    - eauto. 
+  Proof.
 
   Theorem progress:
     exists e s', Reduces CF s e s'.
@@ -111,11 +201,10 @@ Section Progress.
     }
     apply mt1_spec_1 in Hmt.
     destruct Hmt as (o, TR).
-    assert (X: exists y, o = FORCE y -> MT.In y mt2). {
+    assert (X: forall y, o = FORCE y -> MT.In y mt2). {
+      intros; subst.
       inversion TR; subst.
       inversion H1; subst.
-      rename x0 into y.
-      exists y; intros.
       assert (n: ~ MT.In y mt1). {
         apply run_to_edge in TR.
         apply H in TR.
