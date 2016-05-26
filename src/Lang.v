@@ -265,7 +265,7 @@ Section Lang.
     PReduces (s, If v p1 p2) (t,TAU) (s, p1).
 
   Inductive Reduces: state -> effect -> state -> Prop :=
-  | reduces_run:
+  | reduces_def:
     forall s s' t p p' o,
     Program s t p ->
     PReduces (s,p) (t,o) (s', p') ->
