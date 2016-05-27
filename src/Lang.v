@@ -243,6 +243,7 @@ Section Lang.
     forall s s' t w h v v',
     VReduces s t v (HeapLabel h) ->
     VReduces s t v' w ->
+    MM.In h (s_heap s) ->
     IReduces (s, Store v (Value v')) (t, WRITE h) (s_global_put h w s').
 
   Inductive PReduces: (state * program) -> effect -> (state * program) -> Prop :=
