@@ -69,3 +69,7 @@ End CID.
 
 Module MC := FMapAVL.Make CID.
 Module MC_Facts := FMapFacts.Facts MC.
+
+Require Import Aniceto.Map.
+
+Module MC_Extra := MapUtil MC.
