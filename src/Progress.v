@@ -37,12 +37,13 @@ Section Progress.
   | i_run_assign:
     forall x v w,
     Eval m v w ->
-    IRun s m (Assign x (Value v)) TAU.
-(*  | i_run_store:
-    forall v v' h,
-    Eval s v (HeapLabel h) ->
-    IRun s (Store v (Value v')) (WRITE h).
-*)
+    IRun s m (Assign x (Value v)) TAU
+  | i_run_store:
+    forall v v' w h,
+    Eval m v (HeapLabel h) ->
+    Eval m v' w ->
+    MM.In h (s_heap s) ->
+    IRun s m (Store v (Value v')) (WRITE h).
 
   Inductive TRun t : task -> op -> Prop :=
   | t_run_e:
@@ -262,6 +263,8 @@ Section Progress.
     inversion H.
   Qed.
 
+  (* XXX: MOVE ME OUT *)
+
   Lemma combine_inv_cons:
     forall {A:Type} {B:Type} (l1:list A) (l2:list B) x y l,
     List.combine l1 l2 = ((x, y) :: l)%list ->
@@ -271,6 +274,8 @@ Section Progress.
     destruct l1, l2; inversion H.
     eauto.
   Qed.
+
+  (* XXX: MOVE ME OUT *)
 
   Lemma length_inv_nil:
     forall {A:Type} (l:list A),
@@ -412,6 +417,17 @@ Section Progress.
     eauto using i_reduces_assign.
   Qed.
 
+  Let i_progress_store:
+    forall m v v' h x w p,
+    Eval m v (HeapLabel h) ->
+    Eval m v' w ->
+    MM.In h (s_heap s) ->
+    MT.MapsTo x (m, Seq (Store v (Value v')) p) (s_tasks s) ->
+    IReduces (s, Store v (Value v')) (x, WRITE h) (s_global_put h w s).
+  Proof.
+    eauto using i_reduces_store.
+  Qed.
+
   Let i_progress:
     forall x m p i o,
     MT.MapsTo x (m,Seq i p) (s_tasks s) ->
@@ -420,6 +436,7 @@ Section Progress.
   Proof.
     intros.
     inversion H0; subst; clear H0.
+    - eauto.
     - eauto.
   Qed.
 
@@ -478,19 +495,20 @@ Section Progress.
     assert (X: forall y, o = FORCE y -> MT.In y mt2). {
       intros; subst.
       inversion TR; subst.
-      inversion H1; subst.
-      assert (n: ~ MT.In y mt1). {
+      - inversion H1; subst.
+        assert (n: ~ MT.In y mt1). {
+          apply run_to_edge in TR.
+          apply H in TR.
+          unfold not; intros.
+          contradiction TR.
+          rewrite <- MT_Extra.keys_spec; auto using tid_eq_rw.
+        }
         apply run_to_edge in TR.
-        apply H in TR.
-        unfold not; intros.
-        contradiction TR.
-        rewrite <- MT_Extra.keys_spec; auto using tid_eq_rw.
-      }
-      apply run_to_edge in TR.
-      apply edge_to_task_snd in TR.
-      apply MT_Props.Partition_In with (m1:=mt1) (m2:= mt2) in TR; auto.
-      destruct TR; auto.
-      contradiction.
+        apply edge_to_task_snd in TR.
+        apply MT_Props.Partition_In with (m1:=mt1) (m2:= mt2) in TR; auto.
+        destruct TR; auto.
+        contradiction.
+      - inversion H0.
     } clear H.
     destruct tsk as (m,p).
     eapply p_progress in TR; eauto.
