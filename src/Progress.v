@@ -2,25 +2,31 @@ Require Import Lang.
 Require Import Tid.
 Require Import Cid.
 Require Import Mid.
+Require Import Var.
 
 Section Progress.
   Section Task.
+  Variable CF: MC.t code_fragment.
   Variable s: state.
 
   Inductive ERun (t:tid) m : expression -> op -> Prop :=
-(*  | e_run_malloc:
-    forall v,
-    ERun h t m (Malloc v) (WRITE h) *)
+  | e_run_malloc:
+    forall v w x,
+    ~ MM.In x (s_heap s) ->
+    Eval m v w ->
+    ERun t m (Malloc v) (WRITE x)
   | e_run_deref:
     forall x v,
     Eval m v (HeapLabel x) ->
-    MM.In x (fst s) ->
+    MM.In x (s_heap s) ->
     ERun t m (Deref v) (READ x)
-(*  | e_run_future:
-    forall f vs,
-    (forall v, List.In vs -> exists w, Eval m v w) ->
-    ~ MT.In y ->
-    ERun x m (Future f vs) (FUTURE y)*)
+  | e_run_future:
+    forall f c vs y,
+    MC.MapsTo f c CF ->
+    length (c_vars c) = length vs ->
+    List.Forall (fun v => exists w, Eval m v w) vs ->
+    ~ MT.In y (s_tasks s) ->
+    ERun t m (Future f vs) (FUTURE y)
   | e_run_force:
     forall v x,
     MT.In x (snd s) ->
@@ -36,28 +42,6 @@ Section Progress.
     forall v v' h,
     Eval s v (HeapLabel h) ->
     IRun s (Store v (Value v')) (WRITE h).
-*)
-
-
-(*
-  Inductive PRun: (state * program) -> effect -> Prop :=
-  | p_reduces_eval:
-    forall s s' i e w p o,
-    Expression i e ->
-    ERun (s,e) o (s',w) ->
-    PRun (s, Seq i p) o (s', Seq (eval w i) p)
-  | p_reduces_seq:
-    forall s i p s' o,
-    IRun (s,i) o s' ->
-    PRun (s, Seq i p) o (s', p)
-  | i_reduces_if_zero:
-    forall s t v p1 p2,
-    VRun s t v (Num 0) ->
-    PRun (s, If v p1 p2) (t,TAU) (s, p2)
-  | i_reduces_if_succ:
-    forall s t v n p1 p2,
-    VRun s t v (Num (S n)) ->
-    PRun (s, If v p1 p2) (t,TAU) (s, p1).
 *)
 
   Inductive TRun t : task -> op -> Prop :=
@@ -88,6 +72,7 @@ Section Progress.
 
   Require CG.
 
+  Variable CF: MC.t code_fragment.
   Variable s:state.
   Variable t: CG.Trace.trace.
   Variable k: list (tid*tid).
@@ -141,9 +126,9 @@ Section Progress.
     eauto using MT_Props.partition_Partition.
   Qed.
 
-  Variable R: Run s.
+  Variable R: Run CF s.
 
-  Let mt1_spec_1: forall k e, MT.MapsTo k e mt1 -> exists o, TRun s k e o.
+  Let mt1_spec_1: forall k e, MT.MapsTo k e mt1 -> exists o, TRun CF s k e o.
   Proof.
     intros.
     inversion R.
@@ -223,16 +208,130 @@ Section Progress.
 
   Variable run_to_edge:
     forall x tsk y,
-    TRun s x tsk (FORCE y) ->
+    TRun CF s x tsk (FORCE y) ->
     FGraph.Edge k (x,y).
 
-  Variable CF: MC.t code_fragment.
+  Let e_progress_malloc:
+    forall x y st v w p,
+    ~ MM.In y (s_heap s) ->
+    Eval st v w ->
+    MT.MapsTo x (st,p) (s_tasks s) ->
+    ERun CF s x st (Malloc v) (WRITE y) ->
+    EReduces CF (s, Malloc v) (x, WRITE y) (s_global_put y w s, HeapLabel y).
+  Proof.
+    intros.
+    eauto using e_reduces_malloc, v_reduces_alt.
+  Qed.
+
+  Let v_reduces_vec:
+    forall x st p vs,
+    MT.MapsTo x (st,p) (s_tasks s) ->
+    List.Forall (fun v => exists w, Eval st v w) vs ->
+    List.Forall (fun v => exists w, VReduces s x v w) vs.
+  Proof.
+    intros.
+    rewrite List.Forall_forall in *.
+    intros.
+    apply H0 in H1.
+    destruct H1; eauto.
+  Qed.
+
+  Let v_reduces_vec_combine:
+    forall x vs,
+    List.Forall (fun v => exists w, VReduces s x v w) vs ->
+    forall xs,
+    List.Forall (fun (p:var*value) => let (y,v) := p in exists w, VReduces s x v w) (List.combine xs vs).
+  Proof.
+    intros.
+    rewrite List.Forall_forall in *.
+    intros.
+    destruct x0 as (y,v).
+    apply List.in_combine_r in H0.
+    auto.
+  Qed.
+
+  (* XXX: MOVE ME OUT *)
+
+  Lemma combine_inv_nil:
+    forall {A:Type} {B:Type} (l1:list A) (l2:list B),
+    List.combine l1 l2 = nil ->
+    l1 = nil \/ l2 = nil.
+  Proof.
+    intros.
+    destruct l1, l2; auto.
+    inversion H.
+  Qed.
+
+  Lemma combine_inv_cons:
+    forall {A:Type} {B:Type} (l1:list A) (l2:list B) x y l,
+    List.combine l1 l2 = ((x, y) :: l)%list ->
+    exists l1' l2', (l1 = x::l1' /\ l2 = y :: l2' /\ List.combine l1' l2' = l) % list.
+  Proof.
+    intros.
+    destruct l1, l2; inversion H.
+    eauto.
+  Qed.
+
+  Lemma length_inv_nil:
+    forall {A:Type} (l:list A),
+    length l = 0 ->
+    l = nil.
+  Proof.
+    intros.
+    destruct l; auto.
+    inversion H.
+  Qed.
+
+  Let v_reduces_vec_to_bind:
+    forall l x vs xs,
+    List.combine xs vs = l ->
+    length xs = length vs ->
+    List.Forall (fun (p:var*value) => let (y,v) := p in exists w, VReduces s x v w) l ->
+    exists m, Bind s x xs vs m.
+  Proof.
+    induction l; intros. {
+      apply combine_inv_nil in H.
+      destruct H; subst; simpl in *;
+        try apply length_inv_nil in H0;
+        symmetry in H0;
+        try apply length_inv_nil in H0;
+        subst;
+        eauto using bind_nil.
+    }
+    destruct a as (x1,v1).
+    apply combine_inv_cons in H.
+    destruct H as (l1, (l2, (?,(?,Hc)))); subst.
+    assert (B: exists m, Bind s  x l1 l2 m). {
+      inversion H0.
+      inversion H1.
+      auto.
+    }
+    destruct B as (m, B).
+    inversion H1; subst.
+    destruct H3.
+    eauto using bind_cons.
+  Qed.
+
+  Let e_progress_future:
+    forall x st p y vs f c,
+    MC.MapsTo f c CF ->
+    length (c_vars c) = length vs ->
+    List.Forall (fun v => exists w, Eval st v w) vs ->
+    ~ MT.In y (s_tasks s) ->
+    MT.MapsTo x (st,p) (s_tasks s) ->
+    ERun CF s x st (Future f vs) (FUTURE y) ->
+    exists s' w, EReduces CF (s, Future f vs) (x, FUTURE y) (s', w).
+  Proof.
+    intros.
+    assert (B: exists m, Bind s x (c_vars c) vs m) by eauto; destruct B as (m, B).
+    eauto using e_reduces_future.
+  Qed.
 
   Let e_progress_force:
     forall x st p v y,
     MT.MapsTo x (st,p) (s_tasks s) ->
     MT.In y mt2 ->
-    ERun s x st (Force v) (FORCE y) ->
+    ERun CF s x st (Force v) (FORCE y) ->
     exists w, EReduces CF (s, Force v) (x, FORCE y) (s, w).
   Proof.
     intros.
@@ -249,7 +348,7 @@ Section Progress.
     MT.MapsTo x (st,p) (s_tasks s) ->
     Eval st v (HeapLabel y) ->
     MM.In y (fst s) ->
-    ERun s x st (Deref v) (READ y) ->
+    ERun CF s x st (Deref v) (READ y) ->
     exists w, EReduces CF (s, Deref v) (x, READ y) (s, w).
   Proof.
     intros.
@@ -262,13 +361,17 @@ Section Progress.
     forall x st p o e,
     MT.MapsTo x (st,p) (s_tasks s) ->
     (forall y, o = FORCE y -> MT.In y mt2) ->
-    ERun s x st e o ->
+    ERun CF s x st e o ->
     exists w s', EReduces CF (s, e) (x, o) (s', w).
   Proof.
     intros.
     inversion H1; subst.
+    - eauto using e_progress_malloc.
     - eapply e_progress_read in H1; eauto.
       destruct H1; eauto.
+    - eapply e_progress_future in H1; eauto.
+      destruct H1 as (?,(?,?)).
+      eauto.
     - eapply e_progress_force in H1; eauto.
       destruct H1.
       eauto.
@@ -278,7 +381,7 @@ Section Progress.
     forall x m p i e o,
     MT.MapsTo x (m,Seq i p) (s_tasks s) ->
     Expression i e ->
-    ERun s x m e o ->
+    ERun CF s x m e o ->
     (forall y, o = FORCE y -> MT.In y mt2) ->
     exists s' p', PReduces CF (s, Seq i p) (x,o) (s', p').
   Proof.
@@ -305,7 +408,7 @@ Section Progress.
     MT.MapsTo x (st, p) (s_tasks s) ->
     MT.MapsTo x (st, p) mt1 -> (* for the ret case *)
     (forall y, o = FORCE y -> MT.In y mt2) ->
-    TRun s x (st,p) o ->
+    TRun CF s x (st,p) o ->
     exists s' p', PReduces CF (s, p) (x,o) (s', p').
   Proof.
     intros.
