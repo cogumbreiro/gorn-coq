@@ -33,12 +33,12 @@ Section Progress.
     Eval m v (TaskLabel x) ->
     ERun t m (Force v) (FORCE x).
 
-(*
-  Inductive IRun s : instruction -> op -> Prop :=
+  Inductive IRun (s:state) m : instruction -> op -> Prop :=
   | i_run_assign:
-    forall x v,
-    IRun s (Assign x (Value v)) TAU
-  | i_run_store:
+    forall x v w,
+    Eval m v w ->
+    IRun s m (Assign x (Value v)) TAU.
+(*  | i_run_store:
     forall v v' h,
     Eval s v (HeapLabel h) ->
     IRun s (Store v (Value v')) (WRITE h).
@@ -50,10 +50,10 @@ Section Progress.
     Expression i e ->
     ERun t m e o ->
     TRun t (m, Seq i p) o
-(*  | t_run_i:
-    forall s i p o,
-    IRun s i o ->
-    TRun t (s,Seq i p) o *)
+  | t_run_i:
+    forall m i p o,
+    IRun s m i o ->
+    TRun t (m,Seq i p) o
   | t_run_if:
     forall m v p1 p2 n,
     Eval m v (Num n) ->
@@ -403,6 +403,26 @@ Section Progress.
     - eauto using i_reduces_if_succ.
   Qed.
 
+  Let i_progress_assign:
+    forall x y w m p v,
+    Eval m v w ->
+    MT.MapsTo x (m, Seq (Assign y (Value v)) p) (s_tasks s) ->
+    IReduces (s, Assign y (Value v)) (x, TAU) (s_local_put x y w s).
+  Proof.
+    eauto using i_reduces_assign.
+  Qed.
+
+  Let i_progress:
+    forall x m p i o,
+    MT.MapsTo x (m,Seq i p) (s_tasks s) ->
+    IRun s m i o ->
+    exists s', IReduces (s, i) (x,o) s'.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    - eauto.
+  Qed.
+
   Let p_progress:
     forall x st p o,
     MT.MapsTo x (st, p) (s_tasks s) ->
@@ -414,6 +434,9 @@ Section Progress.
     intros.
     inversion H2; subst.
     - eauto.
+    - eapply i_progress in H6;eauto.
+      destruct H6.
+      eauto using p_reduces_seq.
     - eauto.
     - apply MT_Extra.mapsto_to_in in H0.
       apply mt1_not_stopped in H0.
