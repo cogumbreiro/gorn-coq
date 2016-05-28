@@ -1,17 +1,22 @@
-Module Typesystem.
-  Section Defs.
+Require Import Cid.
+Require Import Tid.
+Require Import Mid.
+Require Import Var.
+Require Import Lang.
 
-  Definition t_store := MV.t type.
-  Definition t_taskmap := MT.t type.
-  Definition t_heap := MM.t type.
+Definition t_store := MV.t type.
+Definition t_taskmap := MT.t type.
+Definition t_heap := MM.t type.
 
-  Section Checks.
+Section Checks.
 
   (** Type of tasks *)
   Variable TS: t_taskmap.
 
   (** Type of heap *)
   Variable HS: t_heap.
+
+  (** Typecheck words. *)
 
   Inductive WCheck: word -> type -> Prop :=
   | w_check_num:
@@ -26,20 +31,34 @@ Module Typesystem.
     MM.MapsTo x t HS ->
     WCheck (HeapLabel x) (t_ref t).
 
+  (** Define the type of a code block (an arrow type). *)
 
-  Structure signature := {
-    s_ret: type;
-    s_params: list type
+  Structure t_code := {
+    s_params: list type;
+    s_ret: type
   }.
 
-  Definition s_task s := t_task (s_ret s).
-  Definition signaturemap := MC.t signature.
+  (**
+    Invoking a future of this code type, yields a
+    type, which is a future of the return type.
+    *)
+
+  Definition t_future s := t_task (s_ret s).
+
+  (** Defines the code segment type of a program. *)
+
+  Definition t_code_segment := MC.t t_code.
+
   (** Type of the code fragments *)
-  Variable CS: signaturemap.
+  Variable CS: t_code_segment.
 
   Section Values.
+
     (** Type of store *)
+
     Variable LS: t_store.
+
+   (** Typecheck a value *)
 
     Inductive VCheck: value -> type -> Prop :=
     | v_check_var:
@@ -51,6 +70,8 @@ Module Typesystem.
       WCheck w t ->
       VCheck (Word w) t.
 
+    (** Type check a vector of values. *)
+
     Inductive VSCheck : list value -> list type -> Prop :=
     | vs_check_nil:
       VSCheck nil nil
@@ -60,39 +81,39 @@ Module Typesystem.
       VSCheck vs ts ->
       VSCheck (v::vs) (t::ts).
 
-  Inductive ECheck: expression -> type -> Prop :=
-  | e_check_value:
-    forall v t,
-    VCheck v t ->
-    ECheck (Value v) t
-  | e_check_deref:
-    forall v t,
-    VCheck v (t_ref t) ->
-    ECheck (Deref v) t
-  | e_check_malloc:
-    forall v t,
-    VCheck v t ->
-    ECheck (Malloc v) (t_ref t)
-  | e_check_future:
-    forall f vs s,
-    MC.MapsTo f s CS ->
-    VSCheck vs (s_params s) ->
-    ECheck (Future f vs) (s_task s)
-  | e_check_force:
-    forall v t,
-    VCheck v (t_task t) ->
-    ECheck (Force v) t.
+    Inductive ECheck: expression -> type -> Prop :=
+    | e_check_value:
+      forall v t,
+      VCheck v t ->
+      ECheck (Value v) t
+(*    | e_check_malloc:
+      forall v t,
+      VCheck v t ->
+      ECheck (Malloc v) (t_ref t) *)
+    | e_check_deref:
+      forall v t,
+      VCheck v (t_ref t) ->
+      ECheck (Deref v) t
+(*    | e_check_future:
+      forall f vs s,
+      MC.MapsTo f s CS ->
+      VSCheck vs (s_params s) ->
+      ECheck (Future f vs) (t_future s)*)
+    | e_check_force:
+      forall v t,
+      VCheck v (t_task t) ->
+      ECheck (Force v) t.
 
-  Inductive ICheck: instruction -> t_store -> Prop :=
-  | i_check_assign:
-    forall x e t,
-    ECheck e t ->
-    ICheck (Assign x e) (MV.add x t LS)
-  | i_check_store:
-    forall v e t,
-    VCheck v (t_ref t) ->
-    ECheck e t ->
-    ICheck (Store v e) LS.
+    Inductive ICheck: instruction -> t_store -> Prop :=
+    | i_check_assign:
+      forall x e t,
+      ECheck e t ->
+      ICheck (Assign x e) (MV.add x t LS)
+    | i_check_store:
+      forall v e t,
+      VCheck v (t_ref t) ->
+      ECheck e t ->
+      ICheck (Store v e) LS.
 
   End Values.
 
@@ -113,76 +134,99 @@ Module Typesystem.
     PCheck s p2 t ->
     PCheck s (If v p1 p2) t.
 
-  End Checks.
+End Checks.
 
+
+Section State.
   Structure t_state := {
     t_s_heap: t_heap;
-    t_s_taskmap: t_taskmap;
+    t_s_tasks: t_taskmap;
     t_s_stores: MT.t t_store;
-    t_s_signatures: signaturemap
+    t_s_signatures: t_code_segment
   }.
 
   Variable s: t_state.
-  Let WCheck := WCheck (t_s_taskmap s) (t_s_heap s).
 
-  Inductive MidCheck hs m : Prop :=
+  Let WCheck := WCheck (t_s_tasks s) (t_s_heap s).
+
+  (* Check if a reference in the heap matches the expected type in t_heap. *)
+
+  Inductive MidCheck (hs:heap) x : Prop :=
   | mid_check_def:
     forall w t,
-    MM.MapsTo m w hs ->
-    WCheck w t ->
-    WCheck (HeapLabel m) (t_ref t) ->
-    MidCheck hs m.
+    MM.MapsTo x w hs ->           (* H(x) = w) *)
+    MM.MapsTo x t (t_s_heap s) -> (* \Gamma(x) = t *)
+    WCheck w t ->                 (* |- w : t *)
+    MidCheck hs x.
+
+  (** Checks if all heaps in the heap are well typed. *)
 
   Definition HeapLabelCheck hs := forall m, MM.In m hs -> MidCheck hs m.
-  Definition HeapDomCheck (hs:heap) := forall m, MM.In m hs <-> MM.In m (t_s_heap s).
 
-  Inductive HCheck hs : Prop :=
-  | h_check_def:
+  (** Checks if all heap-type is in the heap *)
+
+  Definition HeapLabelRange (hs:heap) := forall m, MM.In m (t_s_heap s) -> MM.In m hs.
+
+  Inductive HeapCheck hs : Prop :=
+  | heap_check_def:
     HeapLabelCheck hs ->
-    HeapDomCheck hs ->
-    HCheck hs.
+    HeapLabelRange hs ->
+    HeapCheck hs.
 
   (** Check the local store *)
 
   Inductive VarCheck (m:store) (mt:t_store) (x:var) : Prop :=
   | var_check_def:
     forall w t,
-    MV.MapsTo x w m ->
-    MV.MapsTo x t mt ->
-    WCheck w t ->
+    MV.MapsTo x w m ->  (* \sigma(x) = w *)
+    MV.MapsTo x t mt -> (* \Gamma(x) = t *)
+    WCheck w t ->       (* |- w : t *)
     VarCheck m mt x.
 
   Definition StoreVarCheck (m:store) mt := forall x, MV.In x m -> VarCheck m mt x.
-  Definition StoreDomCheck (m:store) (mt:t_store) := forall x, MV.In x m <-> MV.In x mt.
-  Let PCheck := PCheck (t_s_taskmap s) (t_s_heap s) (t_s_signatures s).
 
-  Inductive TCheck (ts:taskmap) x : Prop :=
-  | t_check_def:
-    forall p t m mt,
-    MT.MapsTo x (m,p) ts -> (* get store and code *)
-    MT.MapsTo x mt (t_s_stores s) -> (* get type of store *)
-    MT.MapsTo x t (t_s_taskmap s) -> (* get type of code *)
-    StoreVarCheck m mt -> (* check if store matches its type *)
+  Definition StoreVarRange (m:store) (mt:t_store) := forall x, MV.In x mt -> MV.In x m.
+
+  Inductive StoreCheck (m:store) (mt:t_store) : Prop :=
+  | store_check_def:
+    StoreVarCheck m mt ->
+    StoreVarRange m mt ->
+    StoreCheck m mt.
+
+  Let PCheck := PCheck (t_s_tasks s) (t_s_heap s) (*t_s_signatures s*).
+
+  (** Check a task *)
+
+  Inductive ProgramCheck (x:tid) (mt:t_store) (p:program) : Prop :=
+  | code_check_def:
+    forall t,
+    MT.MapsTo x t (t_s_tasks s) -> (* get type of code *)
     PCheck mt p t -> (* check if the code matches its type *)
-    TCheck ts x.
+    ProgramCheck x mt p.
 
-  Definition TaskLabelCheck (ts:taskmap) := forall x, MT.In x ts -> TCheck ts x.
-  Definition TaskmapDomCheck (ts:taskmap) := forall x, MT.In x ts <-> MT.In x (t_s_taskmap s).
-  Definition StoresDomCheck (ts:taskmap) := forall x, MT.In x ts <-> MT.In x (t_s_stores s).
+  Inductive TaskCheck (x:tid) : task -> Prop :=
+  | t_check_def:
+    forall m p mt,
+    MT.MapsTo x mt (t_s_stores s) -> (* get type of store *)
+    StoreCheck m mt -> (* check if store matches its type *)
+    ProgramCheck x mt p -> (* check the program *)
+    TaskCheck x (m, p).
+
+  Definition TaskLabelCheck (ts:taskmap) := forall x e, MT.MapsTo x e ts -> TaskCheck x e.
+
+  Definition TaskLabelRange (ts:taskmap) := forall x, MT.In x (t_s_tasks s) -> MT.In x ts.
 
   Inductive TMCheck tm : Prop :=
   | tm_check_def:
     TaskLabelCheck tm ->
-    TaskmapDomCheck tm ->
-    StoresDomCheck tm ->
+    TaskLabelRange tm ->
     TMCheck tm.
 
   Inductive SCheck : state -> Prop :=
   | s_check_def:
     forall hs tm,
     TMCheck tm ->
-    HCheck hs ->
+    HeapCheck hs ->
     SCheck (hs,tm).
 
-  End Defs.
-End Typesystem.
+End State.

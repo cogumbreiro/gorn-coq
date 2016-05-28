@@ -26,9 +26,9 @@ Section Lang.
 
   Inductive expression :=
   | Value: value -> expression
+(*  | Malloc: value -> expression*)
   | Deref: value -> expression
-  | Malloc: value -> expression
-  | Future: cid -> list value -> expression
+(*  | Future: cid -> list value -> expression*)
   | Force: value -> expression.
 
   Inductive instruction :=
@@ -212,22 +212,22 @@ Section Lang.
   Variable CF: MC.t code_fragment.
 
   Inductive EReduces : (state * expression) -> effect -> (state * word) -> Prop :=
-  | e_reduces_malloc:
+(*  | e_reduces_malloc:
     forall h t s v w,
     ~ MM.In h (s_heap s) ->
     VReduces s t v w ->
-    EReduces (s, Malloc v) (t,WRITE h) (s_global_put h w s, HeapLabel h)
+    EReduces (s, Malloc v) (t,WRITE h) (s_global_put h w s, HeapLabel h)*)
   | e_reduces_load:
     forall s t v w h,
     VReduces s t v (HeapLabel h) ->
     MM.MapsTo h w (s_heap s) ->
     EReduces (s, Deref v) (t, READ h) (s, w)
-  | e_reduces_future:
+(*  | e_reduces_future:
     forall f cf vs t s t' (l':store),
     MC.MapsTo f cf CF ->
     Bind s t (c_vars cf) vs l' ->
     ~ MT.In t' (s_tasks s) ->
-    EReduces (s, Future f vs) (t, FUTURE t') ((s_spawn t' l' (c_code cf)) s, TaskLabel t')
+    EReduces (s, Future f vs) (t, FUTURE t') ((s_spawn t' l' (c_code cf)) s, TaskLabel t')*)
   | e_reduces_force:
     forall v t' w t s,
     VReduces s t v (TaskLabel t') ->
