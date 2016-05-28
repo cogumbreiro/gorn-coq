@@ -3,6 +3,7 @@ Require Import Tid.
 Require Import Cid.
 Require Import Mid.
 Require Import Var.
+Require Import Typesystem.
 
 Section Progress.
   Section Task.
@@ -10,26 +11,26 @@ Section Progress.
   Variable s: state.
 
   Inductive ERun (t:tid) m : expression -> op -> Prop :=
-  | e_run_malloc:
+(*  | e_run_malloc:
     forall v w x,
     ~ MM.In x (s_heap s) ->
     Eval m v w ->
-    ERun t m (Malloc v) (WRITE x)
+    ERun t m (Malloc v) (WRITE x) *)
   | e_run_deref:
     forall x v,
     Eval m v (HeapLabel x) ->
     MM.In x (s_heap s) ->
     ERun t m (Deref v) (READ x)
-  | e_run_future:
+(*  | e_run_future:
     forall f c vs y,
     MC.MapsTo f c CF ->
     length (c_vars c) = length vs ->
     List.Forall (fun v => exists w, Eval m v w) vs ->
     ~ MT.In y (s_tasks s) ->
-    ERun t m (Future f vs) (FUTURE y)
+    ERun t m (Future f vs) (FUTURE y) *)
   | e_run_force:
     forall v x,
-    MT.In x (snd s) ->
+    MT.In x (s_tasks s) ->
     Eval m v (TaskLabel x) ->
     ERun t m (Force v) (FORCE x).
 
@@ -75,9 +76,9 @@ Section Progress.
 
   Variable CF: MC.t code_fragment.
   Variable s:state.
-  Variable t: CG.Trace.trace.
+  Variable trc: CG.Trace.trace.
   Variable k: list (tid*tid).
-  Variable S: CG.SafeJoins.Safe t k.
+  Variable S: CG.SafeJoins.Safe trc k.
 
   Variable edge_to_task_fst:
     forall x y,
@@ -127,7 +128,196 @@ Section Progress.
     eauto using MT_Props.partition_Partition.
   Qed.
 
-  Variable R: Run CF s.
+  Variable s_t: t_state.
+
+  Variable ST: SCheck s_t s.
+
+  Let store_check_in_rev:
+    forall x st mt,
+    StoreCheck s_t st mt ->
+    MV.In x mt ->
+    MV.In x st.
+  Proof.
+    intros.
+    inversion H.
+    auto.
+  Qed.
+
+  Let v_check_to_eval:
+    forall mt v t_t st,
+    StoreCheck s_t st mt ->
+    VCheck (t_s_tasks s_t) (t_s_heap s_t) mt v t_t ->
+    exists w, Eval st v w.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    - assert (i: MV.In x st) by eauto using MV_Extra.mapsto_to_in.
+      apply MV_Extra.in_to_mapsto in i.
+      destruct i as (w,?).
+      eauto using eval_var.
+    - eauto using eval_word.
+  Qed.
+(*
+  Let v_check_inv_ref:
+    forall mt v t,
+    VCheck (t_s_taskmap s_t) (t_s_heap s_t) mt v (t_ref t) ->
+    exists x, v = HeapLabel x.
+*)
+
+  Let v_check_to_w_check:
+    forall st mt x w t,
+    StoreCheck s_t st mt ->
+    VCheck (t_s_tasks s_t) (t_s_heap s_t) mt (Var x) t ->
+    MV.MapsTo x w st ->
+    MV.MapsTo x t mt ->
+    WCheck (t_s_tasks s_t) (t_s_heap s_t) w t.
+  Proof.
+    intros.
+    destruct H as (?,_).
+    assert (i:MV.In x st) by eauto using MV_Extra.mapsto_to_in.
+    apply H in i.
+    inversion i.
+    assert (w0 = w) by eauto using MV_Facts.MapsTo_fun; subst.
+    assert (t0 = t) by eauto using MV_Facts.MapsTo_fun; subst.
+    assumption.
+  Qed.
+
+
+  Let v_check_to_w_check_alt:
+    forall mt v t st,
+    StoreCheck s_t st mt ->
+    VCheck (t_s_tasks s_t) (t_s_heap s_t) mt v t ->
+    exists w, 
+    Eval st v w /\ (
+    (exists x, v = Var x /\ MV.MapsTo x w st /\ WCheck (t_s_tasks s_t) (t_s_heap s_t) w t)
+    \/
+    (v = Word w /\ WCheck (t_s_tasks s_t) (t_s_heap s_t) w t)).
+  Proof.
+    intros.
+    assert (E: exists w, Eval st v w) by eauto.
+    destruct E as (w,E).
+    exists w; split; auto.
+    inversion E; subst; inversion H0; subst.
+    - left.
+      assert (WCheck (t_s_tasks s_t) (t_s_heap s_t) w t) by eauto.
+      eauto.
+    - eauto.
+  Qed.
+
+  Let w_check_in_heap:
+    forall x t,
+    WCheck (t_s_tasks s_t) (t_s_heap s_t) (HeapLabel x) (t_ref t) ->
+    MM.In x (s_heap s).
+  Proof.
+    intros.
+    inversion ST.
+    inversion H1.
+    inversion H.
+    assert (MM.In x (t_s_heap s_t)) by eauto using MM_Extra.mapsto_to_in.
+    eauto.
+  Qed.
+
+  Let w_check_in_tasks:
+    forall x t,
+    WCheck (t_s_tasks s_t) (t_s_heap s_t) (TaskLabel x) (t_task t) ->
+    MT.In x (s_tasks s).
+  Proof.
+    intros.
+    inversion ST.
+    inversion H0; clear H0.
+    inversion H; clear H.
+    assert (MT.In x (t_s_tasks s_t)) by eauto using MT_Extra.mapsto_to_in.
+    eauto.
+  Qed.
+
+  Let e_check_to_e_run:
+    forall mt e t st p x,
+    MT.MapsTo x (st, p) (s_tasks s) ->
+    ECheck (t_s_tasks s_t) (t_s_heap s_t) (*t_s_signatures s_t*) mt e t ->
+    StoreCheck s_t st mt ->
+    (exists v, e = Value v /\ exists w, Eval st v w) \/ (exists o, ERun s x st e o).
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    - eauto.
+    - right.
+      assert (X:=H2).
+      eapply v_check_to_w_check_alt in H2; eauto.
+      destruct H2 as (w, (E, Y)); subst.
+      destruct Y as [(y,(?,(?,W)))|(?,W)]; subst;
+      inversion W; subst;
+      eauto using e_run_deref.
+    - right.
+      assert (X:=H2).
+      eapply v_check_to_w_check_alt in H2; eauto.
+      destruct H2 as (w, (E, Y)); subst.
+      destruct Y as [(y,(?,(?,W)))|(?,W)]; subst;
+      inversion W; subst; eauto using e_run_force.
+  Qed.
+
+  Let i_check_to_i_run:
+    forall mt x i s' st p,
+    StoreCheck s_t st mt ->
+    MT.MapsTo x (st, p) (s_tasks s) ->
+    ICheck (t_s_tasks s_t) (t_s_heap s_t) (*t_s_signatures s_t*) mt i s' ->
+    exists o, IRun s st i o.
+  Proof.
+    intros.
+    inversion H1; subst; clear H1.
+    - eapply e_check_to_e_run in H2; eauto.
+      destruct H2 as [(v,(w,(?,?)))|?]; subst.
+      + eauto using i_run_assign.
+      + 
+  Qed.
+(*
+  Let p_prog_to_p_run:
+    forall x t_t mt st p,
+    StoreCheck s_t st mt ->
+    MT.MapsTo x (st, p) (s_tasks s) ->
+    PCheck (t_s_taskmap s_t) (t_s_heap s_t) (t_s_signatures s_t) mt p t_t ->
+    exists o, TRun CF s x (st, p) o.
+  Proof.
+    intros.
+    inversion H1; subst; clear H1.
+    - assert (w: exists w, Eval st v w) by eauto.
+      destruct w.
+      eauto using t_run_ret.
+    - destruct i.
+      + 
+      assert (I: exists o, IRun s st i o). {
+        eapply i_check_to_i_run;eauto.
+      }
+      destruct I.
+      eauto using t_run_i.
+    - 
+  Qed.
+*)
+  Let t_taks_to_run:
+    forall x st p,
+    MT.MapsTo x (st, p) (s_tasks s) ->
+    TaskLabelCheck s_t (s_tasks s) ->
+    TaskCheck s_t x (st, p) ->
+    exists o, TRun CF s x (st, p) o.
+  Proof.
+    intros.
+    inversion H1; subst.
+    inversion H6.
+    eapply p_prog_to_p_run; eauto.
+  Qed.
+
+  Let R: Run CF s.
+  Proof.
+    intros.
+    inversion ST.
+    rewrite <- H1 in *; clear H1.
+    apply run_def.
+    intros.
+    inversion H.
+    simpl in *.
+    destruct t0 as (st, p).
+    assert (TaskCheck s_t x (st,p)) by auto.
+    inversion H3; subst.
+  Qed.
 
   Let mt1_spec_1: forall k e, MT.MapsTo k e mt1 -> exists o, TRun CF s k e o.
   Proof.
