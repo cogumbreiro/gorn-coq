@@ -260,44 +260,60 @@ Section Progress.
     StoreCheck s_t st mt ->
     MT.MapsTo x (st, p) (s_tasks s) ->
     ICheck (t_s_tasks s_t) (t_s_heap s_t) (*t_s_signatures s_t*) mt i s' ->
-    exists o, IRun s st i o.
+    exists o, IRun s st i o \/
+    exists e, (Expression i e /\ ERun s x st e o).
   Proof.
     intros.
     inversion H1; subst; clear H1.
     - eapply e_check_to_e_run in H2; eauto.
-      destruct H2 as [(v,(w,(?,?)))|?]; subst.
+      destruct H2 as [(v,(w,(?,?)))|(o,E)]; subst.
       + eauto using i_run_assign.
-      + 
+      + eauto using expression_assign.
+    - assert (E:=H3).
+      eapply e_check_to_e_run in H3; eauto.
+      destruct H3 as [(v',(w,(?,?)))|(o,E')]; subst.
+      + inversion E; subst.
+        rename H4 into V.
+        eapply v_check_to_w_check_alt in H2; eauto.
+        destruct H2 as (w', (Ev, X)).
+        destruct X as [(y,(?,(?,W)))|(?,W)]; subst;
+        inversion W; subst;
+        eauto using i_run_store.
+      + eauto using expression_store.
   Qed.
-(*
+
+
   Let p_prog_to_p_run:
     forall x t_t mt st p,
     StoreCheck s_t st mt ->
     MT.MapsTo x (st, p) (s_tasks s) ->
-    PCheck (t_s_taskmap s_t) (t_s_heap s_t) (t_s_signatures s_t) mt p t_t ->
-    exists o, TRun CF s x (st, p) o.
+    PCheck (t_s_tasks s_t) (t_s_heap s_t) (*t_s_signatures s_t*) mt p t_t ->
+    exists o, TRun (*CF*) s x (st, p) o.
   Proof.
     intros.
     inversion H1; subst; clear H1.
     - assert (w: exists w, Eval st v w) by eauto.
       destruct w.
       eauto using t_run_ret.
-    - destruct i.
-      + 
-      assert (I: exists o, IRun s st i o). {
-        eapply i_check_to_i_run;eauto.
-      }
-      destruct I.
-      eauto using t_run_i.
-    - 
+    - eapply i_check_to_i_run in H2; eauto.
+      destruct H2 as (o, X).
+      destruct X as [?|(e,(?,?))].
+      + eauto using t_run_i.
+      + eauto using t_run_e.
+    - assert (X:=H2).
+      eapply v_check_to_w_check_alt in X; eauto.
+      destruct X as (w, (E,X)).
+      destruct X as [(y,(?,(?,W)))|(?,W)]; subst;
+      inversion W; subst;
+      eauto using t_run_if.
   Qed.
-*)
+
   Let t_taks_to_run:
     forall x st p,
     MT.MapsTo x (st, p) (s_tasks s) ->
     TaskLabelCheck s_t (s_tasks s) ->
     TaskCheck s_t x (st, p) ->
-    exists o, TRun CF s x (st, p) o.
+    exists o, TRun (*CF*) s x (st, p) o.
   Proof.
     intros.
     inversion H1; subst.
@@ -305,7 +321,7 @@ Section Progress.
     eapply p_prog_to_p_run; eauto.
   Qed.
 
-  Let R: Run CF s.
+  Let R: Run (*CF*) s.
   Proof.
     intros.
     inversion ST.
@@ -314,9 +330,8 @@ Section Progress.
     intros.
     inversion H.
     simpl in *.
-    destruct t0 as (st, p).
-    assert (TaskCheck s_t x (st,p)) by auto.
-    inversion H3; subst.
+    destruct t as (st, p).
+    eauto.
   Qed.
 
   Let mt1_spec_1: forall k e, MT.MapsTo k e mt1 -> exists o, TRun CF s k e o.
