@@ -1,3 +1,5 @@
+Set Implicit Arguments.
+
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FMapAVL.
@@ -89,3 +91,41 @@ Module MM_Extra := MapUtil MM.
 
 Module SM := FSetAVL.Make MID.
 Definition set_mid := SM.t.
+
+Section NotIn.
+  Variable elt:Type.
+
+  Let lt_irrefl:
+    forall x : mid, ~ MID.lt x x.
+  Proof.
+    unfold not; intros.
+    apply MID.lt_not_eq in H.
+    contradiction H.
+    apply MID.eq_refl.
+  Qed.
+
+  Let lt_next:
+    forall x : mid, MID.lt x (mid_next x).
+  Proof.
+    intros.
+    destruct x.
+    unfold mid_next, mid_nat, MID.lt.
+    simpl.
+    auto.
+  Qed.
+
+  Let tid_impl_eq:
+    forall k k' : mid, k = k' -> k = k'.
+  Proof.
+    auto.
+  Qed.
+
+  Theorem find_not_in:
+    forall (m: MM.t elt),
+    exists (x:mid), ~ MM.In x m.
+  Proof.
+    intros.
+    apply (MM_Extra.find_not_in mid_first mid_next MID.lt_trans lt_irrefl MID.compare lt_next tid_impl_eq).
+  Qed.
+
+End NotIn.
