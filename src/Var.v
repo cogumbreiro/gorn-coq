@@ -74,3 +74,6 @@ End VAR.
 Module MV := FMapAVL.Make VAR.
 Module MV_Facts := FMapFacts.Facts MV.
 
+Require Import Aniceto.Map.
+
+Module MV_Extra := MapUtil MV.
