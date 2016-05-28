@@ -9,6 +9,5 @@ src/Races.v
 src/Lang.v
 src/CG.v
 src/Shadow_Ext.v
-src/XFuture.v
 src/Bijection.v
-
+src/Typesystem.v
