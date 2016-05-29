@@ -120,12 +120,14 @@ Section NotIn.
     auto.
   Qed.
 
+  Definition supremum {elt:Type} := @MM_Extra.supremum elt mid_first mid_next MID.lt MID.compare.
+
   Theorem find_not_in:
     forall (m: MM.t elt),
-    exists (x:mid), ~ MM.In x m.
+    ~ MM.In (supremum m) m.
   Proof.
     intros.
-    apply (MM_Extra.find_not_in mid_first mid_next MID.lt_trans lt_irrefl MID.compare lt_next tid_impl_eq).
+    eauto using MM_Extra.find_not_in, MID.lt_trans.
   Qed.
 
 End NotIn.
