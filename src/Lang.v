@@ -26,7 +26,7 @@ Section Lang.
 
   Inductive expression :=
   | Value: value -> expression
-(*  | Malloc: value -> expression*)
+  | Malloc: value -> expression
   | Deref: value -> expression
 (*  | Future: cid -> list value -> expression*)
   | Force: value -> expression.
@@ -212,11 +212,11 @@ Section Lang.
   Variable CF: MC.t code_fragment.
 
   Inductive EReduces : (state * expression) -> effect -> (state * word) -> Prop :=
-(*  | e_reduces_malloc:
+  | e_reduces_malloc:
     forall h t s v w,
     ~ MM.In h (s_heap s) ->
     VReduces s t v w ->
-    EReduces (s, Malloc v) (t,WRITE h) (s_global_put h w s, HeapLabel h)*)
+    EReduces (s, Malloc v) (t,WRITE h) (s_global_put h w s, HeapLabel h)
   | e_reduces_load:
     forall s t v w h,
     VReduces s t v (HeapLabel h) ->

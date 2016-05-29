@@ -86,10 +86,10 @@ Section Checks.
       forall v t,
       VCheck v t ->
       ECheck (Value v) t
-(*    | e_check_malloc:
+    | e_check_malloc:
       forall v t,
       VCheck v t ->
-      ECheck (Malloc v) (t_ref t) *)
+      ECheck (Malloc v) (t_ref t)
     | e_check_deref:
       forall v t,
       VCheck v (t_ref t) ->

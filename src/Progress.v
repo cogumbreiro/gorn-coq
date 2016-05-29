@@ -11,11 +11,11 @@ Section Progress.
   Variable s: state.
 
   Inductive ERun (t:tid) m : expression -> op -> Prop :=
-(*  | e_run_malloc:
+  | e_run_malloc:
     forall v w x,
     ~ MM.In x (s_heap s) ->
     Eval m v w ->
-    ERun t m (Malloc v) (WRITE x) *)
+    ERun t m (Malloc v) (WRITE x)
   | e_run_deref:
     forall x v,
     Eval m v (HeapLabel x) ->
@@ -241,6 +241,10 @@ Section Progress.
     inversion H0; subst; clear H0.
     - eauto.
     - right.
+      eapply v_check_to_w_check_alt in H2; eauto.
+      destruct H2 as (w, (E, _)); subst.
+      eauto using e_run_malloc, Mid.find_not_in.
+    - right.
       assert (X:=H2).
       eapply v_check_to_w_check_alt in H2; eauto.
       destruct H2 as (w, (E, Y)); subst.
@@ -334,7 +338,7 @@ Section Progress.
     eauto.
   Qed.
 
-  Let mt1_spec_1: forall k e, MT.MapsTo k e mt1 -> exists o, TRun CF s k e o.
+  Let mt1_spec_1: forall k e, MT.MapsTo k e mt1 -> exists o, TRun (*CF*) s k e o.
   Proof.
     intros.
     inversion R.
@@ -414,7 +418,7 @@ Section Progress.
 
   Variable run_to_edge:
     forall x tsk y,
-    TRun CF s x tsk (FORCE y) ->
+    TRun (*CF*) s x tsk (FORCE y) ->
     FGraph.Edge k (x,y).
 
   Let e_progress_malloc:
@@ -422,8 +426,8 @@ Section Progress.
     ~ MM.In y (s_heap s) ->
     Eval st v w ->
     MT.MapsTo x (st,p) (s_tasks s) ->
-    ERun CF s x st (Malloc v) (WRITE y) ->
-    EReduces CF (s, Malloc v) (x, WRITE y) (s_global_put y w s, HeapLabel y).
+    ERun (*CF*) s x st (Malloc v) (WRITE y) ->
+    EReduces (*CF*) (s, Malloc v) (x, WRITE y) (s_global_put y w s, HeapLabel y).
   Proof.
     intros.
     eauto using e_reduces_malloc, v_reduces_alt.
@@ -521,7 +525,7 @@ Section Progress.
     destruct H3.
     eauto using bind_cons.
   Qed.
-
+(*
   Let e_progress_future:
     forall x st p y vs f c,
     MC.MapsTo f c CF ->
@@ -536,13 +540,13 @@ Section Progress.
     assert (B: exists m, Bind s x (c_vars c) vs m) by eauto; destruct B as (m, B).
     eauto using e_reduces_future.
   Qed.
-
+*)
   Let e_progress_force:
     forall x st p v y,
     MT.MapsTo x (st,p) (s_tasks s) ->
     MT.In y mt2 ->
-    ERun CF s x st (Force v) (FORCE y) ->
-    exists w, EReduces CF (s, Force v) (x, FORCE y) (s, w).
+    ERun (*CF*) s x st (Force v) (FORCE y) ->
+    exists w, EReduces (*CF*) (s, Force v) (x, FORCE y) (s, w).
   Proof.
     intros.
     inversion H1.
@@ -558,8 +562,8 @@ Section Progress.
     MT.MapsTo x (st,p) (s_tasks s) ->
     Eval st v (HeapLabel y) ->
     MM.In y (fst s) ->
-    ERun CF s x st (Deref v) (READ y) ->
-    exists w, EReduces CF (s, Deref v) (x, READ y) (s, w).
+    ERun (*CF*) s x st (Deref v) (READ y) ->
+    exists w, EReduces (*CF*) (s, Deref v) (x, READ y) (s, w).
   Proof.
     intros.
     apply MM_Extra.in_to_mapsto in H1.
@@ -571,17 +575,17 @@ Section Progress.
     forall x st p o e,
     MT.MapsTo x (st,p) (s_tasks s) ->
     (forall y, o = FORCE y -> MT.In y mt2) ->
-    ERun CF s x st e o ->
-    exists w s', EReduces CF (s, e) (x, o) (s', w).
+    ERun (*CF*) s x st e o ->
+    exists w s', EReduces (*CF*) (s, e) (x, o) (s', w).
   Proof.
     intros.
     inversion H1; subst.
     - eauto using e_progress_malloc.
     - eapply e_progress_read in H1; eauto.
       destruct H1; eauto.
-    - eapply e_progress_future in H1; eauto.
+(*    - eapply e_progress_future in H1; eauto.
       destruct H1 as (?,(?,?)).
-      eauto.
+      eauto.*)
     - eapply e_progress_force in H1; eauto.
       destruct H1.
       eauto.
@@ -591,9 +595,9 @@ Section Progress.
     forall x m p i e o,
     MT.MapsTo x (m,Seq i p) (s_tasks s) ->
     Expression i e ->
-    ERun CF s x m e o ->
+    ERun (*CF*) s x m e o ->
     (forall y, o = FORCE y -> MT.In y mt2) ->
-    exists s' p', PReduces CF (s, Seq i p) (x,o) (s', p').
+    exists s' p', PReduces (*CF*) (s, Seq i p) (x,o) (s', p').
   Proof.
     intros.
     eapply e_progress in H1; eauto.
@@ -605,7 +609,7 @@ Section Progress.
     forall st v n x p1 p2,
     Eval st v (Num n) ->
     MT.MapsTo x (st, If v p1 p2) (s_tasks s) ->
-    exists s' p', PReduces CF (s, If v p1 p2) (x,TAU) (s', p').
+    exists s' p', PReduces (*CF*) (s, If v p1 p2) (x,TAU) (s', p').
   Proof.
     intros.
     destruct n.
@@ -650,8 +654,8 @@ Section Progress.
     MT.MapsTo x (st, p) (s_tasks s) ->
     MT.MapsTo x (st, p) mt1 -> (* for the ret case *)
     (forall y, o = FORCE y -> MT.In y mt2) ->
-    TRun CF s x (st,p) o ->
-    exists s' p', PReduces CF (s, p) (x,o) (s', p').
+    TRun (*CF*) s x (st,p) o ->
+    exists s' p', PReduces (*CF*) (s, p) (x,o) (s', p').
   Proof.
     intros.
     inversion H2; subst.
@@ -683,7 +687,7 @@ Section Progress.
   Qed.
 
   Theorem progress:
-    exists e s', Reduces CF s e s'.
+    exists e s', Reduces (*CF*) s e s'.
   Proof.
     destruct (CG.SafeJoins.progress S N) as (x, (Hi,?)).
     apply MT_Extra.keys_spec_1 in Hi.
