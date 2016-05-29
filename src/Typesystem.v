@@ -94,11 +94,11 @@ Section Checks.
       forall v t,
       VCheck v (t_ref t) ->
       ECheck (Deref v) t
-(*    | e_check_future:
+    | e_check_future:
       forall f vs s,
       MC.MapsTo f s CS ->
       VSCheck vs (s_params s) ->
-      ECheck (Future f vs) (t_future s)*)
+      ECheck (Future f vs) (t_future s)
     | e_check_force:
       forall v t,
       VCheck v (t_task t) ->
@@ -141,9 +141,10 @@ Section State.
   Structure t_state := {
     t_s_heap: t_heap;
     t_s_tasks: t_taskmap;
-    t_s_stores: MT.t t_store;
-    t_s_signatures: t_code_segment
+    t_s_stores: MT.t t_store
   }.
+
+  Variable cs: t_code_segment.
 
   Variable s: t_state.
 
@@ -193,12 +194,12 @@ Section State.
     StoreVarRange m mt ->
     StoreCheck m mt.
 
-  Let PCheck := PCheck (t_s_tasks s) (t_s_heap s) (*t_s_signatures s*).
+  Let PCheck := PCheck (t_s_tasks s) (t_s_heap s) cs.
 
   (** Check a task *)
 
   Inductive ProgramCheck (x:tid) (mt:t_store) (p:program) : Prop :=
-  | code_check_def:
+  | program_check_def:
     forall t,
     MT.MapsTo x t (t_s_tasks s) -> (* get type of code *)
     PCheck mt p t -> (* check if the code matches its type *)
@@ -229,4 +230,38 @@ Section State.
     HeapCheck hs ->
     SCheck (hs,tm).
 
+
 End State.
+
+
+Section CodeSegment.
+
+  (** Constructs a [t_store] from a list of variable names and a list of signature types. *)
+
+  Definition mk_t_store (vs:list var) ts : t_store := MV_Props.of_list (List.combine vs ts).
+
+  Variable s_t: t_state.
+
+  Variable c_t: t_code_segment.
+
+  Let PCheck := PCheck (t_s_tasks s_t) (t_s_heap s_t) (c_t).
+
+  Inductive CodeCheck (x:cid) (c:code) : Prop :=
+  | code_check_def:
+    forall t,
+    MC.MapsTo x t c_t ->
+    length (c_vars c) = length (s_params t) ->
+    PCheck (mk_t_store (c_vars c) (s_params t)) (c_program c) (s_ret t) ->
+    CodeCheck x c.
+
+  Definition CodeLabelCheck (cs:code_segment) := forall x c, MC.MapsTo x c cs -> CodeCheck x c.
+
+  Definition CodeLabelRange (cs:code_segment) := forall x, MC.In x c_t -> MC.In x cs.
+
+  Inductive CSCheck (cs:code_segment) : Prop :=
+  | cs_check_def:
+    CodeLabelCheck cs ->
+    CodeLabelRange cs ->
+    CSCheck cs.
+
+End CodeSegment.

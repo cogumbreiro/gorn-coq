@@ -88,3 +88,43 @@ Proof.
   intros.
   auto with *.
 Qed.
+
+Section NotIn.
+  Variable elt:Type.
+
+  Let lt_irrefl:
+    forall x : tid, ~ TID.lt x x.
+  Proof.
+    unfold not; intros.
+    apply TID.lt_not_eq in H.
+    contradiction H.
+    apply TID.eq_refl.
+  Qed.
+
+  Let lt_next:
+    forall x, TID.lt x (tid_next x).
+  Proof.
+    intros.
+    destruct x.
+    unfold tid_next, tid_nat, TID.lt.
+    simpl.
+    auto.
+  Qed.
+
+  Let tid_impl_eq:
+    forall k k' : tid, k = k' -> k = k'.
+  Proof.
+    auto.
+  Qed.
+
+  Definition supremum {elt:Type} := @MT_Extra.supremum elt tid_first tid_next TID.lt TID.compare.
+
+  Theorem find_not_in:
+    forall (m: MT.t elt),
+    ~ MT.In (supremum m) m.
+  Proof.
+    intros.
+    eauto using MT_Extra.find_not_in, TID.lt_trans.
+  Qed.
+
+End NotIn.

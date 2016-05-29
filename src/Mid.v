@@ -114,7 +114,7 @@ Section NotIn.
     auto.
   Qed.
 
-  Let tid_impl_eq:
+  Let mid_impl_eq:
     forall k k' : mid, k = k' -> k = k'.
   Proof.
     auto.
