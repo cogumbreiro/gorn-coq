@@ -357,13 +357,46 @@ Section Defs.
 
   Definition MHP x y : Prop := ~ HB x y /\ ~ HB y x.
 
-  Inductive Ordered n1 n2 : Prop :=
-  | ordered_lr:
+  (** Comparable with respect to the happens-before relation [n1 < n2 \/ n2 < n1] *)
+
+  Inductive Comparable n1 n2 : Prop :=
+  | comparable_left_right:
     HB n1 n2 ->
-    Ordered n1 n2
-  | ordered_rl:
+    Comparable n1 n2
+  | comparable_right_left:
     HB n2 n1 ->
-    Ordered n1 n2.
+    Comparable n1 n2.
+
+  Lemma comparable_symm:
+    forall x y,
+    Comparable x y ->
+    Comparable y x.
+  Proof.
+    intros.
+    inversion H; auto using comparable_left_right, comparable_right_left.
+  Qed.
+
+  Lemma comparable_to_not_mhp:
+    forall x y,
+    Comparable x y ->
+    ~ MHP x y.
+  Proof.
+    intros.
+    unfold not; intros.
+    inversion H0.
+    inversion H; contradiction.
+  Qed.
+
+  Inductive Relation x y : Prop :=
+  | L_HB_R: HB x y -> Relation x y
+  | R_HB_L: HB y x -> Relation x y
+  | EQ: x = y -> Relation x y
+  | PAR: MHP x y -> Relation x y.
+
+  Lemma hb_dec:
+    forall x y,
+    Relation x y.
+  Admitted. (* TODO: prove this at the graph-level *)
 
 End Defs.
 
