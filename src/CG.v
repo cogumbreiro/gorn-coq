@@ -766,8 +766,6 @@ Module SafeJoins.
   | o :: ts => eval o (from_trace ts)
   end.
 
-  Definition effects_to_sj ts := from_trace (from_effects ts).
-
   Inductive Safe : trace -> known -> Prop :=
   | safe_nil:
     Safe nil nil
@@ -1181,6 +1179,11 @@ Module SafeJoins.
   Qed.
 
   End Defs.
+
+  Module Lang.
+    Definition effects_to_sj ts := from_trace (from_effects ts).
+    Definition Safe ts := Safe (Trace.from_effects ts) (effects_to_sj ts).
+  End Lang.
 End SafeJoins.
 
 

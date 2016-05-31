@@ -36,32 +36,7 @@ Module Trace.
     a_dst : mid           (* what *)
   }.
 
-  (**
-    Converts an event from the language to an event we can interpret.
-    *)
-
-  Definition e_to_a cg (e:Lang.effect) : option access :=
-  match e with
-  | (t, Lang.WRITE m) =>
-    match CG.cg_lookup t cg with
-    | Some n => Some {| a_t:= WRITE; a_src:=n; a_dst:= m |}
-    | _ => None
-    end
-  | (t, Lang.READ m) =>
-    match CG.cg_lookup t cg with
-    | Some n => Some {| a_t:= READ; a_src:=n; a_dst:= m |}
-    | _ => None
-    end
-  | _ => None
-  end.
-
   Definition access_history := list (option access).
-
-  Let effect_to_ah_accum (p:CG.computation_graph * access_history) (o:Lang.effect) := 
-  let (cg, ah) := p in
-  (CG.cg_eval (CG.Trace.from_effect o) cg, e_to_a cg o :: ah).
-
-  Definition effects_to_ah x ts := snd (fold_left effect_to_ah_accum ts ((CG.make_cg x), nil)).
 
 End Trace.
 
@@ -111,8 +86,6 @@ Section Shadow_Ext.
   | Lang.READ _ => true
   | _ => false
   end.
-
-  Definition ah_add cg e ah := e_to_a cg e::ah.
 
   (** Two accesses are racy *)
 
@@ -287,4 +260,42 @@ Section Shadow_Ext.
   Qed.
 
 End Shadow_Ext.
+
+Module Lang.
+  Import Trace.
+
+  (**
+    Converts an event from the language to an event we can interpret.
+    *)
+
+  Definition e_to_a cg (e:Lang.effect) : option access :=
+  match e with
+  | (t, Lang.WRITE m) =>
+    match CG.cg_lookup t cg with
+    | Some n => Some {| a_t:= WRITE; a_src:=n; a_dst:= m |}
+    | _ => None
+    end
+  | (t, Lang.READ m) =>
+    match CG.cg_lookup t cg with
+    | Some n => Some {| a_t:= READ; a_src:=n; a_dst:= m |}
+    | _ => None
+    end
+  | _ => None
+  end.
+
+  Let effect_to_ah_accum (p:CG.computation_graph * access_history) (o:Lang.effect) := 
+  let (cg, ah) := p in
+  (CG.cg_eval (CG.Trace.from_effect o) cg, e_to_a cg o :: ah).
+
+  Definition effects_to_ah x ts := snd (fold_left effect_to_ah_accum ts ((CG.make_cg x), nil)).
+
+  Definition effect_to_access x ts o :=
+  e_to_a (CG.effects_to_cg x ts) o.
+
+  Definition ah_add cg e ah := e_to_a cg e::ah.
+
+  Definition RaceFree x ts := RaceFree (CG.effects_to_cg x ts) (effects_to_ah x ts).
+
+  Definition RaceFreeCons x ts o := RaceFreeCons (CG.effects_to_cg x ts) (effects_to_ah x ts) (effect_to_access x ts o).
+End Lang.
 
