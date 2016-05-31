@@ -41,6 +41,15 @@ Module Trace.
   }.
 
   Definition trace := list (option op).
+
+  Definition from_effect (e:Lang.effect) :=
+  match e with
+  | (x, Lang.FUTURE y) => Some {|op_t:=SPAWN; op_src:=x; op_dst:=y|}
+  | (x, Lang.FORCE y) => Some {|op_t:=JOIN; op_src:=x; op_dst:=y|}
+  | _ => None
+  end.
+
+  Definition from_effects := map from_effect.
 End Trace.
 
 Section CG.
@@ -271,6 +280,14 @@ Section Defs.
   | None => cg
   end.
 
+  (** Compute a CG from a trace. *)
+
+  Definition trace_to_cg (x:tid) ts := fold_left (fun cg o => cg_eval o cg) ts (make_cg x).
+
+  (** Compute a CG from a trace of our language. *)
+
+  Definition effects_to_cg (x:tid) ts := trace_to_cg x (from_effects ts).
+
   Inductive Lookup t n cg: Prop :=
   | lookup_def: 
     MT.MapsTo t n (cg_nodes cg) ->
@@ -292,17 +309,11 @@ Section Defs.
   | _ => false
   end.
 
-  Definition from_evt e :=
-  match e with
-  | (x, Lang.FUTURE y) => Some {|op_t:=SPAWN; op_src:=x; op_dst:=y|}
-  | (x, Lang.FORCE y) => Some {|op_t:=JOIN; op_src:=x; op_dst:=y|}
-  | _ => None
-  end.
 
   Inductive Reduces: computation_graph -> Lang.effect -> computation_graph -> Prop :=
   | reduces_def:
     forall cg e,
-    Reduces cg e (cg_eval (from_evt e) cg).
+    Reduces cg e (cg_eval (from_effect e) cg).
 
   (**
     Ensure the names are being used properly; no continue edges after a task
@@ -749,11 +760,13 @@ Module SafeJoins.
   | check_none:
     Check k None.
 
-  Fixpoint from_trace ts :=
+  Fixpoint from_trace ts := 
   match ts with
   | nil => nil
   | o :: ts => eval o (from_trace ts)
   end.
+
+  Definition effects_to_sj ts := from_trace (from_effects ts).
 
   Inductive Safe : trace -> known -> Prop :=
   | safe_nil:

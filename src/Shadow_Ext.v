@@ -40,7 +40,7 @@ Module Trace.
     Converts an event from the language to an event we can interpret.
     *)
 
-  Definition e_to_a cg (e:Lang.effect) :=
+  Definition e_to_a cg (e:Lang.effect) : option access :=
   match e with
   | (t, Lang.WRITE m) =>
     match CG.cg_lookup t cg with
@@ -55,6 +55,14 @@ Module Trace.
   | _ => None
   end.
 
+  Definition access_history := list (option access).
+
+  Let effect_to_ah_accum (p:CG.computation_graph * access_history) (o:Lang.effect) := 
+  let (cg, ah) := p in
+  (CG.cg_eval (CG.Trace.from_effect o) cg, e_to_a cg o :: ah).
+
+  Definition effects_to_ah x ts := snd (fold_left effect_to_ah_accum ts ((CG.make_cg x), nil)).
+
 End Trace.
 
 Section Shadow_Ext.
@@ -62,8 +70,6 @@ Section Shadow_Ext.
 
   (** An access history is just a sequence of optional accesses; none when 
     the event is neither a read nor a write. *)
-
-  Definition access_history := list (option access).
 
   (** compares if two access modes. *)
 
