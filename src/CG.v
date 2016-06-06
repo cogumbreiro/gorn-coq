@@ -760,12 +760,6 @@ Module SafeJoins.
   | check_none:
     Check k None.
 
-  Fixpoint from_trace ts := 
-  match ts with
-  | nil => nil
-  | o :: ts => eval o (from_trace ts)
-  end.
-
   Inductive Safe : trace -> known -> Prop :=
   | safe_nil:
     Safe nil nil
@@ -1181,7 +1175,14 @@ Module SafeJoins.
   End Defs.
 
   Module Lang.
+    Fixpoint from_trace ts := 
+    match ts with
+    | nil => nil
+    | o :: ts => eval o (from_trace ts)
+    end.
+
     Definition effects_to_sj ts := from_trace (from_effects ts).
+
     Definition Safe ts := Safe (Trace.from_effects ts) (effects_to_sj ts).
   End Lang.
 End SafeJoins.

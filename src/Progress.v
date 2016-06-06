@@ -46,28 +46,28 @@ Section Progress.
     MM.In h (s_heap s) ->
     IRun s m (Store v (Value v')) (WRITE h).
 
-  Inductive TRun t : task -> op -> Prop :=
-  | t_run_e:
+  Inductive PRun t : task -> op -> Prop :=
+  | p_run_e:
     forall m i p e o,
     Expression i e ->
     ERun t m e o ->
-    TRun t (m, Seq i p) o
-  | t_run_i:
+    PRun t (m, Seq i p) o
+  | p_run_i:
     forall m i p o,
     IRun s m i o ->
-    TRun t (m,Seq i p) o
-  | t_run_if:
+    PRun t (m,Seq i p) o
+  | p_run_if:
     forall m v p1 p2 n,
     Eval m v (Num n) ->
-    TRun t (m, (If v p1 p2)) TAU
-  | t_run_ret:
+    PRun t (m, (If v p1 p2)) TAU
+  | p_run_ret:
     forall m v w,
     Eval m v w ->
-    TRun t (m, Ret v) TAU.
+    PRun t (m, Ret v) TAU.
 
   Inductive Run : Prop :=
   | run_def:
-    (forall x t, MT.MapsTo x t (snd s) -> exists o, TRun x t o) ->
+    (forall x t, MT.MapsTo x t (snd s) -> exists o, PRun x t o) ->
     Run.
   
   End Task.
@@ -362,24 +362,24 @@ Section Progress.
     StoreCheck s_t st mt ->
     MT.MapsTo x (st, p) (s_tasks s) ->
     PCheck (t_s_tasks s_t) (t_s_heap s_t) c_t mt p t_t ->
-    exists o, TRun CF s x (st, p) o.
+    exists o, PRun CF s x (st, p) o.
   Proof.
     intros.
     inversion H1; subst; clear H1.
     - assert (w: exists w, Eval st v w) by eauto.
       destruct w.
-      eauto using t_run_ret.
+      eauto using p_run_ret.
     - eapply i_check_to_i_run in H2; eauto.
       destruct H2 as (o, X).
       destruct X as [?|(e,(?,?))].
-      + eauto using t_run_i.
-      + eauto using t_run_e.
+      + eauto using p_run_i.
+      + eauto using p_run_e.
     - assert (X:=H2).
       eapply v_check_to_w_check_alt in X; eauto.
       destruct X as (w, (E,X)).
       destruct X as [(y,(?,(?,W)))|(?,W)]; subst;
       inversion W; subst;
-      eauto using t_run_if.
+      eauto using p_run_if.
   Qed.
 
   Let t_taks_to_run:
@@ -387,7 +387,7 @@ Section Progress.
     MT.MapsTo x (st, p) (s_tasks s) ->
     TaskLabelCheck c_t s_t (s_tasks s) ->
     TaskCheck c_t s_t x (st, p) ->
-    exists o, TRun CF s x (st, p) o.
+    exists o, PRun CF s x (st, p) o.
   Proof.
     intros.
     inversion H1; subst.
@@ -408,7 +408,7 @@ Section Progress.
     eauto.
   Qed.
 
-  Let mt1_spec_1: forall k e, MT.MapsTo k e mt1 -> exists o, TRun CF s k e o.
+  Let mt1_spec_1: forall k e, MT.MapsTo k e mt1 -> exists o, PRun CF s k e o.
   Proof.
     intros.
     inversion R.
@@ -488,7 +488,7 @@ Section Progress.
 
   Variable run_to_edge:
     forall x tsk y,
-    TRun CF s x tsk (FORCE y) ->
+    PRun CF s x tsk (FORCE y) ->
     FGraph.Edge k (x,y).
 
   Let e_progress_malloc:
@@ -724,7 +724,7 @@ Section Progress.
     MT.MapsTo x (st, p) (s_tasks s) ->
     MT.MapsTo x (st, p) mt1 -> (* for the ret case *)
     (forall y, o = FORCE y -> MT.In y mt2) ->
-    TRun CF s x (st,p) o ->
+    PRun CF s x (st,p) o ->
     exists s' p', PReduces CF (s, p) (x,o) (s', p').
   Proof.
     intros.
