@@ -167,6 +167,14 @@ Proof.
   apply DEP.eq_rw in H; auto using mid_eq_rw, tid_eq_rw.
 Qed.
 
+Lemma dep_eq_dec:
+  forall (x y:dep),
+  { x = y } + { x <> y }.
+Proof.
+  intros.
+  destruct (DEP.eq_dec x y); rewrite dep_eq_rw in *; auto.
+Qed.
+
 Module SD := FSetAVL.Make DEP.
 Module SD_Facts := FSetFacts.Facts SD.
 Definition set_dep := SD.t.
