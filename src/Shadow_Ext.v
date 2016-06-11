@@ -16,7 +16,6 @@ Require Aniceto.Graphs.Graph.
 
 Require Import Coq.Structures.OrderedTypeEx.
 
-Require Lang.
 Require CG.
 
 Module Trace.
@@ -36,7 +35,7 @@ Module Trace.
     a_dst : mid           (* what *)
   }.
 
-  Definition access_history := list (option access).
+  Definition access_history := list access.
 
 End Trace.
 
@@ -57,12 +56,8 @@ Section Shadow_Ext.
 
   (** Matches what and how *)
 
-  Definition a_match x m (a:option access) :=
-  match a with
-  | Some a =>
-    andb (Mid.eqb x (a_dst a)) (mode_eq m (a_t a))
-  | None => false
-  end.
+  Definition a_match x m (a:access) :=
+  andb (Mid.eqb x (a_dst a)) (mode_eq m (a_t a)).
 
   (** Returns any access that matches what and how. *)
 
@@ -78,25 +73,23 @@ Section Shadow_Ext.
 
   Section Defs.
 
-  (** Checks if a language event is either a read or a write. *)
-
-  Definition is_access (o:Lang.op) :=
-  match o with
-  | Lang.WRITE _ => true
-  | Lang.READ _ => true
-  | _ => false
-  end.
+  Inductive LastWrite cg ah (a:access) (m:mid) : Prop :=
+  | last_write_def:
+    a_t a = WRITE ->
+    a_dst a = m ->
+    (forall a', a_t a' = WRITE -> List.In (Some a') ah -> CG.HB cg (a_src a') (a_src a)) ->
+    LastWrite cg ah a m.
 
   (** Two accesses are racy *)
 
-  Inductive RacyAccess cg : option access -> option access -> Prop :=
+  Inductive RacyAccess cg : access -> access -> Prop :=
   | racy_access_def:
     forall a b,
     a_src a <> a_src b ->
     a_dst a = a_dst b ->
     (a_t a = WRITE \/ a_t b = WRITE) ->
     CG.MHP cg (a_src a) (a_src b) ->
-    RacyAccess cg (Some a) (Some b).
+    RacyAccess cg a b.
 
   (** Two accesses are race-free. *)
 
@@ -110,7 +103,7 @@ Section Shadow_Ext.
 
   Variable ah:access_history.
 
-  Definition Access a t h := List.In (Some {| a_t:=a; a_src:=t; a_dst:=h|}) ah. 
+  Definition Access a t h := List.In {| a_t:=a; a_src:=t; a_dst:=h|} ah. 
 
   Definition Writes t h := Access WRITE t h.
 
@@ -154,8 +147,8 @@ Section Shadow_Ext.
   Let race_free_inv_1:
     forall cg x y t1 t2 h,
     RaceFreeAccess cg
-      (Some {| a_t := t1; a_src := x; a_dst := h |})
-      (Some {| a_t := t2; a_src := y; a_dst := h |}) ->
+      {| a_t := t1; a_src := x; a_dst := h |}
+      {| a_t := t2; a_src := y; a_dst := h |} ->
     x <> y ->
     (t1 = WRITE \/ t2 = WRITE) ->
     CG.Comparable cg x y.
@@ -173,43 +166,32 @@ Section Shadow_Ext.
   Let race_free_ref_to_race_free_access:
     forall n1 n2 t1 t2 h cg ah,
     RaceFreeRef cg ah h ->
-    In (Some {| a_t := t1; a_src := n1; a_dst := h |}) ah ->
-    In (Some {| a_t := t2; a_src := n2; a_dst := h |}) ah ->
+    In {| a_t := t1; a_src := n1; a_dst := h |} ah ->
+    In {| a_t := t2; a_src := n2; a_dst := h |} ah ->
     RaceFreeAccess cg
-      (Some {| a_t := t1; a_src := n1; a_dst := h |})
-      (Some {| a_t := t2; a_src := n2; a_dst := h |}).
+      {| a_t := t1; a_src := n1; a_dst := h |}
+      {| a_t := t2; a_src := n2; a_dst := h |}.
   Proof.
     intros.
     inversion H.
     unfold RaceFreeAccess.
     unfold not; intros.
-    inversion H3; simpl in *; subst; clear H7.
-    destruct H8; subst; assert (CG.Comparable cg n1 n2) by eauto using CG.comparable_symm;
-    apply CG.comparable_to_not_mhp in H4; contradiction.
+    inversion H3; simpl in *; subst; clear H5.
+    destruct H6; subst; assert (CG.Comparable cg n1 n2) by eauto using CG.comparable_symm;
+    apply CG.comparable_to_not_mhp in H5; contradiction.
   Qed.
 
   Let race_free_access_ref_neq:
     forall t1 t2 n1 n2 h1 h2 cg,
     h1 <> h2 ->
     RaceFreeAccess cg
-      (Some {| a_t := t1; a_src := n1; a_dst := h1 |})
-      (Some {| a_t := t2; a_src := n2; a_dst := h2 |}).
+       {| a_t := t1; a_src := n1; a_dst := h1 |}
+       {| a_t := t2; a_src := n2; a_dst := h2 |}.
   Proof.
     intros.
     unfold RaceFreeAccess; intuition.
     inversion H0; simpl in *; subst.
     contradiction H; auto.
-  Qed.
-
-  Let race_free_access_none:
-    forall a1 a2 cg,
-    (a1 = None \/ a2 = None) ->
-    RaceFreeAccess cg a1 a2.
-  Proof.
-    unfold RaceFreeAccess.
-    intuition; inversion H0; subst.
-    - inversion H5.
-    - inversion H6.
   Qed.
 
   Let race_free_to_race_free_access:
@@ -222,7 +204,6 @@ Section Shadow_Ext.
     intros.
     inversion H.
     destruct a1, a2; auto.
-    destruct a, a0.
     destruct (MID.eq_dec a_dst0 a_dst1); rewrite mid_eq_rw in *; auto.
     subst.
     eauto.
@@ -254,8 +235,8 @@ Section Shadow_Ext.
         apply H0 in H1.
         apply race_free_inv_1 in H1; auto using CG.comparable_symm.
       + assert (X: RaceFreeAccess cg
-          (Some {| a_t := a0; a_src := x; a_dst := h |})
-          (Some {| a_t := WRITE; a_src := y; a_dst := h |})) by eauto.
+           {| a_t := a0; a_src := x; a_dst := h |}
+           {| a_t := WRITE; a_src := y; a_dst := h |}) by eauto.
         apply race_free_inv_1 in X; auto.
   Qed.
 
@@ -263,6 +244,15 @@ End Shadow_Ext.
 
 Module Lang.
   Import Trace.
+
+  (** Checks if a language event is either a read or a write. *)
+
+  Definition is_access (o:Lang.op) :=
+  match o with
+  | Lang.WRITE _ => true
+  | Lang.READ _ => true
+  | _ => false
+  end.
 
   (**
     Converts an event from the language to an event we can interpret.
@@ -283,19 +273,29 @@ Module Lang.
   | _ => None
   end.
 
-  Let effect_to_ah_accum (p:CG.computation_graph * access_history) (o:Lang.effect) := 
+  Definition effects_to_ah_0 cg : list Lang.effect -> access_history := List.omap (e_to_a cg).
+(*
+  Let effect_to_ah_accum (p:CG.computation_graph * access_history) (o:Lang.effect) :=
   let (cg, ah) := p in
-  (CG.cg_eval (CG.Trace.from_effect o) cg, e_to_a cg o :: ah).
-
+  let a := e_to_a cg o in
+  let ah := a :: ah in
+  match CG.Lang.from_effect o, e_to_a cg o with
+  | Some o, Some a => 
+    (CG.cg_eval o cg, a :: ah)
+  | _ => (cg, ah)
+  end.
+    
+*)
+(*
   Definition effects_to_ah x ts := snd (fold_left effect_to_ah_accum ts ((CG.make_cg x), nil)).
-
-  Definition effect_to_access x ts o :=
-  e_to_a (CG.effects_to_cg x ts) o.
+*)
+  Definition effect_to_access x ts o := e_to_a (CG.Lang.effects_to_cg x ts) o.
 
   Definition ah_add cg e ah := e_to_a cg e::ah.
-
-  Definition RaceFree x ts := RaceFree (CG.effects_to_cg x ts) (effects_to_ah x ts).
-
-  Definition RaceFreeCons x ts o := RaceFreeCons (CG.effects_to_cg x ts) (effects_to_ah x ts) (effect_to_access x ts o).
+(*
+  Definition RaceFree x ts := RaceFree (CG.Lang.effects_to_cg x ts) (effects_to_ah x ts).
+*)
+(*
+  Definition RaceFreeCons x ts o := RaceFreeCons (CG.Lang.effects_to_cg x ts) (effects_to_ah x ts) (effect_to_access x ts o).*)
 End Lang.
 
