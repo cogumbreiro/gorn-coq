@@ -89,6 +89,12 @@ Proof.
   auto with *.
 Qed.
 
+Lemma tid_eq_dec:
+  forall x y : tid, {x = y} + {x <> y}.
+Proof.
+  auto using tid_eq_rw, TID.eq_dec.
+Qed.
+
 Section NotIn.
   Variable elt:Type.
 
