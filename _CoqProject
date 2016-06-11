@@ -10,3 +10,6 @@ src/CG.v
 src/Shadow_Ext.v
 src/Bijection.v
 src/Typesystem.v
+src/Memory.v
+src/SafeJoins.v
+
