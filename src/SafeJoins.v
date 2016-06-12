@@ -7,17 +7,16 @@ Require Import Aniceto.Graphs.FGraph.
 Require Import CG.
 Require Import Tid.
 
-Import Trace.
 Require Import Aniceto.Graphs.FGraph.
 
 Section Defs.
   Notation known := (list (tid*tid)).
 
-  Definition safe_join_of t (e:tid*tid) := let (x,y) := e in if TID.eq_dec x t then Some y else None.
+  Definition outgoing_of t (e:tid*tid) := let (x,y) := e in if tid_eq_dec x t then Some y else None.
 
-  Definition get_safe_joins x := List.omap (safe_join_of x).
+  Definition filter_outgoing x := List.omap (outgoing_of x).
 
-  Definition copy_from (x y:tid) k := map (fun z => (y, z)) (get_safe_joins x k).
+  Definition copy_from (x y:tid) k := map (fun z => (y, z)) (filter_outgoing x k).
 
   Definition fork (x y:tid) (k:known) : known :=
   copy_from x y k ++ (x,y) :: k.
@@ -32,6 +31,33 @@ Section Defs.
   end
   in
   f (op_src o) (op_dst o).
+
+  Let fork_incl:
+    forall x y k,
+    incl k (fork x y k).
+  Proof.
+    intros.
+    unfold fork.
+    auto using incl_refl, incl_appr, incl_tl.
+  Qed.
+
+  Let join_incl:
+    forall x y k,
+    incl k (join x y k).
+  Proof.
+    intros.
+    unfold join.
+    auto using incl_refl, incl_appr.
+  Qed.
+
+  Lemma eval_inl:
+    forall k o,
+    incl k (eval o k).
+  Proof.
+    intros.
+    unfold eval.
+    destruct (op_t o); auto using join_incl, fork_incl.
+  Qed.
 
   Inductive Check (k:known) : op -> Prop :=
   | check_fork:
@@ -62,7 +88,7 @@ Section Defs.
     intros.
     unfold copy_from.
     simpl.
-    destruct (TID.eq_dec x x). {
+    destruct (tid_eq_dec x x). {
       auto.
     }
     contradiction n.
@@ -77,53 +103,93 @@ Section Defs.
     intros.
     unfold copy_from.
     simpl.
-    destruct (TID.eq_dec a x). {
+    destruct (tid_eq_dec a x). {
       contradiction H.
     }
     auto.
   Qed.
 
-  Let copy_from_spec_1:
-    forall k x y z, List.In (x,z) k -> List.In (y,z) (copy_from x y k).
+
+  Let outgoing_of_some:
+    forall x y,
+    outgoing_of x (x, y) = Some y.
   Proof.
-    induction k as [|(a,b)]; intros. {
-      inversion H.
-    }
-    destruct (TID.eq_dec a x); rewrite tid_eq_rw in *. {
-      subst.
-      rewrite copy_from_eq.
-      destruct H. {
-        inversion H; subst.
-        auto using in_eq.
-      }
-      apply in_cons.
-      auto using in_cons.
-    }
-    rewrite copy_from_neq; auto.
-    destruct H. {
-      inversion H.
-      contradiction.
-    }
-    auto.
+    intros.
+    unfold outgoing_of.
+    destruct (tid_eq_dec x x).
+    - auto.
+    - contradiction n; auto.
   Qed.
 
-  Let copy_from_spec_2:
-    forall k x y z, List.In (y,z) (copy_from x y k) -> List.In (x,z) k.
+  Let outgoing_of_some_rw:
+    forall x e y,
+    outgoing_of x e = Some y ->
+    e = (x, y).
   Proof.
-    induction k as [|(a,b)]; intros. {
-      inversion H.
-    }
-    destruct (TID.eq_dec a x); rewrite tid_eq_rw in *. {
-      subst.
-      rewrite copy_from_eq in *.
-      destruct H. {
-        inversion H; subst.
-        auto using in_eq.
-      }
-      eauto using in_cons.
-    }
-    rewrite copy_from_neq in *; auto.
-    eauto using in_cons.
+    unfold outgoing_of.
+    intros.
+    destruct e.
+    destruct (tid_eq_dec t x); inversion H.
+    subst; auto.
+  Qed.
+
+  Let in_filter_outgoing:
+    forall x y k,
+    List.In (x, y) k ->
+    List.In y (filter_outgoing x k).
+  Proof.
+    intros.
+    unfold filter_outgoing.
+    eauto using in_omap_1, outgoing_of_some.
+  Qed.
+
+  Let in_copy_from_1:
+    forall x y z k,
+    List.In (x, z) k ->
+    List.In (y, z) (copy_from x y k).
+  Proof.
+    intros.
+    unfold copy_from.
+    rewrite in_map_iff.
+    eauto using in_filter_outgoing.
+  Qed.
+
+  Let in_copy_from_2:
+    forall x y z k,
+    List.In (y, z) (copy_from x y k) ->
+    List.In (x, z) k.
+  Proof.
+    intros.
+    unfold copy_from, filter_outgoing in *.
+    rewrite in_map_iff in H.
+    destruct H as (x', (?,Hi)).
+    inversion H; subst.
+    apply in_omap_2 in Hi.
+    destruct Hi as (e,(Hi,R)).
+    apply outgoing_of_some_rw in R; subst.
+    assumption.
+  Qed.
+
+  Lemma in_fork:
+    forall x y k z,
+    List.In (x,z) k ->
+    List.In (y,z) (fork x y k).
+  Proof.
+    intros.
+    unfold fork.
+    rewrite in_app_iff.
+    eauto using in_copy_from_2.
+  Qed.
+
+  Lemma in_join:
+    forall x y k z,
+    List.In (y,z) k ->
+    List.In (x,z) (join x y k).
+  Proof.
+    intros.
+    unfold join.
+    rewrite in_app_iff.
+    eauto using in_copy_from_2.
   Qed.
 
   Let copy_from_inv_eq:
@@ -134,7 +200,7 @@ Section Defs.
     induction k as [|(v1,v2)]; intros. {
       inversion H.
     }
-    destruct (TID.eq_dec v1 x); rewrite tid_eq_rw in *. {
+    destruct (tid_eq_dec v1 x). {
       subst.
       rewrite copy_from_eq in *.
       destruct H. {
@@ -208,7 +274,7 @@ Section Defs.
           rewrite in_app_iff in Hi.
           destruct Hi.
           - assert (v = y) by eauto; subst.
-            apply copy_from_spec_2 in H9.
+            apply in_copy_from_2 in H9.
             assert (List.In (x,y) k); (apply List.incl_strengthten in H2; auto).
             contradiction H1.
             assert (Edge k (x,y)) by (unfold Edge;auto).
@@ -455,82 +521,7 @@ Section Defs.
     }
     eauto.
   Qed.
-(*
-  Let sj_hb:
-    forall t x y z a k cg,
-    Safe t k ->
-    CG a t cg ->
-    List.In (Node.node_task x, Node.node_task z) k ->
-    HB_Edge cg (x, y) ->
-    List.In (Node.node_task y, Node.node_task z) k.
-  Proof.
-    intros.
-  Qed.
 
-  Let sj_hb_fork:
-    forall w a b x y z r k cg t,
-    a <> b ->
-    ~ Graph.In (Edge k) b ->
-    Safe (Some {| op_t := FORK; op_src := a; op_dst := b |} :: t) k ->
-    List.In (Node.node_task x, Node.node_task z) k ->
-    CG r (Some {| op_t := FORK; op_src := a; op_dst := b |} :: t) cg ->
-    Walk2 (HB_Edge cg) x y w ->
-    List.In (Node.node_task y, Node.node_task z) k.
-  Proof.
-    induction w; intros. {
-      apply walk2_nil_inv in H4; contradiction.
-    }
-    destruct a as (v1,v2).
-    assert (v1 = x) by eauto using walk2_inv_eq_fst; subst.
-    assert (HB_Edge cg (x,v2)). {
-      eapply walk2_to_edge; eauto using in_eq.
-    }
-    remember (Node.node_task y) as t_y.
-    remember (Node.node_task z) as t_z.
-    remember (Node.node_task x) as t_x.
-    unfold fork.
-    rewrite in_app_iff.
-    destruct (tid_eq_dec t_y a), (tid_eq_dec t_z b); subst.
-    - rewrite e; rewrite e0 in *.
-      eauto using in_eq.
-    - rewrite e in *.
-      right.
-      apply in_cons.
-      inversion H3; subst.
-  Qed.
-
-
-  Let sj_hb:
-    forall t x y z a k cg,
-    Safe t k ->
-    CG a t cg ->
-    List.In (Node.node_task x, Node.node_task z) k ->
-    HB cg x y ->
-    List.In (Node.node_task y, Node.node_task z) k.
-  Proof.
-    induction t; intros; simpl in *. {
-      inversion H0; subst; simpl in *.
-      apply hb_make_cg_absurd in H2; contradiction.
-    }
-    inversion H; subst.
-    inversion H0; subst.
-    inversion H5; subst; simpl in *.
-    - rename x0 into a; rename y0 into b.
-      rename cg0 into cg.
-      rename k0 into k.
-      clear H5.
-      assert (List.In (Node.node_task y, Node.node_task z) (fork a b k)). {
-        eapply IHt; eauto.
-      }
-subst.
-    destruct a0 as [(ot,os,od)|?].
-    - destruct ot; simpl in *.
-      + remember (Node.node_task x) as tx.
-        remember (Node.node_task y) as ty.
-        remember (Node.node_task z) as tz.
-      destruct (tid_eq_dec os x), (tid_eq_dec od z)
-  Qed.
-*)
 End Defs.
 
 Module Lang.
