@@ -50,11 +50,7 @@ End Trace.
 
 Section Defs.
 
-  (** DAG id order *)
-
-  Definition dag_lt x y := node_id x < node_id y.
-
-  Definition edge := (node * node) % type.
+  Notation edge := (node * node) % type.
 
   Structure tee := {
     ntype: op_type;
@@ -62,44 +58,6 @@ Section Defs.
     inter : edge
   }.
 
-  Inductive Check : tee -> Prop :=
-  | check_fork:
-    forall x y dx last_id,
-    dx < last_id ->
-    x <> y ->
-    Check
-    {|
-      ntype := FORK;
-      intra :=
-      (
-        {| node_task := x; node_id := dx |},
-        {| node_task := x; node_id := last_id |}
-      );
-      inter :=
-      (
-        {| node_task := x; node_id := dx |},
-        {| node_task := y; node_id := S last_id |}
-      )
-    |}
-  | check_join:
-    forall x y dx last_id dy,
-    dx < last_id ->
-    dy < last_id ->
-    x <> y ->
-    Check
-    {|
-      ntype := JOIN;
-      intra :=
-      (
-        {| node_task := x; node_id := dx |},
-        {| node_task := x; node_id := last_id |}
-      );
-      inter :=
-      (
-        {| node_task := y; node_id := dy |},
-        {| node_task := x; node_id := last_id |}
-      )
-    |}.
 
   (** Creates a future node *)
 
@@ -112,92 +70,16 @@ Section Defs.
   Definition fork_inter y nid :=
   {| node_task := y; node_id := S (S nid) |}.
 
-  Definition mk_fork last_id (x:node) y :=
+  Definition make_fork last_id (x:node) y :=
   {|
     ntype := FORK;
     intra := (x, next_intra (node_task x) last_id);
     inter := (x, fork_inter y last_id)
   |}.
 
-  Definition mk_join (last_id:nat) x y :=
+  Definition make_join (last_id:nat) x y :=
   let x' := next_intra (node_task x) last_id
   in {| ntype := JOIN; intra := (x, x'); inter := (y,x') |}.
-
-  Lemma check_intra_eq_task:
-    forall v,
-    Check v ->
-    node_task (fst (intra v)) = node_task (snd (intra v)).
-  Proof.
-    intros.
-    inversion H; simpl in *; auto.
-  Qed.
-
-  Lemma check_inter_neq_task:
-    forall v,
-    Check v ->
-    node_task (fst (inter v)) <> node_task (snd (inter v)).
-  Proof.
-    intros.
-    inversion H; simpl in *; auto.
-  Qed.
-
-  Lemma check_inter_dag_fork:
-    forall v,
-    Check v ->
-    ntype v = FORK ->
-    fst (intra v) = fst (inter v).
-  Proof.
-    intros.
-    inversion H; simpl in *.
-    - trivial.
-    - rewrite <- H4 in *.
-      inversion H0.
-  Qed.
-
-  Lemma check_intra_dag_join:
-    forall v,
-    Check v ->
-    ntype v = JOIN ->
-    snd (intra v) = snd (inter v).
-  Proof.
-    intros.
-    inversion H; simpl in *; trivial.
-    rewrite <- H3 in *.
-    inversion H0.
-  Qed.
-
-  Lemma check_dag_lt_intra:
-    forall v,
-    Check v ->
-    dag_lt (fst (intra v)) (snd (intra v)).
-  Proof.
-    intros.
-    unfold dag_lt.
-    inversion H; simpl in *; auto.
-  Qed.
-
-  Lemma check_dag_lt_inter:
-    forall v,
-    Check v ->
-    dag_lt (fst (inter v)) (snd (inter v)).
-  Proof.
-    intros.
-    unfold dag_lt.
-    inversion H; simpl in *; auto.
-  Qed.
-
-  Lemma check_dag_lt_fork:
-    forall v,
-    Check v ->
-    ntype v = FORK ->
-    dag_lt (snd (intra v)) (snd (inter v)).
-  Proof.
-    intros.
-    unfold dag_lt.
-    inversion H; simpl in *; auto.
-    rewrite <- H4 in *.
-    inversion H0.
-  Qed.
 
   Definition to_edges (v:tee) := inter v :: intra v :: nil.
 
@@ -242,13 +124,13 @@ Section Defs.
 
   Definition tee_fork (x y:tid) (cg : computation_graph) : option tee :=
   match cg_lookup x cg with
-  | Some nx => Some (mk_fork (cg_last_id cg) nx y)
+  | Some nx => Some (make_fork (cg_last_id cg) nx y)
   | _ => None
   end.
 
   Definition tee_join (x y:tid) (cg : computation_graph) : option tee :=
   match (cg_lookup x cg, cg_lookup y cg)  with
-  | (Some nx, Some ny) => Some (mk_join (cg_last_id cg) nx ny)
+  | (Some nx, Some ny) => Some (make_join (cg_last_id cg) nx ny)
   | _ => None
   end.
 
@@ -307,7 +189,7 @@ Section Defs.
   Let tee_fork_inv_some:
     forall x y t cg,
     tee_fork x y cg = Some t ->
-    exists n, MT.MapsTo x n (cg_nodes cg) /\ t = mk_fork (cg_last_id cg) n y.
+    exists n, MT.MapsTo x n (cg_nodes cg) /\ t = make_fork (cg_last_id cg) n y.
   Proof.
     unfold tee_fork, cg_lookup.
     intros.
@@ -331,7 +213,7 @@ Section Defs.
   Lemma tee_fork_dec:
     forall x y cg,
     { exists t n, tee_fork x y cg = Some t /\
-      MT.MapsTo x n (cg_nodes cg) /\ t = mk_fork (cg_last_id cg) n y }
+      MT.MapsTo x n (cg_nodes cg) /\ t = make_fork (cg_last_id cg) n y }
     +
     { tee_fork x y cg = None /\ ~ MT.In x (cg_nodes cg) }.
   Proof.
@@ -354,7 +236,7 @@ Section Defs.
     tee_join x y cg = Some t ->
     exists nx ny, MT.MapsTo x nx (cg_nodes cg) /\
     MT.MapsTo y ny (cg_nodes cg) /\
-    t = mk_join (cg_last_id cg) nx ny.
+    t = make_join (cg_last_id cg) nx ny.
   Proof.
     unfold tee_join, cg_lookup.
     intros.
@@ -384,7 +266,7 @@ Section Defs.
     { exists t nx ny, tee_join x y cg = Some t /\
       MT.MapsTo x nx (cg_nodes cg) /\
       MT.MapsTo y ny (cg_nodes cg) /\
-      t = mk_join (cg_last_id cg) nx ny }
+      t = make_join (cg_last_id cg) nx ny }
     +
     { tee_join x y cg = None /\ (~ MT.In x (cg_nodes cg) \/ ~ MT.In y (cg_nodes cg)) }.
   Proof.
@@ -757,6 +639,46 @@ Section cg_nodes.
 
 
 End cg_nodes.
+
+Section cg_tees.
+  Lemma tee_fork_rw:
+    forall a n b cg,
+    MT.MapsTo a n (cg_nodes cg) ->
+    a <> b ->
+    cg_tees (cg_fork a b cg) = make_fork (cg_last_id cg) n b :: cg_tees cg.
+  Proof.
+    unfold cg_fork.
+    intros.
+    destruct (tee_fork_dec a b cg) as [(v,(n',(?,(?,?))))|(?,Hn)]. {
+      assert(n'=n) by eauto using MT_Facts.MapsTo_fun; subst.
+      rewrite H1.
+      simpl.
+      trivial.
+    }
+    contradiction Hn.
+    eauto using MT_Extra.mapsto_to_in.
+  Qed.
+
+  Lemma tee_join_rw:
+    forall a b na nb cg,
+    MT.MapsTo a na (cg_nodes cg) ->
+    MT.MapsTo b nb (cg_nodes cg) ->
+    cg_tees (cg_join a b cg) = make_join (cg_last_id cg) na nb :: cg_tees cg.
+  Proof.
+    unfold cg_join.
+    intros.
+    destruct (tee_join_dec a b cg) as [(t,(nx',(ny',(R,(Hx,(Hy,?))))))|(R,[Hn|Hn])]; subst.
+    - assert (nx' = na) by eauto using MT_Facts.MapsTo_fun; subst; clear Hx.
+      assert (ny' = nb) by eauto using MT_Facts.MapsTo_fun; subst; clear Hy.
+      rewrite R.
+      simpl.
+      trivial.
+    - contradiction Hn.
+      eauto using MT_Extra.mapsto_to_in.
+    - contradiction Hn.
+      eauto using MT_Extra.mapsto_to_in.
+  Qed.
+End cg_tees.
 
 Section HB.
 
@@ -1150,7 +1072,54 @@ Module WellFormed.
     apply maps_to_join_3 with (x:=x) (y:=y) (nx:=nx); eauto using cg_node_task.
   Qed.
 
+  (** If we get a tee from a CG, the intra nodes are referring to
+   the same task. *)
+
+  Lemma tee_continue:
+    forall l x y v cg a,
+    CG a l cg ->
+    List.In v (cg_tees cg) ->
+    intra v = (x, y) ->
+    node_task x = node_task y.
+  Proof.
+    induction l; intros. {
+      inversion H.
+      subst.
+      simpl in *.
+      contradiction.
+    }
+    inversion H; subst; clear H;
+    rename cg0 into cg; rename a1 into a.
+    - unfold In in *.
+      apply MT_Extra.in_to_mapsto in H5.
+      destruct H5 as (n, mt).
+      assert (R: cg_tees (cg_fork a b cg) = make_fork (cg_last_id cg) n b :: cg_tees cg)
+      by auto using tee_fork_rw.
+      rewrite R in *.
+      destruct H0. {
+        subst.
+        inversion H1; subst.
+        simpl.
+        trivial.
+      }
+      eauto.
+    - unfold In in *.
+      apply MT_Extra.in_to_mapsto in H5.
+      destruct H5 as (na, mta).
+      apply MT_Extra.in_to_mapsto in H7.
+      destruct H7 as (nb, mtb).
+      assert (R: cg_tees (cg_join a b cg) = make_join (cg_last_id cg) na nb :: cg_tees cg)
+      by auto using tee_join_rw.
+      rewrite R in *.
+      destruct H0. {
+        subst; inversion H1.
+        auto.
+      }
+      eauto.
+  Qed.
+
   End Defs.
+
 End WellFormed.
 
 Module Lang.
