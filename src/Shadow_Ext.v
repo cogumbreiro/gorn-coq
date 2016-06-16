@@ -274,28 +274,7 @@ Module Lang.
   end.
 
   Definition effects_to_ah_0 cg : list Lang.effect -> access_history := List.omap (e_to_a cg).
-(*
-  Let effect_to_ah_accum (p:CG.computation_graph * access_history) (o:Lang.effect) :=
-  let (cg, ah) := p in
-  let a := e_to_a cg o in
-  let ah := a :: ah in
-  match CG.Lang.from_effect o, e_to_a cg o with
-  | Some o, Some a => 
-    (CG.cg_eval o cg, a :: ah)
-  | _ => (cg, ah)
-  end.
-    
-*)
-(*
-  Definition effects_to_ah x ts := snd (fold_left effect_to_ah_accum ts ((CG.make_cg x), nil)).
-*)
-  Definition effect_to_access x ts o := e_to_a (CG.Lang.effects_to_cg x ts) o.
 
   Definition ah_add cg e ah := e_to_a cg e::ah.
-(*
-  Definition RaceFree x ts := RaceFree (CG.Lang.effects_to_cg x ts) (effects_to_ah x ts).
-*)
-(*
-  Definition RaceFreeCons x ts o := RaceFreeCons (CG.Lang.effects_to_cg x ts) (effects_to_ah x ts) (effect_to_access x ts o).*)
 End Lang.
 

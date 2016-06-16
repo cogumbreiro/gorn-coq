@@ -41,6 +41,16 @@ Section Defs.
     auto using incl_refl, incl_appr, incl_tl.
   Qed.
 
+  Lemma in_fork:
+    forall e x y k,
+    List.In e k ->
+    List.In e (fork x y k).
+  Proof.
+    intros.
+    assert (X:incl k (fork x y k)) by eauto using fork_incl.
+    unfold incl in *; auto.
+  Qed.
+
   Let join_incl:
     forall x y k,
     incl k (join x y k).
@@ -48,6 +58,16 @@ Section Defs.
     intros.
     unfold join.
     auto using incl_refl, incl_appr.
+  Qed.
+
+  Lemma in_join:
+    forall e x y k,
+    List.In e k ->
+    List.In e (join x y k).
+  Proof.
+    intros.
+    assert (incl k (join x y k)) by eauto using join_incl.
+    unfold incl in *; auto.
   Qed.
 
   Lemma eval_inl:
@@ -70,6 +90,17 @@ Section Defs.
     Edge k (x,y) ->
     Check k {| op_t := JOIN; op_src := x; op_dst:= y|}.
 
+  Inductive Reduces k : op -> known -> Prop :=
+  | reduces_fork:
+    forall (x y:tid),
+    x <> y ->
+    ~ Graph.In (Edge k) y ->
+    Reduces k {| op_t := FORK; op_src:= x; op_dst:= y|} (fork x y k)
+  | reduces_join:
+    forall x y,
+    Edge k (x,y) ->
+    Reduces k {| op_t := JOIN; op_src := x; op_dst:= y|} (join x y k).
+
   Inductive Safe : trace -> known -> Prop :=
   | safe_nil:
     Safe nil nil
@@ -78,6 +109,35 @@ Section Defs.
     Check k o ->
     Safe l k ->
     Safe (o::l) (eval o k).
+
+
+  Lemma safe_reduces:
+    forall o t k k',
+    Safe t k ->
+    Reduces k o k' ->
+    Safe (o::t) k'.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    - assert (R: fork x y k = eval {| op_t := FORK; op_src := x; op_dst := y |} k) by auto.
+      rewrite R.
+      eauto using check_fork, safe_cons.
+    - assert (R: join x y k = eval {| op_t := JOIN; op_src := x; op_dst := y |} k) by auto.
+      rewrite R.
+      eauto using check_join, safe_cons.
+  Qed.
+
+  Lemma safe_inv:
+    forall o t k,
+    Safe (o::t) k ->
+    exists k', Safe t k' /\ Reduces k' o k.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    unfold eval.
+    inversion H2; subst; simpl in *; clear H2;
+    eauto using reduces_fork, reduces_join.
+  Qed.
 
   Import Aniceto.Graphs.DAG.
 
@@ -108,7 +168,6 @@ Section Defs.
     }
     auto.
   Qed.
-
 
   Let outgoing_of_some:
     forall x y,
@@ -170,7 +229,44 @@ Section Defs.
     assumption.
   Qed.
 
-  Lemma in_fork:
+  Let copy_from_inv_in:
+    forall x y a b k,
+    List.In (x, y) (copy_from a b k) ->
+    x = b /\ List.In (a, y) k.
+  Proof.
+    intros.
+    destruct (tid_eq_dec x b). {
+      split; auto.
+      subst.
+      eauto using in_copy_from_2.
+    }
+    unfold copy_from, filter_outgoing in *.
+    rewrite in_map_iff in H.
+    destruct H as (?, (He, ?)).
+    inversion He; subst.
+    contradiction n; trivial.
+  Qed.
+
+  Lemma in_fork_1:
+    forall x y z k,
+    x <> y ->
+    ~ Graph.In (Edge k) y ->
+    List.In (y, z) (fork x y k) ->
+    List.In (x, z) k.
+  Proof.
+    intros.
+    unfold fork in *.
+    rewrite in_app_iff in H1.
+    destruct H1.
+    - eauto using in_copy_from_2.
+    - destruct H1.
+      + inversion H1; subst.
+        contradiction H; auto.
+      + contradiction H0.
+        eauto using in_left, edge_spec.
+  Qed.
+
+  Lemma in_fork_2:
     forall x y k z,
     List.In (x,z) k ->
     List.In (y,z) (fork x y k).
@@ -181,7 +277,43 @@ Section Defs.
     eauto using in_copy_from_2.
   Qed.
 
-  Lemma in_join:
+  Lemma in_fork_3:
+    forall k x y z,
+    y <> z ->
+    List.In (x, z) (fork x y k) ->
+    List.In (y, z) (fork x y k).
+  Proof.
+    intros.
+    unfold fork in *.
+    rewrite in_app_iff in *.
+    destruct H0.
+    - apply copy_from_inv_in in H0.
+      destruct H0; subst.
+      eauto using in_copy_from_2.
+    - destruct H0.
+      + inversion H0; subst.
+        contradiction H; trivial.
+      + eauto using in_copy_from_2.
+  Qed.
+
+  Lemma fork_inv_in:
+    forall x y a b k,
+    List.In (x, y) (fork a b k) ->
+    (x = b /\ List.In (a, y) k) \/ (a = x /\ b = y) \/ List.In (x, y) k.
+  Proof.
+    intros.
+    unfold fork in *.
+    rewrite in_app_iff in *.
+    destruct H.
+    - apply copy_from_inv_in in H.
+      intuition.
+    - destruct H.
+      + inversion H.
+        intuition.
+      + auto.
+  Qed.
+
+  Lemma in_join_2:
     forall x y k z,
     List.In (y,z) k ->
     List.In (x,z) (join x y k).
@@ -523,6 +655,112 @@ Section Defs.
   Qed.
 
 End Defs.
+
+Section HB.
+
+  (** Properties that relate to the safe-join set. *)
+(*
+  Lemma in_known_to_nodes:
+    forall t k cg a x,
+    Safe t k ->
+    CG a t cg -> 
+    Graph.In (Edge k) x ->
+    In x cg.
+  Proof.
+    induction t; intros. {
+      inversion H.
+      subst.
+      SearchAbout ( Graph.In (Edge _) _).
+    }
+    
+  Qed.
+*)
+
+  Definition WellFormedSafeJoins cg k :=
+    forall x y z,
+    HB_Edge cg (x, y) ->
+    List.In (node_task x, node_task z) k ->
+    Nodes.Contains z (cg_nodes cg) ->
+    node_task z <> node_task y ->
+    List.In (node_task y, node_task z) k.
+
+  Let wf_safe_joins:
+    forall cg k o cg' k',
+    WellFormedEdges cg ->
+    WellFormedSafeJoins cg k ->
+    CG.ReducesEx cg o cg' ->
+    Reduces k o k' ->
+    WellFormedSafeJoins cg' k'.
+  Proof.
+    intros.
+    unfold WellFormedSafeJoins; intros.
+    inversion H2; subst; clear H2;
+    inversion H1; subst; clear H1;
+    inversion H2; subst; clear H2;
+    simpl in *. {
+      (* fork *)
+      destruct H3 as [E|[E|?]];
+      try (inversion E; subst; clear E; auto using in_fork_3); simpl in *.
+      assert (He: HB_Edge (vs,es) (x, y)) by auto; clear H1.
+      apply fork_inv_in in H4.
+      destruct H4 as [(?,Hx)|[(?,?)|?]]; subst; simpl in *.
+      - contradiction H13.
+        assert (R:vs = cg_nodes (vs, es)) by auto; rewrite R in *.
+        apply H in He.
+        destruct He.
+        auto using Nodes.contains_to_in.
+      - destruct (tid_eq_dec (node_task x) (node_task y)). {
+          rewrite e in *.
+          unfold fork; rewrite in_app_iff; right.
+          auto using in_eq.
+        }
+        unfold fork.
+                clear H8 H9 H11.
+        assert (R:vs = cg_nodes (vs, es)) by auto; rewrite R in *.
+        apply H in He.
+        destruct He.
+        apply in_fork.
+        auto using in_fork_3.
+    }
+    (* join *)
+  Qed.
+
+  Lemma sj_hb:
+    forall t x y z k cg a,
+    Safe t k ->
+    CG a t cg -> 
+    HB_Edge cg (x, y) ->
+    List.In (node_task x, z) k ->
+    z <> node_task y ->
+    List.In (node_task y, z) k.
+  Proof.
+    induction t; intros. {
+      inversion H.
+      subst.
+      inversion H2.
+    }
+    inversion H; subst; clear H; rename k0 into k.
+    unfold eval in *.
+    inversion H0; subst; simpl in *; clear H0.
+    apply reduces_to_reduces_ex in H9.
+    inversion H9; subst; clear H9.
+    inversion H; subst; clear H; simpl in *.
+    - destruct H1 as [?|[?|?]].
+      + simpl in *.
+        inversion H; subst; clear H; simpl in *.
+        auto using in_fork_3.
+      + simpl in *. 
+        inversion H; subst; clear H; simpl in *.
+        auto using in_fork_3.
+      + assert (He: HB_Edge (vs,es) (x, y)) by auto; clear H.
+        apply fork_inv_in in H2.
+        destruct H2 as [(?,Hx)|[(?,?)|?]]; subst; simpl in *.
+        * contradiction H9.
+          assert (R:vs = cg_nodes (vs, es)) by auto; rewrite R.
+          eapply node_in_cg; eauto using in_left.
+        *  
+  Qed.
+End HB.
 
 Module Lang.
 

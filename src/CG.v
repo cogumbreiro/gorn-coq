@@ -44,13 +44,297 @@ Section Trace.
     op_dst: tid
   }.
 
-  Definition trace := list op.
+  Definition trace := list op.    
 
 End Trace.
 
-Section Defs.
+Module Nodes.
+
+Section Nodes.
+
+  Structure node_ids := {
+    cg_ids : MT.t (list nat);
+    cg_last_id : nat
+  }.
+
+  Definition make (x:tid) : node_ids :=
+  {|
+    cg_ids :=  MT.add x (0 :: nil) (@MT.empty (list nat)) ;
+    cg_last_id := 0
+   |}.
+
+  (** Looks up the latest id of a given task. *)
+
+  Inductive MapsTo (x:tid) (n:nat) (ns:node_ids) : Prop :=
+  | maps_to_def:
+    forall l,
+    MT.MapsTo x (n::l) (cg_ids ns) ->
+    MapsTo x n ns.
+
+  (** If this property holds then x was assigned to this id
+    at one point in time. *)
+
+  Inductive Contains (n:node) (ids:MT.t (list nat)) : Prop :=
+  | contains_def:
+    forall l,
+    MT.MapsTo (node_task n) l ids ->
+    List.In (node_id n) l ->
+    Contains n ids.
+
+  Lemma contains_add_1:
+    forall n x l ids,
+    x = node_task n ->
+    List.In (node_id n) l ->
+    Contains n (MT.add x l ids).
+  Proof.
+    eauto using contains_def, MT.add_1.
+  Qed.
+
+  Lemma contains_add_2:
+    forall n x l ids,
+    x <> node_task n ->
+    Contains n ids ->
+    Contains n (MT.add x l ids).
+  Proof.
+    intros.
+    inversion H0.
+    eauto using contains_def, MT.add_2.
+  Qed.
+
+  Lemma contains_add_3:
+    forall n x l ids,
+    x <> node_task n ->
+    Contains n (MT.add x l ids) ->
+    Contains n ids.
+  Proof.
+    intros.
+    inversion H0.
+    eauto using contains_def, MT.add_3.
+  Qed.
+
+  Lemma contains_add_iff:
+    forall n x l ids,
+    Contains n (MT.add x l ids) <->
+    x = node_task n /\ List.In (node_id n) l
+    \/
+    x <> node_task n /\ Contains n ids.
+  Proof.
+    split; intros. {
+      inversion H.
+      apply MT_Facts.add_mapsto_iff in H0.
+      destruct H0 as [(?,?)|(?,?)]; subst.
+      - intuition.
+      - eauto using contains_def.
+    }
+    destruct H as [(?,?)|(?,?)]. {
+      auto using contains_add_1.
+    }
+    auto using contains_add_2.
+  Qed.
+
+  Inductive In (x:tid) ns : Prop :=
+  | in_def:
+    forall n,
+    MapsTo x n ns ->
+    In x ns.
+
+  Lemma contains_to_in:
+    forall x ns,
+    Contains x (cg_ids ns) ->
+    In (node_task x) ns.
+  Proof.
+    intros.
+    inversion H.
+    destruct l. {
+      inversion H1.
+    }
+    eauto using in_def, maps_to_def.
+  Qed.
+
+  Let do_fork x l y ns :=
+  {|
+    cg_ids :=
+      (MT.add x (S (cg_last_id ns) :: l))
+      (MT.add y (S (S (cg_last_id ns)):: nil) (cg_ids ns));
+    cg_last_id := S (S (cg_last_id ns))
+  |}.
+
+  Definition cg_nodes_fork x y (ns:node_ids) :=
+  match MT.find x (cg_ids ns) with
+  | Some l => do_fork x l y ns
+  | _ =>  ns
+  end.
+
+  Let do_join x l ns :=
+  {|
+    cg_ids := MT.add x (S (cg_last_id ns) :: l) (cg_ids ns);
+    cg_last_id := S (cg_last_id ns)
+  |}.
+
+  Definition cg_nodes_join x (ns:node_ids) :=
+  match MT.find x (cg_ids ns) with
+  | Some l => do_join x l ns
+  | _ =>  ns
+  end.
+
+  (** Reduces vertices *)
+
+  Inductive ReducesEx (ns:node_ids): op -> node_ids -> Prop :=
+  | reduces_ex_fork:
+    forall a b n l,
+    MT.MapsTo a (n::l) (cg_ids ns) ->
+    ~ In b ns ->
+    ReducesEx ns {|op_t:=FORK;op_src:=a;op_dst:=b|} (do_fork a (n::l) b ns)
+  | reduces_ex_join:
+    forall a b n l,
+    MT.MapsTo a (n::l) (cg_ids ns) ->
+    In b ns ->
+    a <> b ->
+    ReducesEx ns {|op_t:=JOIN;op_src:=a;op_dst:=b|} (do_join a (n::l) ns).
+
+  Inductive Reduces (ns:node_ids): op -> node_ids -> Prop :=
+  | reduces_fork:
+    forall a b,
+    In a ns ->
+    ~ In b ns ->
+    Reduces ns {|op_t:=FORK;op_src:=a;op_dst:=b|} (cg_nodes_fork a b ns)
+  | reduces_join:
+    forall a b,
+    In a ns ->
+    In b ns ->
+    a <> b ->
+    Reduces ns {|op_t:=JOIN;op_src:=a;op_dst:=b|} (cg_nodes_join a ns).
+
+  Lemma reduces_to_reduces_ex:
+    forall ns o ns',
+    Reduces ns o ns' ->
+    ReducesEx ns o ns'.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    - destruct H0 as (n, (l, mt)).
+      unfold cg_nodes_fork.
+      destruct (MT_Extra.find_rw a (cg_ids ns)) as [(R,N)|(v,(R,X))];
+      rewrite R in *; clear R. {
+        contradiction N; eauto using MT_Extra.mapsto_to_in.
+      }
+      assert (v=n :: l) by eauto using MT_Facts.MapsTo_fun; subst; clear X.
+      eauto using reduces_ex_fork.
+    - destruct H0 as (n, (l, mt)).
+      unfold cg_nodes_join.
+      destruct (MT_Extra.find_rw a (cg_ids ns)) as [(R,N)|(v,(R,X))];
+      rewrite R in *; clear R. {
+        contradiction N; eauto using MT_Extra.mapsto_to_in.
+      }
+      assert (v=n :: l) by eauto using MT_Facts.MapsTo_fun; subst; clear X.
+      eauto using reduces_ex_join.
+  Qed.
+
+  Lemma reduces_ex_to_reduces:
+    forall ns o ns',
+    ReducesEx ns o ns' ->
+    Reduces ns o ns'.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    - assert (In a ns) by eauto using in_def, maps_to_def.
+      assert (RW: do_fork a (n :: l) b ns = cg_nodes_fork a b ns). {
+        unfold cg_nodes_fork.
+        destruct (MT_Extra.find_rw a (cg_ids ns)) as [(R,N)|(v,(R,X))];
+        rewrite R in *; clear R. {
+          contradiction N; eauto using MT_Extra.mapsto_to_in.
+        }
+        assert (v=n :: l) by eauto using MT_Facts.MapsTo_fun; subst; clear X.
+        trivial.
+      }
+      rewrite RW.
+      auto using reduces_fork.
+    - assert (In a ns) by eauto using in_def, maps_to_def.
+      assert (RW: do_join a (n :: l) ns = cg_nodes_join a ns). {
+        unfold cg_nodes_join.
+        destruct (MT_Extra.find_rw a (cg_ids ns)) as [(R,N)|(v,(R,X))];
+        rewrite R in *; clear R. {
+          contradiction N; eauto using MT_Extra.mapsto_to_in.
+        }
+        assert (v=n :: l) by eauto using MT_Facts.MapsTo_fun; subst; clear X.
+        trivial.
+      }
+      rewrite RW.
+      auto using reduces_join.
+  Qed.
+
+  Lemma reduces_ex_iff:
+    forall ns o ns',
+    Reduces ns o ns' <->
+    ReducesEx ns o ns'.
+  Proof.
+    split; eauto using reduces_ex_to_reduces, reduces_to_reduces_ex.
+  Qed.
+
+  Lemma reduces_src_neq_dst:
+    forall vs o vs',
+    Reduces vs o vs' ->
+    op_src o <> op_dst o.
+  Proof.
+    intros.
+    inversion H; subst; clear H; simpl.
+    - intuition;
+      subst;
+      contradiction.
+    - assumption. 
+  Qed.
+
+  (** After reduction we always get three nodes *)
+
+  Lemma reduces_maps_to_op:
+    forall vs o vs',
+    Reduces vs o vs' ->
+    exists na na' nb la lb,
+    MT.MapsTo (op_src o) (na' :: na:: la) (cg_ids vs') /\
+    MT.MapsTo (op_dst o) (nb:: lb) (cg_ids vs').
+  Proof.
+    intros.
+    assert (Hneq: op_src o <> op_dst o) by eauto using reduces_src_neq_dst.
+    apply reduces_to_reduces_ex in H.
+    inversion H; subst; clear H; simpl in *.
+    - eauto 10 using MT.add_1, MT.add_2.
+    - destruct H1 as (nb, (lb, mt)).
+      eauto 9 using MT.add_1, MT.add_2.
+  Qed.
+
+  Lemma reduces_continue_node:
+    forall vs o vs',
+    Reduces vs o vs' ->
+    exists n l, MT.MapsTo (op_src o) (n::l) (cg_ids vs) /\
+    MT.MapsTo (op_src o) (S (cg_last_id vs) :: n:: l) (cg_ids vs').
+  Proof.
+    intros.
+    apply reduces_to_reduces_ex in H.
+    inversion H; simpl in *; subst; clear H;
+    eauto using MT.add_1.
+  Qed.
+
+  Lemma in_make:
+    forall t,
+    In t (make t).
+  Proof.
+    unfold make.
+    eauto using in_def, maps_to_def, MT.add_1.
+  Qed.
+
+End Nodes.
+End Nodes.
+
+Section Edges.
+
+  Import Nodes.
 
   Notation edge := (node * node) % type.
+
+  (** A tee consists of two edges:
+    an intra-edge that represents the continue edge, and
+    an inter-edge that represents either the spawn or the async edge.
+    *)
 
   Structure tee := {
     ntype: op_type;
@@ -58,314 +342,341 @@ Section Defs.
     inter : edge
   }.
 
+  (**
+    When creating a tee, the inter edge is the only thing
+    that changes depending on the type of the node.
+    *)
 
-  (** Creates a future node *)
-
-  Definition tee_last_id (t:tee) :=
-  node_id (snd (inter t)).
-
-  Definition next_intra x nid :=
-  {| node_task := x; node_id := S nid |}.
-
-  Definition fork_inter y nid :=
-  {| node_task := y; node_id := S (S nid) |}.
-
-  Definition make_fork last_id (x:node) y :=
-  {|
-    ntype := FORK;
-    intra := (x, next_intra (node_task x) last_id);
-    inter := (x, fork_inter y last_id)
-  |}.
-
-  Definition make_join (last_id:nat) x y :=
-  let x' := next_intra (node_task x) last_id
-  in {| ntype := JOIN; intra := (x, x'); inter := (y,x') |}.
-
-  Definition to_edges (v:tee) := inter v :: intra v :: nil.
-
-  Definition tee_lookup t v := 
-  match v with
-  {| ntype := _; intra:=(_,v); inter:=(_,v') |} =>
-    if TID.eq_dec (node_task v') t then Some v'
-    else if TID.eq_dec (node_task v) t then Some v
-    else None
+  Definition make_inter nt (x x' y:node) :=
+  match nt with
+  | FORK => (x, y)
+  | JOIN => (y, x')
   end.
 
-  Definition tee_contains t v := match tee_lookup t v with Some _ => true | None => false end.
+  Definition make_tee o nx nx' ny :=
+  let nt := op_t o in
+  let x := op_src o in
+  let y := op_dst o in
+  let a  := {| node_task := x; node_id := nx |} in
+  let a' := {| node_task := x; node_id := nx'|} in
+  let b  := {| node_task := y; node_id := ny |} in
+  {| ntype := nt; intra := (a, a'); inter := make_inter nt a a' b |}.
 
-  Structure computation_graph := {
-    cg_tees : list tee;
-    cg_nodes : MT.t node;
-    cg_last_id : nat
-  }.
-
-  Definition make_cg t := {|
-    cg_tees := nil;
-    cg_nodes := MT.add t (Build_node t 0) (@MT.empty node);
-    cg_last_id := 0
-  |}.
-
-  Definition cg_edges cg :=
-  flat_map to_edges (cg_tees cg).
-
-  Definition cg_lookup t cg : option node :=
-  MT.find t (cg_nodes cg).
-
-  Definition initial_nodes t := MT.add t (zero_node t) (@MT.empty node).
-
-  Definition cg_nodes_add (t:tee) (m: MT.t node) :=
-  match t with
-  | {| ntype := FORK; intra:=(_,x); inter:=(_,y) |} =>
-    (MT.add (node_task x) x)
-    (MT.add (node_task y) y m)
-  | {| ntype := JOIN; intra:=(_,x); inter:=_ |} => 
-    MT.add (node_task x) x m
+  Definition cg_add_tee vs o es : list tee :=
+  match MT.find (op_src o) (cg_ids vs), MT.find (op_dst o) (cg_ids vs) with
+  | Some (nx'::nx::_), Some (ny::_) =>
+    make_tee o nx nx' ny :: es
+  | _,_ => es
   end.
 
-  Definition tee_fork (x y:tid) (cg : computation_graph) : option tee :=
-  match cg_lookup x cg with
-  | Some nx => Some (make_fork (cg_last_id cg) nx y)
-  | _ => None
-  end.
+  Definition computation_graph := (node_ids * list tee) % type.
 
-  Definition tee_join (x y:tid) (cg : computation_graph) : option tee :=
-  match (cg_lookup x cg, cg_lookup y cg)  with
-  | (Some nx, Some ny) => Some (make_join (cg_last_id cg) nx ny)
-  | _ => None
-  end.
+  Inductive Reduces: computation_graph -> op -> computation_graph -> Prop :=
+  | reduces_step:
+    forall vs (es:list tee) vs' o,
+    Nodes.Reduces vs o vs' ->
+    Reduces (vs,es) o (vs', cg_add_tee vs' o es).
 
-  Definition cg_add (o:option tee) (cg : computation_graph) : computation_graph :=
-  match o with
-  | Some v =>
-    {| cg_tees := v :: cg_tees cg;
-       cg_last_id := (tee_last_id v);
-       cg_nodes := cg_nodes_add v (cg_nodes cg) |}
-  | None => cg
-  end.
+  Inductive ReducesEx: computation_graph -> op -> computation_graph -> Prop :=
+  | reduces_ex_step:
+    forall vs (es:list tee) vs' o nx nx' ny lx ly,
+    Nodes.ReducesEx vs o vs' ->
+    MT.MapsTo (op_src o) (nx'::nx::lx) (cg_ids vs') ->
+    MT.MapsTo (op_dst o) (ny::ly) (cg_ids vs') ->
+    ReducesEx (vs,es) o (vs', make_tee o nx nx' ny :: es).
 
-  Definition cg_fork (x y:tid) (cg : computation_graph) : computation_graph :=
-  cg_add (tee_fork x y cg) cg.
-
-  Definition cg_join (x y:tid) (cg : computation_graph) : computation_graph :=
-  cg_add (tee_join x y cg) cg.
-
-  Definition cg_eval (o:op) cg :=
-  match o with
-  | {| op_t := e; op_src := x; op_dst := y |} =>
-    let f := (match e with
-      | FORK => cg_fork
-      | JOIN => cg_join
-      end)
-    in
-    f x y cg
-  end.
-
-  (** Compute a CG from a trace. *)
-
-  Fixpoint trace_to_cg (x:tid) l := 
-  match l with
-  | (o::l) => cg_eval o (trace_to_cg x l)
-  | nil => make_cg x
-  end.
-
-  Inductive Lookup t n cg: Prop :=
-  | lookup_def: 
-    MT.MapsTo t n (cg_nodes cg) ->
-    Lookup t n cg.
-
-  Definition In (t:tid) cg := MT.In t (cg_nodes cg).
-
-  Lemma in_make:
-    forall t,
-    In t (make_cg t).
+  Let cg_add_tee_rw:
+    forall o la lb vs es na na' nb,
+    MT.MapsTo (op_src o) (na' :: na :: la) (cg_ids vs) ->
+    MT.MapsTo (op_dst o) (nb :: lb) (cg_ids vs) ->
+    cg_add_tee vs o es = make_tee o na na' nb :: es.
   Proof.
     intros.
-    unfold make_cg, In.
-    simpl.
-    rewrite MT_Facts.add_in_iff.
-    auto.
+    unfold cg_add_tee.
+    destruct (MT_Extra.find_rw (op_src o) (cg_ids vs)) as [(R,N)|(l,(R,X))];
+    rewrite R in *; clear R. {
+      contradiction N; eauto using MT_Extra.mapsto_to_in.
+    }
+    assert (l = na' :: na :: la) by eauto using MT_Facts.MapsTo_fun; subst; clear X.
+    destruct (MT_Extra.find_rw (op_dst o) (cg_ids vs)) as [(R,N)|(l,(R,X))];
+    rewrite R in *; clear R. {
+      contradiction N; eauto using MT_Extra.mapsto_to_in.
+    }
+    assert (l = nb :: lb) by eauto using MT_Facts.MapsTo_fun; subst; clear X.
+    trivial.
   Qed.
 
-  Let tee_fork_inv_some:
-    forall x y t cg,
-    tee_fork x y cg = Some t ->
-    exists n, MT.MapsTo x n (cg_nodes cg) /\ t = make_fork (cg_last_id cg) n y.
-  Proof.
-    unfold tee_fork, cg_lookup.
-    intros.
-    destruct (MT_Extra.find_rw x (cg_nodes cg)) as [(R,?)|(n,(R,?))];
-    rewrite R in *; clear R; inversion H.
-    eauto.
-  Qed.
-
-  Let tee_fork_inv_none:
-    forall x y cg,
-    tee_fork x y cg = None ->
-    ~ MT.In x (cg_nodes cg).
-  Proof.
-    unfold tee_fork, cg_lookup.
-    intros.
-    destruct (MT_Extra.find_rw x (cg_nodes cg)) as [(R,?)|(n,(R,?))];
-    rewrite R in *; clear R; inversion H.
-    eauto.
-  Qed.
-
-  Lemma tee_fork_dec:
-    forall x y cg,
-    { exists t n, tee_fork x y cg = Some t /\
-      MT.MapsTo x n (cg_nodes cg) /\ t = make_fork (cg_last_id cg) n y }
-    +
-    { tee_fork x y cg = None /\ ~ MT.In x (cg_nodes cg) }.
+  Lemma reduces_to_reduces_ex:
+    forall cg o cg',
+    Reduces cg o cg' ->
+    ReducesEx cg o cg'.
   Proof.
     intros.
-    remember (tee_fork x y cg).
-    symmetry in Heqo.
-    destruct o.
-    - left.
-      apply tee_fork_inv_some in Heqo.
-      destruct Heqo as (n,(?,?)).
-      exists t.
-      exists n.
-      eauto.
-    - apply tee_fork_inv_none in Heqo.
-      eauto.
+    inversion H; subst.
+    assert (R: exists na na' nb la lb, MT.MapsTo (op_src o) (na' :: na:: la) (cg_ids vs') /\
+            MT.MapsTo (op_dst o) (nb:: lb) (cg_ids vs'))
+    by eauto using reduces_maps_to_op;
+    destruct R as (na, (na', (nb, (la, (lb, (mta, mtb)))))).
+    assert (RW: cg_add_tee vs' o es = make_tee o na na' nb :: es) by eauto using cg_add_tee_rw;
+    rewrite RW; clear RW.
+    eauto using reduces_ex_step, reduces_to_reduces_ex.
   Qed.
 
-  Let tee_join_inv_some:
-    forall x y t cg,
-    tee_join x y cg = Some t ->
-    exists nx ny, MT.MapsTo x nx (cg_nodes cg) /\
-    MT.MapsTo y ny (cg_nodes cg) /\
-    t = make_join (cg_last_id cg) nx ny.
-  Proof.
-    unfold tee_join, cg_lookup.
-    intros.
-    destruct (MT_Extra.find_rw x (cg_nodes cg)) as [(R,?)|(nx,(R,?))];
-    rewrite R in *; clear R; inversion H;
-      destruct (MT_Extra.find_rw y (cg_nodes cg)) as [(R,?)|(ny,(R,?))];
-      rewrite R in *; clear R;
-      inversion H2.
-    eauto.
-  Qed.
-
-  Let tee_join_inv_none:
-    forall x y cg,
-    tee_join x y cg = None ->
-    ~ MT.In x (cg_nodes cg) \/ ~ MT.In y (cg_nodes cg).
-  Proof.
-    unfold tee_join, cg_lookup.
-    intros.
-    destruct (MT_Extra.find_rw x (cg_nodes cg)) as [(R,?)|(n,(R,?))]; auto.
-    rewrite R in *; clear R; inversion H.
-    destruct (MT_Extra.find_rw y (cg_nodes cg)) as [(R,?)|(?,(R,?))]; auto.
-    rewrite R in *; clear R; inversion H.
-  Qed.
-
-  Lemma tee_join_dec:
-    forall x y cg,
-    { exists t nx ny, tee_join x y cg = Some t /\
-      MT.MapsTo x nx (cg_nodes cg) /\
-      MT.MapsTo y ny (cg_nodes cg) /\
-      t = make_join (cg_last_id cg) nx ny }
-    +
-    { tee_join x y cg = None /\ (~ MT.In x (cg_nodes cg) \/ ~ MT.In y (cg_nodes cg)) }.
+  Lemma reduces_ex_to_reduces:
+    forall cg o cg',
+    ReducesEx cg o cg' ->
+    Reduces cg o cg'.
   Proof.
     intros.
-    remember (tee_join x y cg).
-    symmetry in Heqo.
-    destruct o.
-    - left.
-      apply tee_join_inv_some in Heqo.
-      destruct Heqo as (?,(?,(?,(?,?)))).
-      eauto 7. (* try harder *)
-    - eauto using tee_join_inv_none.
+    inversion H; subst; clear H.
+    assert (R: cg_add_tee vs' o es = make_tee o nx nx' ny :: es) by eauto.
+    rewrite <- R.
+    auto using reduces_step, reduces_ex_to_reduces.
   Qed.
 
-  Lemma in_fork_1:
-    forall x y cg,
-    In x cg ->
-    In y (cg_fork x y cg).
+  Lemma reduces_ex_iff:
+    forall cg o cg',
+    Reduces cg o cg' <->
+    ReducesEx cg o cg'.
   Proof.
-    intros.
-    unfold cg_fork, In, cg_add.
-    destruct cg.
-    remember (tee_fork _ _ _).
-    symmetry in Heqo.
-    destruct o; simpl in *.
-    - apply tee_fork_inv_some in Heqo.
-      destruct Heqo as (n, (mt, R)).
-      subst.
-      simpl in *.
-      rewrite MT_Facts.add_in_iff.
-      right.
-      rewrite MT_Facts.add_in_iff; auto.
-    - apply tee_fork_inv_none in Heqo.
-      contradiction.
+    split; eauto using reduces_to_reduces_ex, reduces_ex_to_reduces.
   Qed.
 
-  Let in_cg_add:
-    forall z cg o,
-    MT.In z (cg_nodes cg) ->
-    MT.In z (cg_nodes (cg_add o cg)).
-  Proof.
-    unfold cg_add, cg_nodes_add.
-    destruct cg, o; simpl in *; intros.
-    - destruct t; destruct ntype0, intra0, inter0; simpl;
-      repeat rewrite MT_Facts.add_in_iff; auto.
-    - auto.
-  Qed.
-
-  Lemma in_fork_2:
-    forall x y z cg,
-    In z cg ->
-    In z (cg_fork x y cg).
-  Proof.
-    unfold cg_fork, In.
-    intros.
-    auto.
-  Qed.
-
-  Lemma in_join_2:
-    forall x y z cg,
-    In z cg ->
-    In z (cg_join x y cg).
-  Proof.
-    unfold cg_join, In.
-    intros.
-    auto.
-  Qed.
+  Definition make_cg x : computation_graph := (make x, nil).
 
   Inductive CG (x:tid): trace -> computation_graph -> Prop :=
   | cg_nil:
     CG x nil (make_cg x)
-  | cg_cons_fork:
-    forall a b l cg,
-    CG x l cg ->
-    In a cg ->
-    a <> b ->
-    CG x ({| op_t := FORK; op_src := a; op_dst := b |} :: l) (cg_fork a b cg)
-  | cg_cons_join:
-    forall a b l cg,
-    CG x l cg ->
-    In a cg ->
-    In b cg ->
-    CG x ({| op_t := JOIN; op_src := a; op_dst := b |} :: l) (cg_join a b cg).
+  | cg_cons:
+    forall cg o t cg',
+    CG x t cg ->
+    Reduces cg o cg' ->
+    CG x (o::t) cg'.
 
-  Lemma cg_fun:
-    forall x l cg cg',
-    CG x l cg ->
-    CG x l cg' ->
-    cg = cg'.
+  Definition cg_tees (cg:computation_graph) := snd cg.
+
+  Definition cg_nodes (cg:computation_graph) := fst cg.
+
+  Definition to_edges (v:tee) := inter v :: intra v :: nil.
+
+  Definition cg_edges cg :=
+  flat_map to_edges (cg_tees cg).
+
+  Definition cg_lookup x cg :=
+  match MT.find x (cg_ids (cg_nodes cg)) with
+  | Some (n::_) => Some {| node_task := x; node_id := n |}
+  | _ => None
+  end.
+
+  (** Any node in the CG graph must be in the nodes. *)
+
+  Definition WellFormedEdges (cg:computation_graph) :=
+  forall n1 n2,
+  FGraph.Edge (cg_edges cg) (n1, n2) ->
+  Contains n1 (cg_ids (cg_nodes cg)) /\ Contains n2 (cg_ids (cg_nodes cg)).
+
+  Lemma wf_edges_reduces:
+    forall cg o cg',
+    WellFormedEdges cg ->
+    Reduces cg o cg' ->
+    WellFormedEdges cg'.
   Proof.
-    induction l; intros. {
-      inversion H; inversion H0; auto.
+    intros.
+    apply reduces_to_reduces_ex in H0.
+    inversion H0; subst; clear H0.
+    assert (Hneq: op_src o <> op_dst o) by eauto using reduces_src_neq_dst, Nodes.reduces_ex_to_reduces.
+    unfold WellFormedEdges; intros.
+    inversion H1; subst; clear H1; simpl in *.
+    - apply MT.add_3 in H3; auto.
+      assert (R: nx' :: nx :: lx = S (cg_last_id vs) :: n :: l). {
+        rewrite MT_Facts.add_mapsto_iff in H2.
+        destruct H2 as [(?,?)|(N,?)]; auto.
+        contradiction N; trivial.
+      }
+      inversion R; subst; clear R.
+      assert (R: ny :: ly = S (S (cg_last_id vs)) :: nil). {
+        rewrite MT_Facts.add_mapsto_iff in H3.
+        destruct H3 as [(?,?)|(N,?)]; auto.
+        contradiction N; trivial.
+      }
+      inversion R; subst; clear R.
+      destruct H0 as [E|[E|?]]; try (inversion E; subst; clear E).
+      + auto using contains_add_1, contains_add_2 with *.
+      + auto using contains_add_1, contains_add_2 with *.
+      + apply H in H0.
+        destruct H0.
+        simpl in *.
+        split.
+        * destruct (tid_eq_dec (node_task n1) a). {
+            inversion H0; subst.
+            assert (l0 = n :: l) by eauto using MT_Facts.MapsTo_fun; subst.
+            auto using contains_add_1, contains_add_2 with *.
+          }
+          destruct (tid_eq_dec (node_task n1) b). {
+            inversion H0; subst.
+            destruct l0. {
+              inversion H7.
+            }
+            contradiction H5;
+            eauto using in_def, maps_to_def.
+          }
+          eauto using contains_add_1, contains_add_2, contains_add_3 with *.
+        * destruct (tid_eq_dec (node_task n2) a). {
+            inversion H1; subst.
+            assert (l0 = n :: l) by eauto using MT_Facts.MapsTo_fun; subst.
+            auto using contains_add_1, contains_add_2 with *.
+          }
+          destruct (tid_eq_dec (node_task n2) b). {
+            inversion H1; subst.
+            destruct l0. {
+              inversion H7.
+            }
+            contradiction H5;
+            eauto using in_def, maps_to_def.
+          }
+          eauto using contains_add_1, contains_add_2, contains_add_3 with *.
+    - apply MT.add_3 in H3; auto.
+      assert (R: nx' :: nx :: lx = S (cg_last_id vs) :: n :: l). {
+        rewrite MT_Facts.add_mapsto_iff in H2.
+        destruct H2 as [(?,?)|(N,?)]; auto.
+        contradiction N; trivial.
+      }
+      inversion R; subst; clear R.
+      destruct H0 as [E|[E|?]]; try (inversion E; subst; clear E).
+      + eauto using contains_add_2, maps_to_def, contains_def, List.in_eq.
+      + eauto using contains_add_1, maps_to_def, contains_def, List.in_eq, List.in_cons.
+      + apply H in H0.
+        destruct H0.
+        simpl in *.
+        split.
+        * destruct (tid_eq_dec (node_task n1) a). {
+            inversion H0; subst.
+            assert (l0 = n :: l) by eauto using MT_Facts.MapsTo_fun; subst.
+            auto using contains_add_1, contains_add_2 with *.
+          }
+          apply contains_add_2; auto.
+        * destruct (tid_eq_dec (node_task n2) a). {
+            inversion H1; subst.
+            assert (l0 = n :: l) by eauto using MT_Facts.MapsTo_fun; subst.
+            auto using contains_add_1, contains_add_2 with *.
+          }
+          apply contains_add_2; auto.
+  Qed.
+
+  Let WellFormedNodes (cg:computation_graph) :=
+  forall n,
+  Graph.In (FGraph.Edge (cg_edges cg)) n ->
+  Contains n (cg_ids (cg_nodes cg)).
+
+  Let well_formed_nodes_to_edges:
+    forall cg,
+    WellFormedNodes cg ->
+    WellFormedEdges cg.
+  Proof.
+    unfold WellFormedNodes, WellFormedEdges.
+    eauto 6 using in_left, in_right.
+  Qed.
+
+  Let well_formed_edges_to_nodes:
+    forall cg,
+    WellFormedEdges cg ->
+    WellFormedNodes cg.
+  Proof.
+    unfold WellFormedNodes, WellFormedEdges.
+    intros.
+    destruct H0 as ((v1,v2),(Hx,[?|?])); simpl in *; subst;
+      apply H in Hx;
+      destruct Hx;
+      auto.
+  Qed.
+
+  Let well_formed_edges_iff:
+    forall cg,
+    WellFormedNodes cg <->
+    WellFormedEdges cg.
+  Proof.
+    split; eauto.
+  Qed.
+
+  Let wf_nodes_preservation:
+    forall cg o cg',
+    WellFormedNodes cg ->
+    Reduces cg o cg' ->
+    WellFormedNodes cg'.
+  Proof.
+    intros.
+    rewrite well_formed_edges_iff in *; auto.
+    eauto using wf_edges_reduces.
+  Qed.
+
+  Let cg_edges_make:
+    forall x,
+    cg_edges (make_cg x) = nil.
+  Proof.
+    intros.
+    unfold cg_edges, make_cg.
+    auto.
+  Qed.
+
+  Let wf_nodes_make:
+    forall x,
+    WellFormedNodes (make_cg x).
+  Proof.
+    unfold WellFormedNodes.
+    intros.
+    rewrite cg_edges_make in *.
+    simpl in *.
+    destruct H as (e, (Hx, Hy)).
+    inversion Hx.
+  Qed.
+
+  Let wf_nodes_0:
+    forall x t cg,
+    CG x t cg ->
+    WellFormedNodes cg.
+  Proof.
+    induction t; intros. {
+      inversion H.
+      auto using wf_nodes_make.
     }
-    destruct a;
-    destruct op_t0;
-    inversion H;
-    inversion H0;
-    subst;
-    assert (cg0 = cg1) by auto; subst; auto.
+    inversion H; subst.
+    eauto.
+  Qed.
+
+  Lemma node_in_ids:
+    forall x t cg n,
+    CG x t cg ->
+    Graph.In (FGraph.Edge (cg_edges cg)) n ->
+    Contains n (cg_ids (cg_nodes cg)).
+  Proof.
+    intros.
+    apply wf_nodes_0 in H.
+    unfold WellFormedNodes in *.
+    auto.
+  Qed.
+
+  Lemma node_in_cg:
+    forall x t cg n,
+    CG x t cg ->
+    Graph.In (FGraph.Edge (cg_edges cg)) n ->
+    In (node_task n) (cg_nodes cg).
+  Proof.
+    intros.
+    eapply node_in_ids in H0; eauto
+    using contains_to_in.
+  Qed.
+
+End Edges.
+
+Section Defs.
+
+  Lemma in_make:
+    forall t,
+    Nodes.In t (cg_nodes (make_cg t)).
+  Proof.
+    intros.
+    simpl.
+    auto using Nodes.in_make.
   Qed.
 
   (**
@@ -378,7 +689,7 @@ Section Defs.
   | FORK_EDGE
   | JOIN_EDGE.
 
-  Inductive Edge : edge_type -> edge -> tee -> Prop :=
+  Inductive Edge : edge_type -> (node * node) -> tee -> Prop :=
   | edge_continue:
     forall t,
     Edge CONTINUE_EDGE (intra t) t
@@ -397,7 +708,7 @@ Section Defs.
 
   Variable cg: computation_graph.
 
-  Definition HB_Edge_alt e := List.Exists (Prec e) (cg_tees cg).
+  Let HB_Edge_alt e := List.Exists (Prec e) (cg_tees cg).
 
   Definition HB_Edge := FGraph.Edge (cg_edges cg).
 
@@ -441,15 +752,12 @@ Section Defs.
 
   Lemma hb_edge_spec:
     forall e,
-    HB_Edge e <-> HB_Edge_alt e.
+    HB_Edge e <-> exists x, List.In x (cg_tees cg) /\ Prec e x.
   Proof.
     unfold HB_Edge, HB_Edge_alt, FGraph.Edge;
     split; intros.
-    - rewrite Exists_exists.
-      auto.
-    - rewrite Exists_exists in *.
-      destruct H as (?, (?,?)).
-      eauto.
+    - auto.
+    - destruct H as (?,(?,?)); eauto.
   Qed.
 
   (** Comparable with respect to the happens-before relation [n1 < n2 \/ n2 < n1] *)
@@ -495,191 +803,6 @@ Section Defs.
 
 End Defs.
 
-Section cg_nodes.
-
-  Lemma maps_to_fork_1:
-    forall a b n cg,
-    MT.MapsTo a n (cg_nodes cg) ->
-    node_task n = a ->
-    MT.MapsTo a (next_intra (node_task n) (cg_last_id cg)) (cg_nodes (cg_fork a b cg)).
-  Proof.
-    intros.
-    unfold cg_fork in *.
-    destruct (tee_fork_dec a b cg) as [(t,(n'',(R,(Hx,?))))|(R,Hn)]; subst.
-    - assert (n'' = n) by eauto using MT_Facts.MapsTo_fun; subst; clear Hx.
-      rewrite R; simpl; clear R.
-      rewrite MT_Facts.add_mapsto_iff in *.
-      eauto.
-    - contradiction Hn.
-      eauto using MT_Extra.mapsto_to_in.
-  Qed.
-
-  Lemma maps_to_fork_2:
-    forall a b na nb cg,
-    MT.MapsTo a na (cg_nodes cg) ->
-    node_task na = a ->
-    a <> b ->
-    MT.MapsTo b nb (cg_nodes (cg_fork a b cg)) ->
-    nb = fork_inter b (cg_last_id cg).
-  Proof.
-    intros.
-    unfold cg_fork in *.
-    rename H2 into mt.
-    destruct (tee_fork_dec a b cg) as [(t,(n'',(R,(Hx,?))))|(R,Hn)]; subst.
-    - assert (n'' = na) by eauto using MT_Facts.MapsTo_fun; subst; clear Hx.
-      rewrite R in *; simpl; clear R.
-      simpl in *.
-      rewrite MT_Facts.add_mapsto_iff in *.
-      destruct mt as [(?,?)|(?,mt)].
-      + contradiction.
-      + rewrite MT_Facts.add_mapsto_iff in *.
-        destruct mt as [(?,?)|(N,?)].
-        * subst.
-          auto.
-        * contradiction N; auto.
-    - contradiction Hn.
-      eauto using MT_Extra.mapsto_to_in.
-  Qed.
-
-  Lemma maps_to_fork_3:
-    forall x y z n nx cg,
-    z <> x ->
-    z <> y ->
-    MT.MapsTo z n (cg_nodes (cg_fork x y cg)) ->
-    MT.MapsTo x nx (cg_nodes cg) ->
-    node_task nx = x ->
-    MT.MapsTo z n (cg_nodes cg).
-  Proof.
-    intros.
-    unfold cg_fork in *.
-    rename H1 into mt.
-    destruct (tee_fork_dec x y cg) as [(t,(n'',(R,(Hx,?))))|(R,Hn)]; subst.
-    - rewrite R in *; simpl; clear R.
-      simpl in *.
-      rewrite MT_Facts.add_mapsto_iff in *.
-      destruct mt as [(?,?)|(?,mt)].
-      + assert (n''=nx) by eauto using MT_Facts.MapsTo_fun; subst.
-        contradiction H; auto.
-      + rewrite MT_Facts.add_mapsto_iff in *.
-        destruct mt as [(?,?)|(?,mt)].
-        * subst.
-          contradiction H0; auto.
-        * auto.
-    - contradiction Hn.
-      eauto using MT_Extra.mapsto_to_in.
-  Qed.
-
-  Lemma maps_to_join_1:
-    forall a b n cg,
-    MT.MapsTo a n (cg_nodes cg) ->
-    node_task n = a ->
-    MT.In b (cg_nodes cg) ->
-    MT.MapsTo a (next_intra (node_task n) (cg_last_id cg)) (cg_nodes (cg_join a b cg)).
-  Proof.
-    intros.
-    unfold cg_join in *.
-    destruct (tee_join_dec a b cg) as [(t,(nx',(ny',(R,(Hx,(Hy,?))))))|(R,[Hn|Hn])]; subst.
-    - assert (nx' = n) by eauto using MT_Facts.MapsTo_fun; subst; clear Hx.
-      rewrite R; simpl; clear R.
-      rewrite MT_Facts.add_mapsto_iff in *.
-      eauto.
-    - contradiction Hn.
-      eauto using MT_Extra.mapsto_to_in.
-    - contradiction Hn.
-  Qed.
-
-  Lemma maps_to_join_2:
-    forall a b na nb cg,
-    MT.MapsTo a na (cg_nodes cg) ->
-    node_task na = a ->
-    a <> b ->
-    MT.MapsTo b nb (cg_nodes (cg_join a b cg)) ->
-    MT.MapsTo b nb (cg_nodes cg).
-  Proof.
-    intros.
-    unfold cg_join in *.
-    rename H2 into mt.
-    destruct (tee_join_dec a b cg) as [(t,(nx',(ny',(R,(Hx,(Hy,?))))))|(R,[Hn|Hn])]; subst.
-    - assert (nx' = na) by eauto using MT_Facts.MapsTo_fun; subst; clear Hx.
-      rewrite R in *; simpl in *; clear R.
-      rewrite MT_Facts.add_mapsto_iff in *.
-      destruct mt as [(?,?)|(?,mt)].
-      + contradiction.
-      + assert (ny' = nb) by eauto using MT_Facts.MapsTo_fun; subst; clear Hy.
-        assumption.
-    - contradiction Hn.
-      eauto using MT_Extra.mapsto_to_in.
-    - rewrite R in *; simpl in *; clear R.
-      assumption.
-  Qed.
-
-  Lemma maps_to_join_3:
-    forall x y z n nx cg,
-    z <> x ->
-    z <> y ->
-    MT.MapsTo z n (cg_nodes (cg_join x y cg)) ->
-    MT.MapsTo x nx (cg_nodes cg) ->
-    node_task nx = x ->
-    MT.MapsTo z n (cg_nodes cg).
-  Proof.
-    intros.
-    unfold cg_join in *.
-    rename H1 into mt.
-    destruct (tee_join_dec x y cg) as [(t,(nx',(ny',(R,(Hx,(Hy,?))))))|(R,[Hn|Hn])];
-    subst; rewrite R in *; simpl in *; clear R.
-    - rewrite MT_Facts.add_mapsto_iff in *.
-      destruct mt as [(?,?)|(?,mt)].
-      + assert (nx'=nx) by eauto using MT_Facts.MapsTo_fun; subst.
-        contradiction H; auto.
-      + assumption.
-    - contradiction Hn.
-      eauto using MT_Extra.mapsto_to_in.
-    - assumption.
-  Qed.
-
-
-End cg_nodes.
-
-Section cg_tees.
-  Lemma tee_fork_rw:
-    forall a n b cg,
-    MT.MapsTo a n (cg_nodes cg) ->
-    a <> b ->
-    cg_tees (cg_fork a b cg) = make_fork (cg_last_id cg) n b :: cg_tees cg.
-  Proof.
-    unfold cg_fork.
-    intros.
-    destruct (tee_fork_dec a b cg) as [(v,(n',(?,(?,?))))|(?,Hn)]. {
-      assert(n'=n) by eauto using MT_Facts.MapsTo_fun; subst.
-      rewrite H1.
-      simpl.
-      trivial.
-    }
-    contradiction Hn.
-    eauto using MT_Extra.mapsto_to_in.
-  Qed.
-
-  Lemma tee_join_rw:
-    forall a b na nb cg,
-    MT.MapsTo a na (cg_nodes cg) ->
-    MT.MapsTo b nb (cg_nodes cg) ->
-    cg_tees (cg_join a b cg) = make_join (cg_last_id cg) na nb :: cg_tees cg.
-  Proof.
-    unfold cg_join.
-    intros.
-    destruct (tee_join_dec a b cg) as [(t,(nx',(ny',(R,(Hx,(Hy,?))))))|(R,[Hn|Hn])]; subst.
-    - assert (nx' = na) by eauto using MT_Facts.MapsTo_fun; subst; clear Hx.
-      assert (ny' = nb) by eauto using MT_Facts.MapsTo_fun; subst; clear Hy.
-      rewrite R.
-      simpl.
-      trivial.
-    - contradiction Hn.
-      eauto using MT_Extra.mapsto_to_in.
-    - contradiction Hn.
-      eauto using MT_Extra.mapsto_to_in.
-  Qed.
-End cg_tees.
-
 Section HB.
 
   Let walk2_edge_false:
@@ -714,7 +837,6 @@ Section HB.
 End HB.
 
 Module WellFormed.
-
   Inductive Forks : trace -> tid -> list tid -> Prop :=
   | forks_nil:
     forall x,
@@ -861,20 +983,20 @@ Module WellFormed.
     - eauto using NoDup_cons.
     - eauto using no_dup_remove.
   Qed.
-
+(*
   Let forks_in_cg:
     forall l x t cg ts,
     CG x l cg ->
     Forks l x ts ->
     List.In t ts ->
-    In t cg.
+    Nodes.In t (cg_nodes cg).
   Proof.
     induction l; intros. {
       inversion H0; subst.
       destruct H1. {
         subst.
         inversion H; subst.
-        auto using in_make.
+        auto using Top.in_make.
       }
       inversion H1.
     }
@@ -886,7 +1008,8 @@ Module WellFormed.
     - inversion H; subst; clear H.
       eauto using in_join_2.
   Qed.
-
+*)
+(*
   (**
    Building a CG from a trace.
    *)
@@ -909,7 +1032,8 @@ Module WellFormed.
       eauto using cg_cons_fork, forks_in_cg.
     - apply cg_cons_join; eauto using forks_in_cg.
   Qed.
-
+*)
+(*
   Lemma cg_node_task:
     forall x l cg t n,
     CG x l cg ->
@@ -975,8 +1099,8 @@ Module WellFormed.
         apply maps_to_join_2 with (na:=na) (b:=b) (nb:=n) in H0; eauto.
       }
       apply maps_to_join_3 with (x:=a) (y:=b) (z:=t) (nx:=na) in H0; eauto.
-  Qed.
-
+  Qed.*)
+(*
   Lemma maps_to_fork_1:
     forall x y n cg a l,
     CG a l cg ->
@@ -1118,6 +1242,109 @@ Module WellFormed.
       eauto.
   Qed.
 
+  Let cg_last_id_rw_fork:
+    forall cg a b,
+    MT.In a (cg_nodes cg) ->
+    cg_last_id (cg_fork a b cg) = S (S (cg_last_id cg)).
+  Proof.
+    intros.
+    unfold cg_fork.
+    destruct (tee_fork_dec a b cg) as [(?,(?,(R,(?,?))))|(?,?)].
+    - unfold tee_last_id.
+      rewrite R in *; subst.
+      auto.
+    - contradiction. 
+  Qed.*)
+(*
+  Lemma cg_to_nodes:
+    forall a l cg ns n,
+    CG a l cg ->
+    CGNodes.CGNodes a l ns n ->
+    MT.MapsTo a {| node_task := a; node_id := n |} (cg_nodes cg) ->
+    CGNodes.MapsTo a n ns.
+  Proof.
+    intros.
+    
+  Qed.
+    
+*)
+(*
+  Lemma cg_to_nodes:
+    forall a l cg,
+    CG a l cg ->
+    exists ns, CGNodes.CGNodes a l ns (cg_last_id cg).
+  Proof.
+    induction l; intros. {
+      inversion H.
+      simpl in *.
+      eauto using CGNodes.cg_nodes_nil.
+    }
+    inversion H; subst.
+    - apply IHl in H2.
+      destruct H2 as (ns, Hn).
+      rewrite cg_last_id_rw_fork; auto.
+      exists ((a1, S (cg_last_id cg0)) :: (b, S (S (cg_last_id cg0))) :: ns).
+      apply CGNodes.cg_nodes_cons_fork with (cg_last_id cg0); auto.
+  Qed.
+*)
+(*
+  Let tee_fork_rw:
+    forall x y cg cg',
+    tee_fork x y cg' = tee_fork x y cg ->
+    cg' = cg.
+  Proof.
+    intros.
+    destruct (tee_fork_dec x y cg'), (tee_fork_dec x y cg).
+    - destruct e as (t, (n, (mt, (R,?)))). 
+      destruct e0 as (t', (n', (mt', (R',?)))). 
+    remember (te
+    unfold tee_fork.
+    intros.
+    destruct
+  Qed.
+*)
+(*
+  Let cg_fork_rw:
+    forall x y cg cg',
+    In x cg' ->
+    x <> y ->
+    In x cg ->
+    cg_fork x y cg' = cg_fork x y cg ->
+    cg' = cg.
+  Proof.
+    intros.
+    unfold cg_fork in *.
+    destruct (tee_fork_dec x y cg'), (tee_fork_dec x y cg).
+    - destruct e as (?, (?, (R1,(?,?)))).
+      destruct e0 as (?, (?, (R2,(?,?)))).
+      rewrite R1 in *; rewrite R2 in *.
+      subst.
+      simpl in *.
+  Qed.
+  *)
+
+(*
+  Let cg_make_inv:
+
+    cg_fork x y (make_cg a) = cg_fork x y cg ->
+    cg = 
+*)
+(*
+  Lemma fork_is_gt:
+    forall vs es x,
+    WellFormedEdges (vs, es) ->
+    ~ Nodes.In (node_task x) vs ->
+    forall y, ~ HB_Edge (vs, es) (x, y).
+  Proof.
+    intros.
+    unfold HB_Edge.
+    unfold not; intros.
+    apply H in H1.
+    destruct H1.
+    contradiction H0.
+    auto using Nodes.contains_to_in.
+  Qed.
+*)
   End Defs.
 
 End WellFormed.
@@ -1134,7 +1361,7 @@ Module Lang.
   Definition from_effects := List.omap from_effect.
 
   (** Compute a CG from a trace of our language. *)
-
-  Definition effects_to_cg (x:tid) ts := trace_to_cg x (from_effects ts).
+(*
+  Definition effects_to_cg (x:tid) ts := trace_to_cg x (from_effects ts).*)
 
 End Lang.
