@@ -4,12 +4,22 @@ Require Import Aniceto.List.
 Require Import Aniceto.Graphs.Graph.
 Require Import Aniceto.Graphs.FGraph.
 
-Require Import CG.
 Require Import Tid.
 
 Require Import Aniceto.Graphs.FGraph.
 
 Section Defs.
+
+  Inductive op_type := FORK | JOIN.
+
+  Structure op := {
+    op_t: op_type;
+    op_src: tid;
+    op_dst: tid
+  }.
+
+  Definition trace := list op.    
+
   Notation known := (list (tid*tid)).
 
   Definition outgoing_of t (e:tid*tid) := let (x,y) := e in if tid_eq_dec x t then Some y else None.
@@ -139,7 +149,7 @@ Section Defs.
     eauto using reduces_fork, reduces_join.
   Qed.
 
-  Import Aniceto.Graphs.DAG.
+  Require Import Aniceto.Graphs.DAG.
 
   Let copy_from_eq:
     forall x y z k,
@@ -311,6 +321,24 @@ Section Defs.
       + inversion H.
         intuition.
       + auto.
+  Qed.
+
+  Lemma in_fork_4:
+    forall x y z k,
+    ~ Graph.In (FGraph.Edge k) y ->
+    List.In (z, y) (fork x y k) ->
+    z = x.
+  Proof.
+    intros.
+    apply fork_inv_in in H0.
+    destruct H0 as [(?,?)|[(?,?)|?]].
+    - subst.
+      contradiction H.
+      eauto using in_right.
+    - subst.
+      trivial.
+    - contradiction H.
+      eauto using in_right.
   Qed.
 
   Lemma in_join_2:
@@ -573,7 +601,7 @@ Section Defs.
 
   Notation R_DAG rs k := (DAG (R_Edge rs k)).
 
-  Import WellFormed.
+(*  Import WellFormed.*)
 
   Let running_infimum:
     forall rs k,
@@ -655,122 +683,3 @@ Section Defs.
   Qed.
 
 End Defs.
-
-Section HB.
-
-  (** Properties that relate to the safe-join set. *)
-(*
-  Lemma in_known_to_nodes:
-    forall t k cg a x,
-    Safe t k ->
-    CG a t cg -> 
-    Graph.In (Edge k) x ->
-    In x cg.
-  Proof.
-    induction t; intros. {
-      inversion H.
-      subst.
-      SearchAbout ( Graph.In (Edge _) _).
-    }
-    
-  Qed.
-*)
-
-  Definition WellFormedSafeJoins cg k :=
-    forall x y z,
-    HB_Edge cg (x, y) ->
-    List.In (node_task x, node_task z) k ->
-    Nodes.Contains z (cg_nodes cg) ->
-    node_task z <> node_task y ->
-    List.In (node_task y, node_task z) k.
-
-  Let wf_safe_joins:
-    forall cg k o cg' k',
-    WellFormedEdges cg ->
-    WellFormedSafeJoins cg k ->
-    CG.ReducesEx cg o cg' ->
-    Reduces k o k' ->
-    WellFormedSafeJoins cg' k'.
-  Proof.
-    intros.
-    unfold WellFormedSafeJoins; intros.
-    inversion H2; subst; clear H2;
-    inversion H1; subst; clear H1;
-    inversion H2; subst; clear H2;
-    simpl in *. {
-      (* fork *)
-      destruct H3 as [E|[E|?]];
-      try (inversion E; subst; clear E; auto using in_fork_3); simpl in *.
-      assert (He: HB_Edge (vs,es) (x, y)) by auto; clear H1.
-      apply fork_inv_in in H4.
-      destruct H4 as [(?,Hx)|[(?,?)|?]]; subst; simpl in *.
-      - contradiction H13.
-        assert (R:vs = cg_nodes (vs, es)) by auto; rewrite R in *.
-        apply H in He.
-        destruct He.
-        auto using Nodes.contains_to_in.
-      - destruct (tid_eq_dec (node_task x) (node_task y)). {
-          rewrite e in *.
-          unfold fork; rewrite in_app_iff; right.
-          auto using in_eq.
-        }
-        unfold fork.
-                clear H8 H9 H11.
-        assert (R:vs = cg_nodes (vs, es)) by auto; rewrite R in *.
-        apply H in He.
-        destruct He.
-        apply in_fork.
-        auto using in_fork_3.
-    }
-    (* join *)
-  Qed.
-
-  Lemma sj_hb:
-    forall t x y z k cg a,
-    Safe t k ->
-    CG a t cg -> 
-    HB_Edge cg (x, y) ->
-    List.In (node_task x, z) k ->
-    z <> node_task y ->
-    List.In (node_task y, z) k.
-  Proof.
-    induction t; intros. {
-      inversion H.
-      subst.
-      inversion H2.
-    }
-    inversion H; subst; clear H; rename k0 into k.
-    unfold eval in *.
-    inversion H0; subst; simpl in *; clear H0.
-    apply reduces_to_reduces_ex in H9.
-    inversion H9; subst; clear H9.
-    inversion H; subst; clear H; simpl in *.
-    - destruct H1 as [?|[?|?]].
-      + simpl in *.
-        inversion H; subst; clear H; simpl in *.
-        auto using in_fork_3.
-      + simpl in *. 
-        inversion H; subst; clear H; simpl in *.
-        auto using in_fork_3.
-      + assert (He: HB_Edge (vs,es) (x, y)) by auto; clear H.
-        apply fork_inv_in in H2.
-        destruct H2 as [(?,Hx)|[(?,?)|?]]; subst; simpl in *.
-        * contradiction H9.
-          assert (R:vs = cg_nodes (vs, es)) by auto; rewrite R.
-          eapply node_in_cg; eauto using in_left.
-        *  
-  Qed.
-End HB.
-
-Module Lang.
-
-  Fixpoint from_trace ts := 
-  match ts with
-  | nil => nil
-  | o :: ts => eval o (from_trace ts)
-  end.
-
-  Definition effects_to_sj ts := from_trace (CG.Lang.from_effects ts).
-
-  Definition Safe ts := Safe (CG.Lang.from_effects ts) (effects_to_sj ts).
-End Lang.

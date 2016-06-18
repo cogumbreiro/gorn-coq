@@ -6,6 +6,7 @@ src/Tid.v
 src/Dep.v
 src/Cid.v
 src/Lang.v
+src/Node.v
 src/CG.v
 src/Shadow_Ext.v
 src/Bijection.v
