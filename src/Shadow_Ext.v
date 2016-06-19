@@ -5,7 +5,7 @@ Require Import HJ.Mid.
 Require Import HJ.Cid.
 Require Import HJ.Var.
 Require Import HJ.Dep.
-Require Import Node.
+(*Require Import Node.*)
 
 (* ----- end of boiler-plate code ---- *)
 
@@ -32,7 +32,7 @@ Module Trace.
 
   Structure access := {
     a_t : mode;           (* how *)
-    a_src : node; (* when *)
+    a_src : nat; (* when *)
     a_dst : mid           (* what *)
   }.
 
@@ -110,7 +110,7 @@ Section Shadow_Ext.
 
   Definition Reads t h := Access READ t h.
 
-  Inductive CoAccess (x y:node) (h:mid): Prop :=
+  Inductive CoAccess (x y:nat) (h:mid): Prop :=
   | co_access_def:
     forall a,
     Writes x h ->
