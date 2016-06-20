@@ -254,18 +254,18 @@ Section Edges.
       auto using trace_of_continue.
   Qed.
 
-  Inductive CG (x:tid): trace -> computation_graph -> Prop :=
-  | cg_nil:
-    CG x nil (make_cg x)
-  | cg_cons:
+  Inductive Run (x:tid): trace -> computation_graph -> Prop :=
+  | run_nil:
+    Run x nil (make_cg x)
+  | run_cons:
     forall cg o t cg',
-    CG x t cg ->
+    Run x t cg ->
     Reduces cg o cg' ->
-    CG x (o::t) cg'.
+    Run x (o::t) cg'.
 
-  Lemma cg_to_trace_of:
+  Lemma run_to_trace_of:
     forall cg a t,
-    CG a t cg ->
+    Run a t cg ->
     TraceOf cg a t.
   Proof.
     intros.
@@ -275,28 +275,28 @@ Section Edges.
     eauto using trace_of_cons.
   Qed.
 
-  Lemma trace_of_to_cg:
+  Lemma trace_of_to_run:
     forall cg a t,
     TraceOf cg a t ->
-    CG a t cg.
+    Run a t cg.
   Proof.
     intros.
     induction H.
-    - apply cg_nil.
-    - eapply cg_cons; eauto.
+    - apply run_nil.
+    - eapply run_cons; eauto.
       apply reduces_fork; auto using Nodes.maps_to_eq, reduces_continue.
       assert (Nodes.MapsTo y (Nodes.next_id (x::vs)) (y :: x :: vs)) 
       by auto using Nodes.maps_to_eq.
       simpl in *; assumption.
-    - eauto using cg_cons, reduces_join, reduces_continue, Nodes.maps_to_eq, Nodes.maps_to_cons.
-    - eauto using cg_cons, reduces_continue, Nodes.maps_to_eq, Nodes.maps_to_cons.
+    - eauto using run_cons, reduces_join, reduces_continue, Nodes.maps_to_eq, Nodes.maps_to_cons.
+    - eauto using run_cons, reduces_continue, Nodes.maps_to_eq, Nodes.maps_to_cons.
   Qed.
 
   Lemma trace_of_spec:
     forall cg a t,
-    CG a t cg <-> TraceOf cg a t.
+    Run a t cg <-> TraceOf cg a t.
   Proof.
-    split; auto using trace_of_to_cg, cg_to_trace_of.
+    split; auto using trace_of_to_run, run_to_trace_of.
   Qed.
 
   Definition cg_nodes (cg:computation_graph) := fst cg.
