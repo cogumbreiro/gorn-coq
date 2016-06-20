@@ -204,12 +204,17 @@ Section Edges.
     TraceOf (make_cg x) x nil
   | trace_of_fork:
     forall vs es a t x y nx,
+    x <> y ->
+    Live (vs, es) x ->
+    ~ List.In y vs ->
     TraceOf (vs, es) a t ->
     Nodes.MapsTo x nx vs ->
     TraceOf (y::x::vs, F (nx, S (Nodes.next_id vs)) :: C (nx, Nodes.next_id vs) :: es)
        a ((x, FORK y)::t)
   | trace_of_join:
     forall vs es a t x y ny nx,
+    x <> y ->
+    Live (vs, es) x ->
     TraceOf (vs, es) a t ->
     Nodes.MapsTo x nx vs ->
     Nodes.MapsTo y ny vs ->
@@ -217,6 +222,7 @@ Section Edges.
        a ((x, JOIN y)::t)
   | trace_of_continue:
     forall vs es a t x nx,
+    Live (vs, es) x ->
     TraceOf (vs, es) a t ->
     Nodes.MapsTo x nx vs ->
     TraceOf (x::vs, C (nx, Nodes.next_id vs) :: es) a ((x, CONTINUE)::t).
@@ -268,7 +274,30 @@ Section Edges.
     }
     eauto using trace_of_cons.
   Qed.
-    
+
+  Lemma trace_of_to_cg:
+    forall cg a t,
+    TraceOf cg a t ->
+    CG a t cg.
+  Proof.
+    intros.
+    induction H.
+    - apply cg_nil.
+    - eapply cg_cons; eauto.
+      apply reduces_fork; auto using Nodes.maps_to_eq, reduces_continue.
+      assert (Nodes.MapsTo y (Nodes.next_id (x::vs)) (y :: x :: vs)) 
+      by auto using Nodes.maps_to_eq.
+      simpl in *; assumption.
+    - eauto using cg_cons, reduces_join, reduces_continue, Nodes.maps_to_eq, Nodes.maps_to_cons.
+    - eauto using cg_cons, reduces_continue, Nodes.maps_to_eq, Nodes.maps_to_cons.
+  Qed.
+
+  Lemma trace_of_spec:
+    forall cg a t,
+    CG a t cg <-> TraceOf cg a t.
+  Proof.
+    split; auto using trace_of_to_cg, cg_to_trace_of.
+  Qed.
 
   Definition cg_nodes (cg:computation_graph) := fst cg.
 
