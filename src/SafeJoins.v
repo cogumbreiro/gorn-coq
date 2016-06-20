@@ -683,3 +683,19 @@ Section Defs.
   Qed.
 
 End Defs.
+
+Section Examples.
+
+  Lemma reduces_fork_nil:
+    forall x y,
+    x <> y ->
+    Reduces nil {| op_t := FORK; op_src := x; op_dst := y |} ((x, y) :: nil).
+  Proof.
+    intros.
+    apply reduces_fork; auto.
+    intuition.
+    inversion H0.
+    destruct H1 as (N, _).
+    inversion N.
+  Qed.
+End Examples.
