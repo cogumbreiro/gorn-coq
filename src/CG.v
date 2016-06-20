@@ -37,16 +37,15 @@ Section Nodes.
 
   Notation node_ids := (list tid).
 
-  Definition make (x:tid) : node_ids := (x::nil).
+  Definition make (x:tid) : list tid := (x::nil).
 
-
-  Definition cg_last_id := @length tid.
+  Definition next_id := @length tid.
   (** Looks up the latest id of a given task. *)
 
   Inductive MapsTo (x:tid) : nat -> node_ids -> Prop :=
   | maps_to_eq:
     forall l,
-    MapsTo x (length l) (x::l)
+    MapsTo x (next_id l) (x::l)
   | maps_to_cons:
     forall l y n,
     x <> y ->
@@ -56,7 +55,7 @@ Section Nodes.
   Inductive IndexOf (x:tid) : nat -> node_ids -> Prop :=
   | index_of_eq:
     forall l,
-    IndexOf x (length l) (x::l)
+    IndexOf x (next_id l) (x::l)
   | index_of_cons:
     forall l y n,
     IndexOf x n l -> 
@@ -132,27 +131,54 @@ Section Edges.
     (forall y, ~ TaskEdge cg E_JOIN (x, y)) ->
     Live cg x.
 
+  Notation F := (cg_e E_FORK).
+  Notation J := (cg_e E_JOIN).
+  Notation C := (cg_e E_CONTINUE).
+
   Inductive Reduces: computation_graph -> event -> computation_graph -> Prop :=
   | reduces_fork:
     forall vs es es' vs' y x nx ny,
     Reduces (vs,es) (x, CONTINUE) (vs', es') ->
     Nodes.MapsTo x nx vs ->
     Nodes.MapsTo y ny (y::vs') ->
-    Reduces (vs,es) (x, FORK y) (y::vs', cg_e E_FORK (nx,ny) :: es')
+    Reduces (vs,es) (x, FORK y) (y::vs', F (nx,ny) :: es')
   | reduces_join:
     forall vs es vs' es' x y nx ny,
     Reduces (vs,es) (x, CONTINUE) (vs', es') ->
     Nodes.MapsTo x nx vs' ->
     Nodes.MapsTo y ny vs' ->
-    Reduces (vs,es) (x, JOIN y) (vs', cg_e E_JOIN (ny, nx) :: es)
+    Reduces (vs,es) (x, JOIN y) (vs', J (ny, nx) :: es')
   | reduces_continue:
     forall vs (es:list cg_edge) x prev curr,
     Live (vs,es) x ->
     Nodes.MapsTo x prev vs ->
     Nodes.MapsTo x curr (x::vs) ->
-    Reduces (vs,es) (x, CONTINUE) (x::vs, cg_e E_CONTINUE (prev, curr) :: es).
+    Reduces (vs,es) (x, CONTINUE) (x::vs, C (prev, curr) :: es).
 
   Definition make_cg x : computation_graph := (Nodes.make x, nil).
+
+  Inductive TraceOf : computation_graph -> tid -> trace -> Prop :=
+  | trace_of_nil:
+    forall x,
+    TraceOf (make_cg x) x nil
+  | trace_of_fork:
+    forall vs es a t x y nx,
+    TraceOf (vs, es) a t ->
+    Nodes.MapsTo x nx vs ->
+    TraceOf (y::x::vs, F (nx, S (Nodes.next_id vs)) :: C (nx, Nodes.next_id vs) :: es)
+       a ((x, FORK y)::t)
+  | trace_of_join:
+    forall vs es a t x y ny nx,
+    TraceOf (vs, es) a t ->
+    Nodes.MapsTo x nx vs ->
+    Nodes.MapsTo y ny vs ->
+    TraceOf (x::vs, J (ny, Nodes.next_id vs) :: C (nx, Nodes.next_id vs) :: es)
+       a ((x, JOIN y)::t)
+  | trace_of_continue:
+    forall vs es a t x nx,
+    TraceOf (vs, es) a t ->
+    Nodes.MapsTo x nx vs ->
+    TraceOf (x::vs, C (nx, Nodes.next_id vs) :: es) a ((x, CONTINUE)::t).
 
   Inductive CG (x:tid): trace -> computation_graph -> Prop :=
   | cg_nil:
