@@ -33,6 +33,15 @@ Section Defs.
     forall k x,
     Reduces k (x, CG.CONTINUE) k.
 
+  Inductive Run : list event -> known_set -> Prop :=
+  | run_nil:
+    Run nil nil
+  | run_cons:
+    forall k k' t e,
+    Run t k ->
+    Reduces k e k' ->
+    Run (e::t) k'.
+
 End Defs.
 
 End Events.
@@ -42,108 +51,6 @@ Section HB.
   Notation node := nat.
 
   Notation known_set := (list (tid * tid)).
-
-  Inductive Reduces ns : known_set -> cg_edge -> known_set -> Prop :=
-  | reduces_fork:
-    forall x y nx ny k k',
-    Nodes.IndexOf x nx ns ->
-    Nodes.IndexOf y ny ns ->
-    SafeJoins.Reduces k {| op_t := FORK; op_src := x; op_dst := y |} k' ->
-    Reduces ns k {| e_t := CG.E_FORK; e_edge := (nx,ny) |} k'
-  | reduces_join:
-    forall x y nx ny k k',
-    Nodes.IndexOf x nx ns ->
-    Nodes.IndexOf y ny ns ->
-    SafeJoins.Reduces k {| op_t := JOIN; op_src := x; op_dst := y |} k' ->
-    Reduces ns k {| e_t := CG.E_JOIN; e_edge := (ny,nx) |} k'
-  | reduces_continue:
-    forall k e,
-    Reduces ns k {| e_t := CG.E_CONTINUE; e_edge := e |} k.
-
-  Let reduces_cons_node:
-    forall v vs k e k',
-    Reduces vs k e k' ->
-    Reduces (v::vs) k e k'.
-  Proof.
-    intros.
-    inversion H; subst; clear H.
-    - eauto using reduces_fork, Nodes.index_of_cons.
-    - eauto using reduces_join, Nodes.index_of_cons.
-    - apply reduces_continue.
-  Qed.
-
-  Inductive ESafe ns : list cg_edge -> known_set -> Prop :=
-  | e_safe_nil:
-    ESafe ns nil nil
-  | e_safe_cons:
-    forall e k k' es,
-    ESafe ns es k ->
-    Reduces ns k e k' ->
-    ESafe ns (e::es) k'.
-
-  Let e_safe_cons_node:
-    forall v vs es k,
-    ESafe vs es k ->
-    ESafe (v::vs) es k.
-  Proof.
-    intros.
-    induction H; eauto using e_safe_nil, e_safe_cons.
-  Qed.
-
-  Definition Safe (cg:computation_graph) k := ESafe (fst cg) (snd cg) k.
-
-  Inductive CanJoin (k:known_set) : event -> Prop :=
-  | can_join_fork:
-    forall x y,
-    x <> y ->
-    ~ In (FGraph.Edge k) y ->
-    CanJoin k (x, CG.FORK y)
-  | can_join_join:
-    forall x y,
-    List.In (x, y) k ->
-    CanJoin k (x, CG.JOIN y)
-  | can_join_continue:
-    forall x,
-    CanJoin k (x, CG.CONTINUE).
-
-  Let safe_spec_0:
-    forall es vs k vs' es' e,
-    ESafe vs es k ->
-    CanJoin k e ->
-    CG.Reduces (vs,es) e (vs',es') ->
-    exists k', ESafe vs' es' k'.
-  Proof.
-    intros.
-    inversion H1; subst; simpl in *; clear H1.
-    - inversion H9; subst; simpl in *; clear H9.
-      exists (fork x y k).
-      apply e_safe_cons with (k:=k).
-      + eauto using reduces_continue, e_safe_cons.
-      + eapply reduces_fork; eauto using Nodes.index_of_cons, Nodes.maps_to_to_index_of.
-        inversion H0; subst.
-        auto using SafeJoins.reduces_fork.
-    - inversion H8; subst; simpl in *; clear H8.
-      inversion H0; subst; clear H0.
-      exists (join x y k).
-      apply e_safe_cons with (k:=k).
-      + eauto using reduces_continue, e_safe_cons.
-      + eapply reduces_join;
-        eauto using Nodes.index_of_cons, Nodes.maps_to_to_index_of, SafeJoins.reduces_join.
-    - eauto using e_safe_cons, e_safe_nil, reduces_continue.
-  Qed.
-
-  Let safe_spec:
-    forall cg k cg' e,
-    Safe cg k ->
-    CanJoin k e ->
-    CG.Reduces cg e cg' ->
-    exists k', Safe cg' k'.
-  Proof.
-    unfold Safe.
-    intros.
-    destruct cg, cg'.
-    eauto.
-  Qed.
 
   Inductive command :=
   | Cons: tid -> node -> command
