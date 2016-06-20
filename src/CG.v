@@ -107,6 +107,18 @@ Section Nodes.
     - eauto.
   Qed.
 
+  Lemma maps_to_to_index_of:
+    forall x nx vs,
+    MapsTo x nx vs ->
+    IndexOf x nx vs.
+  Proof.
+    intros.
+    induction H. {
+      auto using index_of_eq.
+    }
+    auto using index_of_cons.
+  Qed.
+
 End Nodes.
 End Nodes.
 
