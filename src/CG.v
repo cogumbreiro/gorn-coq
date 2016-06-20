@@ -69,6 +69,44 @@ Section Nodes.
     n < length l ->
     Contains n l.
 
+  Lemma maps_to_inv_eq:
+    forall x nx vs,
+    MapsTo x nx (x :: vs) ->
+    nx = next_id vs.
+  Proof.
+    intros.
+    inversion H; subst; auto.
+    contradiction H3; trivial.
+  Qed.
+
+  Lemma maps_to_neq:
+    forall x y vs n,
+    x <> y ->
+    MapsTo y n (x :: vs) ->
+    MapsTo y n vs.
+  Proof.
+    intros.
+    inversion H0.
+    - subst; contradiction H; trivial.
+    - assumption.
+  Qed.
+
+  Lemma maps_to_fun:
+    forall vs x nx nx',
+    MapsTo x nx vs ->
+    MapsTo x nx' vs ->
+    nx' = nx.
+  Proof.
+    induction vs; intros. {
+      inversion H.
+    }
+    inversion H; subst; clear H;
+    inversion H0; subst; clear H0; auto.
+    - contradiction H3; trivial.
+    - contradiction H4; trivial.
+    - eauto.
+  Qed.
+
 End Nodes.
 End Nodes.
 
@@ -138,12 +176,15 @@ Section Edges.
   Inductive Reduces: computation_graph -> event -> computation_graph -> Prop :=
   | reduces_fork:
     forall vs es es' vs' y x nx ny,
+    x <> y ->
+    ~ List.In y vs -> 
     Reduces (vs,es) (x, CONTINUE) (vs', es') ->
     Nodes.MapsTo x nx vs ->
     Nodes.MapsTo y ny (y::vs') ->
     Reduces (vs,es) (x, FORK y) (y::vs', F (nx,ny) :: es')
   | reduces_join:
     forall vs es vs' es' x y nx ny,
+    x <> y ->
     Reduces (vs,es) (x, CONTINUE) (vs', es') ->
     Nodes.MapsTo x nx vs' ->
     Nodes.MapsTo y ny vs' ->
@@ -180,6 +221,33 @@ Section Edges.
     Nodes.MapsTo x nx vs ->
     TraceOf (x::vs, C (nx, Nodes.next_id vs) :: es) a ((x, CONTINUE)::t).
 
+  Lemma trace_of_cons:
+    forall cg a t e cg',
+    TraceOf cg a t ->
+    Reduces cg e cg' ->
+    TraceOf cg' a (e::t).
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    - inversion H3; subst; clear H3.
+      assert (prev = nx) by eauto using Nodes.maps_to_fun; subst.
+      assert (curr = Nodes.next_id vs)
+      by eauto using Nodes.maps_to_inv_eq; subst.
+      assert (ny = Nodes.next_id (x::vs))
+      by eauto using Nodes.maps_to_inv_eq; subst.
+      simpl.
+      auto using trace_of_fork.
+    - inversion H2; subst; clear H2.
+      assert (curr = Nodes.next_id vs)
+      by eauto using Nodes.maps_to_inv_eq; subst.
+      assert (nx = Nodes.next_id vs)
+      by eauto using Nodes.maps_to_inv_eq; subst.
+      eauto using trace_of_join, Nodes.maps_to_neq.
+    - assert (curr = Nodes.next_id vs)
+      by eauto using Nodes.maps_to_inv_eq; subst.
+      auto using trace_of_continue.
+  Qed.
+
   Inductive CG (x:tid): trace -> computation_graph -> Prop :=
   | cg_nil:
     CG x nil (make_cg x)
@@ -188,6 +256,19 @@ Section Edges.
     CG x t cg ->
     Reduces cg o cg' ->
     CG x (o::t) cg'.
+
+  Lemma cg_to_trace_of:
+    forall cg a t,
+    CG a t cg ->
+    TraceOf cg a t.
+  Proof.
+    intros.
+    induction H. {
+      apply trace_of_nil.
+    }
+    eauto using trace_of_cons.
+  Qed.
+    
 
   Definition cg_nodes (cg:computation_graph) := fst cg.
 
