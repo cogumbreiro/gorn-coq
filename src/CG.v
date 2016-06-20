@@ -198,6 +198,17 @@ Section Edges.
 
   Definition make_cg x : computation_graph := (Nodes.make x, nil).
 
+  Inductive Run (x:tid): trace -> computation_graph -> Prop :=
+  | run_nil:
+    Run x nil (make_cg x)
+  | run_cons:
+    forall cg o t cg',
+    Run x t cg ->
+    Reduces cg o cg' ->
+    Run x (o::t) cg'.
+
+  (** Getting the trace from a computation, which works as the type of a CG. *)
+
   Inductive TraceOf : computation_graph -> tid -> trace -> Prop :=
   | trace_of_nil:
     forall x,
@@ -254,15 +265,6 @@ Section Edges.
       auto using trace_of_continue.
   Qed.
 
-  Inductive Run (x:tid): trace -> computation_graph -> Prop :=
-  | run_nil:
-    Run x nil (make_cg x)
-  | run_cons:
-    forall cg o t cg',
-    Run x t cg ->
-    Reduces cg o cg' ->
-    Run x (o::t) cg'.
-
   Lemma run_to_trace_of:
     forall cg a t,
     Run a t cg ->
@@ -291,6 +293,11 @@ Section Edges.
     - eauto using run_cons, reduces_join, reduces_continue, Nodes.maps_to_eq, Nodes.maps_to_cons.
     - eauto using run_cons, reduces_continue, Nodes.maps_to_eq, Nodes.maps_to_cons.
   Qed.
+
+  (**
+     The main result is that the information in the trace is
+     the same as the information in the CG.
+     *)
 
   Lemma trace_of_spec:
     forall cg a t,
