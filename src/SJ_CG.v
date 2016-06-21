@@ -99,10 +99,15 @@ Section HB.
     In y nx sj ->
     Knows vs sj (x, y).
 
-  Definition KnowsSpec vs sj k :=
+  Definition EdgeToKnows vs sj k :=
     forall p,
     List.In p k ->
     Knows vs sj p.
+
+  Definition CanJoinToEdge vs sj k :=
+    forall p,
+    Knows vs sj p ->
+    List.In p k.
 
   Definition FreeInGraph (cg:computation_graph) sj :=
     forall x,
@@ -152,6 +157,15 @@ Section HB.
       inversion H.
     }
     inversion H; subst; clear H; eauto.
+  Qed.
+
+  Let in_absurd_le:
+    forall sj n b,
+    length sj <= n ->
+    ~ In b n sj.
+  Proof.
+    unfold not; intros.
+    induction H0; simpl in *; auto with *.
   Qed.
 
   Let knows_cons:
@@ -365,18 +379,18 @@ Section HB.
 
   Let knows_spec_preserves:
     forall cg sj k k' cg' sj' e,
-    KnowsSpec (fst cg) sj k ->
+    EdgeToKnows (fst cg) sj k ->
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
     Reduces sj cg' sj' ->
     FreeInGraph cg sj ->
     length (fst cg) = length sj ->
-    KnowsSpec (fst cg') sj' k'.
+    EdgeToKnows (fst cg') sj' k'.
   Proof.
     intros.
     rename H3 into Hdom.
     rename H4 into Heq.
-    unfold KnowsSpec in *.
+    unfold EdgeToKnows in *.
     intros.
     inversion H0; subst; clear H0.
     - inversion H4; subst; clear H4.
@@ -468,6 +482,71 @@ Section HB.
       eauto using List.in_cons, free_neq_append.
     - inversion H1; subst; clear H1.
       eauto.
+  Qed.
+
+  Let nat_absurd_succ:
+    forall n,
+    n <> S n.
+  Proof.
+    intros.
+    unfold not; intros.
+    induction n.
+    - inversion H.
+    - inversion H; auto.
+  Qed.
+
+  Let can_join_fork:
+    forall cg cg' sj sj' k k' a b x y,
+    CanJoinToEdge (fst cg) sj k ->
+    Events.Reduces k (x, CG.FORK y) k' ->
+    CG.Reduces cg (x, CG.FORK y) cg' ->
+    Reduces sj cg' sj' ->
+    Knows (fst cg') sj' (a, b) ->
+    length (fst cg) = length sj ->
+    List.In (a, b) k'.
+  Proof.
+    intros.
+    rename H4 into Heq.
+    inversion H0; subst; clear H0.
+    inversion H8; subst; clear H8.
+    inversion H1; subst; clear H1.
+    inversion H9; subst; clear H9.
+    simpl in *.
+    inversion H3; subst; clear H3.
+    inversion H2; subst; clear H2.
+    clear H11 H6.
+    inversion H4. {
+      subst.
+      assert (rw: length (x :: vs) = length (Cons y prev :: sj)) by (simpl in *; auto).
+      rewrite rw in *.
+      inversion H9; subst; clear H9. {
+        (* absurd *)
+        inversion H2; subst; clear H2.
+        - apply in_absurd_le in H3; simpl; auto.
+          contradiction.
+        - apply nat_absurd_succ in H1; contradiction.
+        - apply nat_absurd_succ in H0; contradiction.
+      }
+      inversion H2; subst.
+      - 
+    }
+  Qed.
+
+  Let can_join_preserves:
+    forall cg sj cg' sj' e k' k,
+    CanJoinToEdge (fst cg) sj k ->
+    Events.Reduces k e k' ->
+    CG.Reduces cg e cg' ->
+    Reduces sj cg' sj' ->
+    CanJoinToEdge (fst cg') sj' k'.
+  Proof.
+    intros.
+    unfold CanJoinToEdge; intros; destruct p as (a,b).
+    destruct e as (x, [y|y|]).
+    - 
+    inversion H1; subst; clear H1; simpl in *.
+    - inversion H3; subst; clear H3.
+      
   Qed.
 
   Let flat_sj := MN.t (list tid).
