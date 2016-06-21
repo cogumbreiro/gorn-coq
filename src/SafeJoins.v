@@ -323,6 +323,20 @@ Section Defs.
       + auto.
   Qed.
 
+  Lemma join_inv_in:
+    forall x y a b k,
+    List.In (x, y) (join a b k) ->
+    (x = a /\ List.In (b, y) k) \/ List.In (x, y) k.
+  Proof.
+    intros.
+    unfold join in *.
+    rewrite in_app_iff in *.
+    destruct H.
+    - apply copy_from_inv_in in H.
+      intuition.
+    - auto.
+  Qed.
+
   Lemma in_fork_4:
     forall x y z k,
     ~ Graph.In (FGraph.Edge k) y ->
