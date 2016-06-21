@@ -21,7 +21,7 @@ Require Aniceto.Graphs.Graph.
 
 Require Import Coq.Structures.OrderedTypeEx.
 
-Section Trace.
+Section Defs.
 
   Inductive op :=
   | FORK : tid -> op
@@ -31,174 +31,6 @@ Section Trace.
   Definition event := (tid * op) % type.
   Definition trace := list event.    
 
-End Trace.
-(*
-Module Nodes.
-Section Nodes.
-
-  Notation node_ids := (list tid).
-
-  Definition make (x:tid) : list tid := (x::nil).
-
-  Definition next_id := @length tid.
-  (** Looks up the latest id of a given task. *)
-
-  Inductive MapsTo (x:tid) : nat -> node_ids -> Prop :=
-  | maps_to_eq:
-    forall l,
-    MapsTo x (next_id l) (x::l)
-  | maps_to_cons:
-    forall l y n,
-    x <> y ->
-    MapsTo x n l -> 
-    MapsTo x n (y :: l). 
-
-  Inductive IndexOf (x:tid) : nat -> node_ids -> Prop :=
-  | index_of_eq:
-    forall l,
-    IndexOf x (next_id l) (x::l)
-  | index_of_cons:
-    forall l y n,
-    IndexOf x n l -> 
-    IndexOf x n (y :: l). 
-
-  (** If this property holds then x was assigned to this id
-    at one point in time. *)
-
-  Lemma maps_to_inv_eq:
-    forall x nx vs,
-    MapsTo x nx (x :: vs) ->
-    nx = next_id vs.
-  Proof.
-    intros.
-    inversion H; subst; auto.
-    contradiction H3; trivial.
-  Qed.
-
-  Lemma maps_to_neq:
-    forall x y vs n,
-    x <> y ->
-    MapsTo y n (x :: vs) ->
-    MapsTo y n vs.
-  Proof.
-    intros.
-    inversion H0.
-    - subst; contradiction H; trivial.
-    - assumption.
-  Qed.
-
-  Lemma maps_to_fun_2:
-    forall vs x n n',
-    MapsTo x n vs ->
-    MapsTo x n' vs ->
-    n' = n.
-  Proof.
-    induction vs; intros. {
-      inversion H.
-    }
-    inversion H; subst; clear H;
-    inversion H0; subst; clear H0; auto.
-    - contradiction H3; trivial.
-    - contradiction H4; trivial.
-    - eauto.
-  Qed.
-
-  Lemma maps_to_to_index_of:
-    forall x nx vs,
-    MapsTo x nx vs ->
-    IndexOf x nx vs.
-  Proof.
-    intros.
-    induction H. {
-      auto using index_of_eq.
-    }
-    auto using index_of_cons.
-  Qed.
-
-  Lemma maps_to_lt:
-    forall x n vs,
-    MapsTo x n vs ->
-    n < length vs.
-  Proof.
-    induction vs; intros. {
-      inversion H.
-    }
-    inversion H; subst. {
-      unfold next_id; auto.
-    }
-    apply IHvs in H4.
-    simpl.
-    auto.
-  Qed.
-
-  Lemma maps_to_absurd_next_id:
-    forall x vs,
-    ~ MapsTo x (next_id vs) vs.
-  Proof.
-    intros.
-    unfold not; intros.
-    apply maps_to_lt in H.
-    unfold next_id in H.
-    apply Lt.lt_irrefl in H.
-    assumption.
-  Qed.
-
-  Lemma maps_to_absurd_cons:
-    forall x n vs,
-    MapsTo x n vs ->
-    ~ (MapsTo x n (x :: vs)).
-  Proof.
-    intros.
-    unfold not; intros.
-    assert (n = next_id vs) by eauto using maps_to_inv_eq; subst.
-    apply maps_to_absurd_next_id in H.
-    contradiction.
-  Qed.
-
-  Lemma maps_to_inv_task:
-    forall x y l,
-    MapsTo y (next_id l) (x :: l) ->
-    y = x.
-  Proof.
-    intros.
-    inversion H; subst. {
-      trivial.
-    }
-    apply maps_to_absurd_next_id in H4; contradiction.
-  Qed.
-
-  Lemma maps_to_fun_1:
-    forall x y n vs,
-    MapsTo x n vs ->
-    MapsTo y n vs ->
-    y = x.
-  Proof.
-    intros.
-    induction H. {
-      eauto using maps_to_inv_task.
-    }
-    inversion H0; subst. {
-      apply maps_to_absurd_next_id in H1.
-      contradiction.
-    }
-    auto.
-  Qed.
-
-  Lemma maps_to_to_in:
-    forall x n vs,
-    MapsTo x n vs ->
-    List.In x vs.
-  Proof.
-    intros.
-    induction H. {
-      auto using List.in_eq.
-    }
-    auto using List.in_cons.
-  Qed.
-
-End Nodes.
-End Nodes.
-*)
   Inductive edge_type :=
   | E_FORK
   | E_JOIN
@@ -208,10 +40,11 @@ End Nodes.
     e_t: edge_type;
     e_edge: (nat * nat)
   }.
+End Defs.
 
-  Notation F := (cg_e E_FORK).
-  Notation J := (cg_e E_JOIN).
-  Notation C := (cg_e E_CONTINUE).
+Notation F := (cg_e E_FORK).
+Notation J := (cg_e E_JOIN).
+Notation C := (cg_e E_CONTINUE).
 
 Section Edges.
 
@@ -403,7 +236,7 @@ Section Edges.
 
 End Edges.
 
-Section Defs.
+Section Props.
 
   Lemma in_make:
     forall t,
@@ -512,7 +345,7 @@ Section Defs.
     Relation x y.
   Admitted. (* TODO: prove this at the graph-level *)
 
-End Defs.
+End Props.
 
 Section HB.
 
