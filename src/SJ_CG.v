@@ -168,6 +168,16 @@ Section HB.
     induction H0; simpl in *; auto with *.
   Qed.
 
+  Let in_le:
+    forall x n sj c,
+    n < length sj ->
+    In x n (c :: sj) ->
+    In x n sj.
+  Proof.
+    intros.
+    inversion H0; subst; try apply Lt.lt_irrefl in H; auto; contradiction.
+  Qed.
+
   Let knows_cons:
     forall vs sj a b c x,
     Knows vs sj (a, b) ->
@@ -503,10 +513,12 @@ Section HB.
     Reduces sj cg' sj' ->
     Knows (fst cg') sj' (a, b) ->
     length (fst cg) = length sj ->
+    a <> b ->
     List.In (a, b) k'.
   Proof.
     intros.
     rename H4 into Heq.
+    rename H5 into Hneq.
     inversion H0; subst; clear H0.
     inversion H8; subst; clear H8.
     inversion H1; subst; clear H1.
@@ -515,8 +527,7 @@ Section HB.
     inversion H3; subst; clear H3.
     inversion H2; subst; clear H2.
     clear H11 H6.
-    inversion H4. {
-      subst.
+    inversion H4; subst; clear H4. {
       assert (rw: length (x :: vs) = length (Cons y prev :: sj)) by (simpl in *; auto).
       rewrite rw in *.
       inversion H9; subst; clear H9. {
@@ -527,9 +538,24 @@ Section HB.
         - apply nat_absurd_succ in H1; contradiction.
         - apply nat_absurd_succ in H0; contradiction.
       }
-      inversion H2; subst.
-      - 
+      inversion H2; subst; clear H2; eauto using in_fork_2, knows_def.
+      contradiction Hneq.
+      trivial.
     }
+    inversion H6; subst; clear H6. {
+      rewrite Heq in H9.
+      apply in_le in H9; auto.
+      inversion H9; subst; clear H9.
+      - apply in_absurd_le in H2; simpl; auto.
+        contradiction.
+      - auto using in_fork_5.
+      - eauto using knows_def, in_fork.
+    }
+    assert (nx0 < length vs) by eauto using maps_to_lt.
+    rewrite Heq in *.
+    apply in_le in H9; simpl; auto.
+    apply in_le in H9; simpl; auto.
+    eauto using knows_def, in_fork.
   Qed.
 
   Let can_join_preserves:
