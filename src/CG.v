@@ -119,18 +119,36 @@ Section Nodes.
     auto using index_of_cons.
   Qed.
 
+  Lemma maps_to_lt:
+    forall x n vs,
+    MapsTo x n vs ->
+    n < length vs.
+  Proof.
+    induction vs; intros. {
+      inversion H.
+    }
+    inversion H; subst. {
+      unfold next_id; auto.
+    }
+    apply IHvs in H4.
+    simpl.
+    auto.
+  Qed.
+
+  Lemma maps_to_absurd_next_id:
+    forall x vs,
+    ~ MapsTo x (next_id vs) vs.
+  Proof.
+    intros.
+    unfold not; intros.
+    apply maps_to_lt in H.
+    unfold next_id in H.
+    apply Lt.lt_irrefl in H.
+    assumption.
+  Qed.
+
 End Nodes.
 End Nodes.
-
-Section Edges.
-
-  Notation node := nat.
-  Notation edge := (node * node) % type.
-
-  (**
-    When creating a tee, the inter edge is the only thing
-    that changes depending on the type of the node.
-    *)
 
   Inductive edge_type :=
   | E_FORK
@@ -139,8 +157,23 @@ Section Edges.
 
   Structure cg_edge := cg_e {
     e_t: edge_type;
-    e_edge: (node * node)
+    e_edge: (nat * nat)
   }.
+
+  Notation F := (cg_e E_FORK).
+  Notation J := (cg_e E_JOIN).
+  Notation C := (cg_e E_CONTINUE).
+
+Section Edges.
+
+  (**
+    When creating a tee, the inter edge is the only thing
+    that changes depending on the type of the node.
+    *)
+
+
+  Notation node := nat.
+  Notation edge := (node * node) % type.
 
   Definition computation_graph := (list tid * list cg_edge) % type.
 
@@ -181,9 +214,6 @@ Section Edges.
     (forall y, ~ TaskEdge cg E_JOIN (x, y)) ->
     Live cg x.
 
-  Notation F := (cg_e E_FORK).
-  Notation J := (cg_e E_JOIN).
-  Notation C := (cg_e E_CONTINUE).
 
   Inductive Reduces: computation_graph -> event -> computation_graph -> Prop :=
   | reduces_fork:
