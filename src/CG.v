@@ -91,11 +91,11 @@ Section Nodes.
     - assumption.
   Qed.
 
-  Lemma maps_to_fun:
-    forall vs x nx nx',
-    MapsTo x nx vs ->
-    MapsTo x nx' vs ->
-    nx' = nx.
+  Lemma maps_to_fun_2:
+    forall vs x n n',
+    MapsTo x n vs ->
+    MapsTo x n' vs ->
+    n' = n.
   Proof.
     induction vs; intros. {
       inversion H.
@@ -147,6 +147,34 @@ Section Nodes.
     assumption.
   Qed.
 
+  Lemma maps_to_inv_task:
+    forall x y l,
+    MapsTo y (next_id l) (x :: l) ->
+    y = x.
+  Proof.
+    intros.
+    inversion H; subst. {
+      trivial.
+    }
+    apply maps_to_absurd_next_id in H4; contradiction.
+  Qed.
+
+  Lemma maps_to_fun_1:
+    forall x y n vs,
+    MapsTo x n vs ->
+    MapsTo y n vs ->
+    y = x.
+  Proof.
+    intros.
+    induction H. {
+      eauto using maps_to_inv_task.
+    }
+    inversion H0; subst. {
+      apply maps_to_absurd_next_id in H1.
+      contradiction.
+    }
+    auto.
+  Qed.
 End Nodes.
 End Nodes.
 
@@ -289,7 +317,7 @@ Section Edges.
     intros.
     inversion H0; subst; clear H0.
     - inversion H3; subst; clear H3.
-      assert (prev = nx) by eauto using Nodes.maps_to_fun; subst.
+      assert (prev = nx) by eauto using Nodes.maps_to_fun_2; subst.
       assert (curr = Nodes.next_id vs)
       by eauto using Nodes.maps_to_inv_eq; subst.
       assert (ny = Nodes.next_id (x::vs))
