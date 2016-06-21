@@ -126,7 +126,7 @@ Section HB.
     intros.
     inversion H; subst; clear H.
     inversion H6; subst; clear H6.
-    assert (prev = nx) by eauto using Nodes.maps_to_fun; subst; clear H12.
+    assert (prev = nx) by eauto using Nodes.maps_to_fun_2; subst; clear H12.
     apply knows_def with (nx:=ny); auto.
     inversion H0; subst; clear H0.
     apply in_copy.
@@ -138,7 +138,7 @@ Section HB.
       apply Nodes.maps_to_absurd_next_id in H8.
       contradiction.
     }
-    assert (nx0 = nx) by eauto using Nodes.maps_to_fun; subst.
+    assert (nx0 = nx) by eauto using Nodes.maps_to_fun_2; subst.
     apply in_neq; auto.
   Qed.
 
@@ -162,6 +162,7 @@ Section HB.
         contradiction.
       }
       apply in_neq; auto.
+      assert (ty = y) by eauto using Nodes.maps_to_fun_1; subst.
       apply in_eq.
   Qed.
 
