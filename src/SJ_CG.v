@@ -131,8 +131,39 @@ Section HB.
     inversion H0; subst; clear H0.
     apply in_copy.
     inversion H1; subst; simpl in *; clear H1.
+    assert (nx <> curr). {
+      unfold not; intros; subst.
+      assert (curr = Nodes.next_id vs) by eauto using Nodes.maps_to_inv_eq.
+      subst.
+      apply Nodes.maps_to_absurd_next_id in H8.
+      contradiction.
+    }
+    assert (nx0 = nx) by eauto using Nodes.maps_to_fun; subst.
+    apply in_neq; auto.
   Qed.
-  
+
+  Let do_fork_2:
+    forall sj sj' cg cg' x y,
+    Reduces sj cg' sj' ->
+    CG.Reduces cg (x, CG.FORK y) cg' ->
+    Knows cg' sj' (x, y).
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    inversion H5; subst; clear H5.
+    inversion H; subst; clear H H7.
+    apply knows_def with (nx:=curr).
+    - simpl.
+      auto using Nodes.maps_to_cons.
+    - assert (ny <> curr). {
+        intuition; subst.
+        assert (curr = Nodes.next_id (x::vs)) by eauto using Nodes.maps_to_inv_eq; subst.
+        apply Nodes.maps_to_absurd_next_id in H12.
+        contradiction.
+      }
+      apply in_neq; auto.
+      apply in_eq.
+  Qed.
 
   Lemma asdf:
     forall cg sj k k' cg' sj' e,
@@ -151,6 +182,8 @@ Section HB.
       apply fork_inv_in in H3.
       destruct H3 as [(?,?)|[(?,?)|?]]; subst.
       + apply H in H3; rename H3 into Hk.
+        eauto.
+      + 
         inversion H1; subst; clear H1.
         inversion H7; subst; clear H7.
         inversion H2; subst; clear H2.
