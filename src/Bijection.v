@@ -6,6 +6,16 @@ Require Omega.
 Section Defs.
   Variable A:Type.
 
+  Inductive MapsTo (x:A) : nat -> list A -> Prop :=
+  | maps_to_eq:
+    forall l,
+    MapsTo x (length l) (x::l)
+  | maps_to_cons:
+    forall l y n,
+    x <> y ->
+    MapsTo x n l ->
+    MapsTo x n (y :: l).
+
   Inductive IndexOf (x:A) : nat -> list A -> Prop :=
   | index_of_eq:
     forall l,
@@ -236,3 +246,136 @@ Section Defs.
 End Defs.
 
 
+Section MapsTo.
+  Variable A:Type.
+
+  Lemma maps_to_inv_eq:
+    forall (x:A) n vs,
+    MapsTo x n (x :: vs) ->
+    n = length vs.
+  Proof.
+    intros.
+    inversion H; subst; auto.
+    contradiction H3; trivial.
+  Qed.
+
+  Lemma maps_to_neq:
+    forall (x:A) y vs n,
+    x <> y ->
+    MapsTo y n (x :: vs) ->
+    MapsTo y n vs.
+  Proof.
+    intros.
+    inversion H0.
+    - subst; contradiction H; trivial.
+    - assumption.
+  Qed.
+
+  Lemma maps_to_fun_2:
+    forall vs (x:A) n n',
+    MapsTo x n vs ->
+    MapsTo x n' vs ->
+    n' = n.
+  Proof.
+    induction vs; intros. {
+      inversion H.
+    }
+    inversion H; subst; clear H;
+    inversion H0; subst; clear H0; auto.
+    - contradiction H3; trivial.
+    - contradiction H4; trivial.
+    - eauto.
+  Qed.
+
+  Lemma maps_to_to_index_of:
+    forall (x:A) nx vs,
+    MapsTo x nx vs ->
+    IndexOf x nx vs.
+  Proof.
+    intros.
+    induction H. {
+      auto using index_of_eq.
+    }
+    auto using index_of_cons.
+  Qed.
+
+  Lemma maps_to_lt:
+    forall (x:A) n vs,
+    MapsTo x n vs ->
+    n < length vs.
+  Proof.
+    induction vs; intros. {
+      inversion H.
+    }
+    inversion H; subst. {
+      auto.
+    }
+    apply IHvs in H4.
+    simpl.
+    auto.
+  Qed.
+
+  Lemma maps_to_absurd_length:
+    forall (x:A) vs,
+    ~ MapsTo x (length vs) vs.
+  Proof.
+    intros.
+    unfold not; intros.
+    apply maps_to_lt in H.
+    apply Lt.lt_irrefl in H.
+    assumption.
+  Qed.
+
+  Lemma maps_to_absurd_cons:
+    forall (x:A) n vs,
+    MapsTo x n vs ->
+    ~ (MapsTo x n (x :: vs)).
+  Proof.
+    intros.
+    unfold not; intros.
+    assert (n = length vs) by eauto using maps_to_inv_eq; subst.
+    apply maps_to_absurd_length in H.
+    contradiction.
+  Qed.
+
+  Lemma maps_to_inv_key:
+    forall (x:A) y l,
+    MapsTo y (length l) (x :: l) ->
+    y = x.
+  Proof.
+    intros.
+    inversion H; subst. {
+      trivial.
+    }
+    apply maps_to_absurd_length in H4; contradiction.
+  Qed.
+
+  Lemma maps_to_fun_1:
+    forall (x:A) y n vs,
+    MapsTo x n vs ->
+    MapsTo y n vs ->
+    y = x.
+  Proof.
+    intros.
+    induction H. {
+      eauto using maps_to_inv_key.
+    }
+    inversion H0; subst. {
+      apply maps_to_absurd_length in H1.
+      contradiction.
+    }
+    auto.
+  Qed.
+
+  Lemma maps_to_to_in:
+    forall (x:A) n vs,
+    MapsTo x n vs ->
+    List.In x vs.
+  Proof.
+    intros.
+    induction H. {
+      auto using List.in_eq.
+    }
+    auto using List.in_cons.
+  Qed.
+End MapsTo.

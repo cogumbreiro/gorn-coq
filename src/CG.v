@@ -4,11 +4,12 @@ Require Import Coq.Lists.ListSet.
 Require Import Aniceto.ListSet.
 Require Import Aniceto.Graphs.Graph.
 
-Require Import HJ.Tid.
-Require Import HJ.Mid.
-Require Import HJ.Cid.
-Require Import HJ.Var.
-Require Import HJ.Dep.
+Require Import Tid.
+Require Import Mid.
+Require Import Cid.
+Require Import Var.
+Require Import Dep.
+Require Import Bijection.
 
 (* ----- end of boiler-plate code ---- *)
 
@@ -31,7 +32,7 @@ Section Trace.
   Definition trace := list event.    
 
 End Trace.
-
+(*
 Module Nodes.
 Section Nodes.
 
@@ -63,11 +64,6 @@ Section Nodes.
 
   (** If this property holds then x was assigned to this id
     at one point in time. *)
-
-  Inductive Contains (n:nat) (l:list tid) : Prop :=
-  | contains_def:
-    n < length l ->
-    Contains n l.
 
   Lemma maps_to_inv_eq:
     forall x nx vs,
@@ -147,6 +143,18 @@ Section Nodes.
     assumption.
   Qed.
 
+  Lemma maps_to_absurd_cons:
+    forall x n vs,
+    MapsTo x n vs ->
+    ~ (MapsTo x n (x :: vs)).
+  Proof.
+    intros.
+    unfold not; intros.
+    assert (n = next_id vs) by eauto using maps_to_inv_eq; subst.
+    apply maps_to_absurd_next_id in H.
+    contradiction.
+  Qed.
+
   Lemma maps_to_inv_task:
     forall x y l,
     MapsTo y (next_id l) (x :: l) ->
@@ -190,7 +198,7 @@ Section Nodes.
 
 End Nodes.
 End Nodes.
-
+*)
   Inductive edge_type :=
   | E_FORK
   | E_JOIN
@@ -246,8 +254,8 @@ Section Edges.
   | task_edge_def:
     forall x y nx ny,
     Edge cg t (nx, ny) ->
-    Nodes.MapsTo x nx (fst cg) ->
-    Nodes.MapsTo y ny (fst cg) ->
+    MapsTo x nx (fst cg) ->
+    MapsTo y ny (fst cg) ->
     TaskEdge cg t (x, y).
 
   Inductive Live cg x : Prop :=
@@ -262,24 +270,24 @@ Section Edges.
     x <> y ->
     ~ List.In y vs -> 
     Reduces (vs,es) (x, CONTINUE) (vs', es') ->
-    Nodes.MapsTo x nx vs ->
-    Nodes.MapsTo y ny (y::vs') ->
+    MapsTo x nx vs ->
+    MapsTo y ny (y::vs') ->
     Reduces (vs,es) (x, FORK y) (y::vs', F (nx,ny) :: es')
   | reduces_join:
     forall vs es vs' es' x y nx ny,
     x <> y ->
     Reduces (vs,es) (x, CONTINUE) (vs', es') ->
-    Nodes.MapsTo x nx vs' ->
-    Nodes.MapsTo y ny vs' ->
+    MapsTo x nx vs' ->
+    MapsTo y ny vs' ->
     Reduces (vs,es) (x, JOIN y) (vs', J (ny, nx) :: es')
   | reduces_continue:
     forall vs (es:list cg_edge) x prev curr,
     Live (vs,es) x ->
-    Nodes.MapsTo x prev vs ->
-    Nodes.MapsTo x curr (x::vs) ->
+    MapsTo x prev vs ->
+    MapsTo x curr (x::vs) ->
     Reduces (vs,es) (x, CONTINUE) (x::vs, C (prev, curr) :: es).
 
-  Definition make_cg x : computation_graph := (Nodes.make x, nil).
+  Definition make_cg x : computation_graph := (x::nil, nil).
 
   Inductive Run (x:tid): trace -> computation_graph -> Prop :=
   | run_nil:
@@ -302,24 +310,24 @@ Section Edges.
     Live (vs, es) x ->
     ~ List.In y vs ->
     TraceOf (vs, es) a t ->
-    Nodes.MapsTo x nx vs ->
-    TraceOf (y::x::vs, F (nx, S (Nodes.next_id vs)) :: C (nx, Nodes.next_id vs) :: es)
+    MapsTo x nx vs ->
+    TraceOf (y::x::vs, F (nx, S (length vs)) :: C (nx, length vs) :: es)
        a ((x, FORK y)::t)
   | trace_of_join:
     forall vs es a t x y ny nx,
     x <> y ->
     Live (vs, es) x ->
     TraceOf (vs, es) a t ->
-    Nodes.MapsTo x nx vs ->
-    Nodes.MapsTo y ny vs ->
-    TraceOf (x::vs, J (ny, Nodes.next_id vs) :: C (nx, Nodes.next_id vs) :: es)
+    MapsTo x nx vs ->
+    MapsTo y ny vs ->
+    TraceOf (x::vs, J (ny, length vs) :: C (nx, length vs) :: es)
        a ((x, JOIN y)::t)
   | trace_of_continue:
     forall vs es a t x nx,
     Live (vs, es) x ->
     TraceOf (vs, es) a t ->
-    Nodes.MapsTo x nx vs ->
-    TraceOf (x::vs, C (nx, Nodes.next_id vs) :: es) a ((x, CONTINUE)::t).
+    MapsTo x nx vs ->
+    TraceOf (x::vs, C (nx, length vs) :: es) a ((x, CONTINUE)::t).
 
   Lemma trace_of_cons:
     forall cg a t e cg',
@@ -330,21 +338,21 @@ Section Edges.
     intros.
     inversion H0; subst; clear H0.
     - inversion H3; subst; clear H3.
-      assert (prev = nx) by eauto using Nodes.maps_to_fun_2; subst.
-      assert (curr = Nodes.next_id vs)
-      by eauto using Nodes.maps_to_inv_eq; subst.
-      assert (ny = Nodes.next_id (x::vs))
-      by eauto using Nodes.maps_to_inv_eq; subst.
+      assert (prev = nx) by eauto using maps_to_fun_2; subst.
+      assert (curr = length vs)
+      by eauto using maps_to_inv_eq; subst.
+      assert (ny = length (x::vs))
+      by eauto using maps_to_inv_eq; subst.
       simpl.
       auto using trace_of_fork.
     - inversion H2; subst; clear H2.
-      assert (curr = Nodes.next_id vs)
-      by eauto using Nodes.maps_to_inv_eq; subst.
-      assert (nx = Nodes.next_id vs)
-      by eauto using Nodes.maps_to_inv_eq; subst.
-      eauto using trace_of_join, Nodes.maps_to_neq.
-    - assert (curr = Nodes.next_id vs)
-      by eauto using Nodes.maps_to_inv_eq; subst.
+      assert (curr = length vs)
+      by eauto using maps_to_inv_eq; subst.
+      assert (nx = length vs)
+      by eauto using maps_to_inv_eq; subst.
+      eauto using trace_of_join, maps_to_neq.
+    - assert (curr = length vs)
+      by eauto using maps_to_inv_eq; subst.
       auto using trace_of_continue.
   Qed.
 
@@ -369,12 +377,12 @@ Section Edges.
     induction H.
     - apply run_nil.
     - eapply run_cons; eauto.
-      apply reduces_fork; auto using Nodes.maps_to_eq, reduces_continue.
-      assert (Nodes.MapsTo y (Nodes.next_id (x::vs)) (y :: x :: vs)) 
-      by auto using Nodes.maps_to_eq.
+      apply reduces_fork; auto using maps_to_eq, reduces_continue.
+      assert (MapsTo y (length (x::vs)) (y :: x :: vs)) 
+      by auto using maps_to_eq.
       simpl in *; assumption.
-    - eauto using run_cons, reduces_join, reduces_continue, Nodes.maps_to_eq, Nodes.maps_to_cons.
-    - eauto using run_cons, reduces_continue, Nodes.maps_to_eq, Nodes.maps_to_cons.
+    - eauto using run_cons, reduces_join, reduces_continue, maps_to_eq, maps_to_cons.
+    - eauto using run_cons, reduces_continue, maps_to_eq, maps_to_cons.
   Qed.
 
   (**
