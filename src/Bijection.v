@@ -25,6 +25,11 @@ Section Defs.
     IndexOf x n l ->
     IndexOf x n (y :: l).
 
+  Inductive Contains (n:nat) (l:list A) : Prop :=
+  | contains_def:
+    n < length l ->
+    Contains n l.
+
   Lemma index_of_to_in:
     forall x n l,
     IndexOf x n l ->
@@ -327,9 +332,9 @@ Section MapsTo.
   Qed.
 
   Lemma maps_to_absurd_cons:
-    forall (x:A) n vs,
+    forall (x:A) y n vs,
     MapsTo x n vs ->
-    ~ (MapsTo x n (x :: vs)).
+    ~ (MapsTo y n (y :: vs)).
   Proof.
     intros.
     unfold not; intros.
