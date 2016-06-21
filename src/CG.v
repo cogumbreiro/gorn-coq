@@ -175,6 +175,19 @@ Section Nodes.
     }
     auto.
   Qed.
+
+  Lemma maps_to_to_in:
+    forall x n vs,
+    MapsTo x n vs ->
+    List.In x vs.
+  Proof.
+    intros.
+    induction H. {
+      auto using List.in_eq.
+    }
+    auto using List.in_cons.
+  Qed.
+
 End Nodes.
 End Nodes.
 
@@ -379,6 +392,7 @@ Section Edges.
   Definition cg_nodes (cg:computation_graph) := fst cg.
 
   Definition cg_edges (cg:computation_graph) := map e_edge (snd cg).
+
 End Edges.
 
 Section Defs.
