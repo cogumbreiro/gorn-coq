@@ -355,6 +355,17 @@ Section Defs.
       eauto using in_right.
   Qed.
 
+  Lemma in_fork_5:
+    forall x y k,
+    List.In (x, y) (fork x y k).
+  Proof.
+    intros.
+    unfold fork.
+    rewrite in_app_iff.
+    right.
+    auto using in_eq.
+  Qed.
+
   Lemma in_join_2:
     forall x y k z,
     List.In (y,z) k ->
