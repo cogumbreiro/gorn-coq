@@ -86,39 +86,87 @@ Section HB.
     In x n'' l ->
     In x n ((n, Append n' n'') :: l).
 
+  Inductive Knows (cg:computation_graph) (sj:cg_safe_joins): tid * tid -> Prop :=
+  | knows_def:
+    forall x y nx,
+    Nodes.MapsTo x nx (fst cg) ->
+    In y nx sj ->
+    Knows cg sj (x, y).
+
+  Definition KnowsSpec cg sj k :=
+    forall p,
+    List.In p k ->
+    Knows cg sj p.
+
   Section ESafeJoins.
 
-  Variable ns: list tid.
+  Inductive Reduces : cg_safe_joins -> computation_graph -> cg_safe_joins -> Prop :=
+  | reduces_fork:
+    forall x y x' ty l vs es,
+    Nodes.MapsTo ty y vs ->
+    Reduces l (vs, F (x,y)::C (x,x')::es) ((y, Copy x)::(x', Cons ty x)::l)
 
-  Inductive ESafeJoins : list cg_edge -> cg_safe_joins -> Prop :=
-  | e_safe_joins_fork:
-    forall x y x' ty l es,
-    Nodes.MapsTo ty y ns ->
-    ESafeJoins es l ->
-    ESafeJoins ({| e_t := E_FORK; e_edge := (x,y)|}::{|e_t:=E_CONTINUE;e_edge:=(x,x')|}::es)
-       ((y, Copy x) :: (x', Cons ty x) :: l)
-
-  | e_safe_joins_join:
-    forall x y x' ty l es,
-    Nodes.MapsTo ty y ns ->
+  | reduces_join:
+    forall x y x' ty l vs es,
+    Nodes.MapsTo ty y vs ->
     In ty x l -> (* check: ty \in x *)
-    ESafeJoins es l ->
-    ESafeJoins ({| e_t := E_JOIN; e_edge := (y,x)|}::{|e_t:=E_CONTINUE;e_edge:=(x,x')|}::es)
-       ((x', Append x y) :: l)
+    Reduces l (vs, J (y,x) :: C (x,x')::es) ((x', Append x y) :: l)
 
   | e_safe_joins_continue:
-    forall x y x' ty l es,
-    Nodes.MapsTo ty y ns ->
-    ESafeJoins es l ->
-    ESafeJoins ({|e_t:=E_CONTINUE;e_edge:=(x,x')|}::es)
-       ((x', Copy x) :: l)
+    forall x x' l es vs,
+    Reduces l (vs, C (x,x')::es) ((x', Copy x) :: l).
 
-  | e_safe_joins_nil:
-    ESafeJoins nil nil.
+  Let do_fork:
+    forall x y z cg cg' sj sj',
+    CG.Reduces cg (x, CG.FORK y) cg' ->
+    Reduces sj cg' sj' ->
+    Knows cg sj (x, z) ->
+    Knows cg' sj' (y, z).
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    inversion H6; subst; clear H6.
+    assert (prev = nx) by eauto using Nodes.maps_to_fun; subst; clear H12.
+    apply knows_def with (nx:=ny); auto.
+    inversion H0; subst; clear H0.
+    apply in_copy.
+    inversion H1; subst; simpl in *; clear H1.
+  Qed.
+  
 
-  End ESafeJoins.
+  Lemma asdf:
+    forall cg sj k k' cg' sj' e,
+    KnowsSpec cg sj k ->
+    Events.Reduces k e k' ->
+    CG.Reduces cg e cg' ->
+    Reduces sj cg' sj' ->
+    KnowsSpec cg' sj' k'.
+  Proof.
+    intros.
+    unfold KnowsSpec in *.
+    intros.
+    inversion H0; subst; clear H0.
+    - inversion H4; subst; clear H4.
+      destruct p as (a,b).
+      apply fork_inv_in in H3.
+      destruct H3 as [(?,?)|[(?,?)|?]]; subst.
+      + apply H in H3; rename H3 into Hk.
+        inversion H1; subst; clear H1.
+        inversion H7; subst; clear H7.
+        inversion H2; subst; clear H2.
+        apply knows_def with (nx:=ny).
+        * simpl.
+          assumption.
+        * apply in_copy.
+          apply 
+    inversion H1; subst; clear H1.
+    - inversion H6; subst; clear H6.
+      inversion H2; subst.
+      inversion 
+      apply knows_def.
+  Qed.
 
-  Let flat_sj := MN.t (list tid).  
+  Let flat_sj := MN.t (list tid).
 
   Inductive Flatten : cg_safe_joins -> flat_sj -> Prop :=
   | flatten_nil:
@@ -139,7 +187,6 @@ Section HB.
     MN.MapsTo y ys m ->
     MN.MapsTo z zs m ->
     Flatten ((x,Append y z)::l) (MN.add x (ys ++ zs) m).
-    
 
   Definition SafeJoins (cg:computation_graph) sj := ESafeJoins (fst cg) (snd cg) sj.
 
