@@ -558,21 +558,114 @@ Section HB.
     eauto using knows_def, in_fork.
   Qed.
 
+  Let can_join_join:
+    forall cg cg' sj sj' k k' a b x y,
+    CanJoinToEdge (fst cg) sj k ->
+    Events.Reduces k (x, CG.JOIN y) k' ->
+    CG.Reduces cg (x, CG.JOIN y) cg' ->
+    Reduces sj cg' sj' ->
+    Knows (fst cg') sj' (a, b) ->
+    length (fst cg) = length sj ->
+    a <> b ->
+    List.In (a, b) k'.
+  Proof.
+    intros.
+    rename H4 into Heq.
+    rename H5 into Hneq.
+    inversion H0; subst; clear H0.
+    inversion H8; subst; clear H8.
+    inversion H1; subst; clear H1.
+    inversion H7; subst; clear H7.
+    simpl in *.
+    inversion H2; subst; clear H2.
+    inversion H3; subst; clear H3.
+    clear H14.
+    assert (ty = y) by eauto using maps_to_fun_1; subst; clear H17.
+    rename nx into nb.
+    rename prev into nx.
+    inversion H4; subst; clear H4.
+    - inversion H2; subst; clear H2. {
+        rewrite Heq in *.
+        apply in_absurd_le in H3; auto.
+        contradiction.
+      }
+      eauto using in_join, knows_def.
+    - assert (curr = length vs) by eauto using maps_to_inv_eq; subst.
+      assert (x = a). {
+        rewrite Heq in *.
+        eauto using maps_to_fun_1.
+      }
+      subst; clear H9.
+      eauto using knows_def, in_join.
+    - assert (curr = length vs) by eauto using maps_to_inv_eq; subst.
+      assert (x = a). {
+        rewrite Heq in *.
+        eauto using maps_to_fun_1.
+      }
+      subst; clear H9.
+      inversion H11; subst; clear H11. {
+        contradiction H5.
+        trivial.
+      }
+      eauto using knows_def, in_join_2.
+  Qed.
+
+  Let can_join_continue:
+    forall cg cg' sj sj' k k' a b x,
+    CanJoinToEdge (fst cg) sj k ->
+    Events.Reduces k (x, CG.CONTINUE) k' ->
+    CG.Reduces cg (x, CG.CONTINUE) cg' ->
+    Reduces sj cg' sj' ->
+    Knows (fst cg') sj' (a, b) ->
+    length (fst cg) = length sj ->
+    a <> b ->
+    List.In (a, b) k'.
+  Proof.
+    intros.
+    rename H4 into Heq.
+    rename H5 into Hneq.
+    inversion H0; subst; clear H0.
+    inversion H1; subst; clear H1.
+    inversion H2; subst; clear H2.
+    simpl in *.
+    rename k' into k.
+    rename prev into nx.
+    assert (curr = length vs) by eauto using maps_to_inv_eq; subst; clear H7.
+    inversion H3; subst; clear H3.
+    inversion H2; subst; clear H2. {
+      rewrite Heq in *.
+      inversion H6; subst; clear H6. {
+        apply in_absurd_le in H2; auto.
+        contradiction.
+      }
+      eauto using knows_def.
+    }
+    rename nx0 into nb.
+    assert (nb < length vs) by eauto using maps_to_lt.
+    eauto using knows_def.
+  Qed.
+
+  Definition NRefl vs sj :=
+    forall a b,
+    Knows vs sj (a, b) ->
+    a <> b.
+
   Let can_join_preserves:
     forall cg sj cg' sj' e k' k,
     CanJoinToEdge (fst cg) sj k ->
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
     Reduces sj cg' sj' ->
+    NRefl (fst cg') sj' ->
+    length (fst cg) = length sj ->
     CanJoinToEdge (fst cg') sj' k'.
   Proof.
     intros.
     unfold CanJoinToEdge; intros; destruct p as (a,b).
     destruct e as (x, [y|y|]).
-    - 
-    inversion H1; subst; clear H1; simpl in *.
-    - inversion H3; subst; clear H3.
-      
+    - eauto.
+    - eauto.
+    - eauto.
   Qed.
 
   Let flat_sj := MN.t (list tid).
