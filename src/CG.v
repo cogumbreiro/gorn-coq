@@ -83,6 +83,15 @@ Section Edges.
     auto using edge_def.
   Qed.
 
+  Lemma hb_edge_in:
+    forall e vs es,
+    List.In e es ->
+    HB_Edge (vs,es) (e_edge e).
+  Proof.
+    intros.
+    eapply hb_edge_def with (t:=e_t e); eauto using edge_def.
+  Qed.
+
   Inductive TaskEdge cg t : (tid * tid) -> Prop :=
   | task_edge_def:
     forall x y nx ny,
@@ -234,6 +243,12 @@ Section Edges.
 
   Definition cg_edges (cg:computation_graph) := map e_edge (snd cg).
 
+  (** Every node of the CG is an index of the list of vertices. *)
+
+  Definition EdgeToIndex cg :=
+    forall x y,
+    HB_Edge cg (x, y) ->
+    Index x (fst cg) /\ Index y (fst cg).
 End Edges.
 
 Section Props.
@@ -244,6 +259,73 @@ Section Props.
   Proof.
     intros.
     simpl; auto.
+  Qed.
+
+  Lemma reduces_edge_to_index:
+    forall cg e cg',
+    EdgeToIndex cg ->
+    Reduces cg e cg' ->
+    EdgeToIndex cg'.
+  Proof.
+    intros.
+    unfold EdgeToIndex; intros a b; intros.
+    inversion H0; subst; clear H0.
+    - inversion H4; subst; clear H4.
+      apply maps_to_inv_eq in H13; subst.
+      apply maps_to_inv_eq in H6; subst.
+      assert (prev = nx) by eauto using maps_to_fun_2; subst; clear H12.
+      simpl in *.
+      inversion H1; subst; clear H1.
+      inversion H0; subst; clear H0.
+      destruct H7 as [?|[?|?]].
+      + subst; inversion H8; subst; clear H8.
+        split; eauto using maps_to_lt, lt_to_index, index_cons.
+      + subst; simpl in *; inversion H8; subst; clear H8.
+        split; eauto using maps_to_lt, lt_to_index, index_cons.
+      + subst.
+        assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
+        rewrite H8 in *.
+        apply H in He.
+        simpl in *.
+        destruct He.
+        split; auto using index_cons.
+    - simpl in *.
+      inversion H3; subst; clear H3.
+      apply maps_to_inv_eq in H4; subst.
+      apply maps_to_inv_eq in H12; subst.
+      apply maps_to_neq in H5; auto.
+      inversion H1; subst; clear H1.
+      inversion H0; subst; clear H0.
+      destruct H6 as [Hx|[Hx|Hx]].
+      + subst.
+        inversion H7; subst; clear H7.
+        apply maps_to_lt in H5.
+        auto using lt_to_index, index_cons.
+      + subst.
+        inversion H7; subst; clear H7.
+        apply maps_to_lt in H11.
+        auto using lt_to_index, index_cons.
+      + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
+        rewrite H7 in *.
+        apply H in He.
+        simpl in *.
+        destruct He.
+        split; auto using index_cons.
+    - simpl in *.
+      apply maps_to_inv_eq in H4; subst.
+      inversion H1; subst; clear H1.
+      inversion H0; subst; clear H0.
+      destruct H6 as [Hx|Hx].
+      + subst.
+        inversion H7; subst; clear H7.
+        apply maps_to_lt in H3.
+        auto using lt_to_index, index_cons.
+     + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
+       rewrite H7 in *.
+       apply H in He.
+       simpl in *.
+       destruct He.
+       split; auto using index_cons.
   Qed.
 
   Inductive Prec : (nat * nat) -> cg_edge -> Prop :=
@@ -302,6 +384,19 @@ Section Props.
       simpl in *.
       destruct x as (t, x). 
       apply hb_edge_def with (t:=t); eauto using edge_def.
+  Qed.
+
+  Lemma node_lt_length_left:
+    forall n1 n2,
+    EdgeToIndex cg ->
+    List.In (n1, n2) (cg_edges cg) ->
+    n1 < length (fst cg).
+  Proof.
+    intros.
+    apply hb_edge_spec in H0.
+    apply H in H0.
+    destruct H0.
+    auto using index_to_lt.
   Qed.
 
   (** Comparable with respect to the happens-before relation [n1 < n2 \/ n2 < n1] *)
