@@ -586,12 +586,10 @@ Section HB.
     Reduces sj cg' sj' ->
     Knows (fst cg') sj' (a, b) ->
     length (fst cg) = length sj ->
-    a <> b ->
     List.In (a, b) k'.
   Proof.
     intros.
     rename H4 into Heq.
-    rename H5 into Hneq.
     inversion H0; subst; clear H0.
     inversion H8; subst; clear H8.
     inversion H1; subst; clear H1.
@@ -638,12 +636,10 @@ Section HB.
     Reduces sj cg' sj' ->
     Knows (fst cg') sj' (a, b) ->
     length (fst cg) = length sj ->
-    a <> b ->
     List.In (a, b) k'.
   Proof.
     intros.
     rename H4 into Heq.
-    rename H5 into Hneq.
     inversion H0; subst; clear H0.
     inversion H1; subst; clear H1.
     inversion H2; subst; clear H2.
@@ -665,232 +661,21 @@ Section HB.
     eauto using knows_def.
   Qed.
 
-  Let dag_can_join_to_nrefl:
-    forall k sj vs,
-    DAG.DAG (FGraph.Edge k) ->
-    CanJoinToEdge vs sj k ->
-    NRefl vs sj.
-  Proof.
-    intros.
-    unfold NRefl; intros.
-    apply H0 in H1.
-    unfold not; intros.
-    subst.
-    assert (FGraph.Edge k (b,b) ) by auto.
-    assert (E: Reaches (FGraph.Edge k) b b) by auto using Graph.edge_to_reaches.
-    apply H in E.
-    assumption.
-  Qed.
-
   Let can_join_preserves:
     forall cg sj cg' sj' e k' k,
     CanJoinToEdge (fst cg) sj k ->
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
     Reduces sj cg' sj' ->
-    DAG.DAG (FGraph.Edge k) ->
     length (fst cg) = length sj ->
     CanJoinToEdge (fst cg') sj' k'.
   Proof.
     intros.
-    assert (NRefl (fst cg) sj) by eauto.
-    unfold NRefl in *.
     unfold CanJoinToEdge; intros; destruct p as (a,b).
     destruct e as (x, [y|y|]).
     - eapply can_join_fork; eauto.
     - eauto.
     - eauto.
-  Qed.
-
-  Definition NReflSimpl vs sj :=
-    forall b n,
-    MapsTo b n vs ->
-    ~ In b n sj.
-
-  Let nrefl_simpl_fork:
-    forall x y cg sj sj' cg' k k' n b,
-    CG.Reduces cg (x, CG.FORK y) cg' ->
-    Events.Reduces k (x, CG.FORK y) k' ->
-    Reduces sj cg' sj' ->
-    NReflSimpl (fst cg) sj ->
-    MapsTo b n (fst cg') ->
-    length (fst cg) = length sj ->
-    FreeInGraph (fst cg) sj ->
-    ~ In b n sj'.
-  Proof.
-    intros.
-    rename H2 into Hn.
-    rename H4 into R.
-    rename H5 into Hdom.
-    inversion H; subst; clear H.
-    inversion H7; subst; clear H7.
-    inversion H1; subst; clear H1.
-    inversion H0; subst; clear H0.
-    inversion H7; subst; clear H7.
-    unfold not; intros Hx.
-    simpl in *.
-    apply maps_to_inv_eq in H14; subst.
-    apply maps_to_inv_eq in H11; subst.
-    clear H13 H5.
-    rename prev into nx.
-    inversion H3; subst; clear H3. {
-      assert (rw: length (x::vs) = length (Cons y nx :: sj)) by (simpl; auto).
-      rewrite rw in *; clear rw.
-      inversion Hx; subst; clear Hx. {
-        apply in_absurd_le in H2; auto.
-      }
-      assert (nx < length vs) by eauto using maps_to_lt.
-      rewrite R in *.
-      apply in_le in H2; auto.
-      contradiction H6.
-      eauto.
-    }
-    inversion H7; subst; clear H7. {
-      rewrite R in *.
-      apply in_le in Hx; auto.
-      inversion Hx; subst; clear Hx.
-      - apply in_absurd_le in H2;auto.
-      - contradiction H6; eauto using maps_to_to_in.
-      - apply Hn in H9; contradiction.
-    }
-    assert (n < length sj) by (rewrite <- R; eauto using maps_to_lt).
-    apply in_le in Hx; simpl; auto.
-    inversion Hx; subst; clear Hx.
-    - apply Hn in H8; contradiction.
-    - contradiction H6; eapply maps_to_to_in; eauto.
-    - rewrite <- R in *.
-      apply maps_to_absurd_length in H8; auto.
-  Qed.
-
-  Let nrefl_simpl_join:
-    forall x y cg sj sj' cg' k k' n b,
-    CG.Reduces cg (x, CG.JOIN y) cg' ->
-    Events.Reduces k (x, CG.JOIN y) k' ->
-    Reduces sj cg' sj' ->
-    NReflSimpl (fst cg) sj ->
-    MapsTo b n (fst cg') ->
-    length (fst cg) = length sj ->
-    FreeInGraph (fst cg) sj ->
-    ~ In b n sj'.
-  Proof.
-    intros.
-    rename H2 into Hn.
-    rename H4 into R.
-    rename H5 into Hdom.
-    inversion H; subst; clear H.
-    inversion H6; subst; clear H6.
-    inversion H1; subst; clear H1.
-    inversion H0; subst; clear H0.
-    inversion H6; subst; clear H6.
-    unfold not; intros Hx.
-    apply maps_to_inv_eq in H13; subst.
-    assert (ty = y) by eauto using maps_to_fun_1; subst; clear H16.
-    apply maps_to_neq in H10; auto.
-    simpl in *.
-    rename prev into nx.
-    clear H8.
-    inversion H3; subst; clear H3. {
-      rewrite R in *.
-      inversion Hx; subst; clear Hx.
-      - apply in_absurd_le in H1; auto.
-      - apply Hn in H12; contradiction.
-      - apply Hn in H12; contradiction.
-    }
-  Qed.
-
-  Let nrefl_simpl_preserves:
-    forall cg sj cg' sj' e k' k,
-    NReflSimpl (fst cg) sj ->
-    Events.Reduces k e k' ->
-    CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
-    length (fst cg) = length sj ->
-    FreeInGraph (fst cg) sj ->
-    NReflSimpl (fst cg') sj'.
-  Proof.
-    intros.
-    unfold NReflSimpl.
-    intros.
-    destruct e as (x, [y|y|]).
-    - eauto.
-    - 
-  Qed.
-
-  Let nrefl_fork:
-    forall cg sj cg' sj' x y k' k a b,
-    NRefl (fst cg) sj ->
-    Events.Reduces k (x, CG.FORK y) k' ->
-    CG.Reduces cg (x, CG.FORK y) cg'->
-    Reduces sj cg' sj' ->
-    length (fst cg) = length sj ->
-    Knows (fst cg') sj' (a, b) ->
-    FreeInGraph (fst cg) sj ->
-    NReflSimpl (fst cg) sj ->
-    a <> b.
-  Proof.
-    intros.
-    rename H3 into Heq.
-    rename H5 into Hdom.
-    rename H6 into Hn.
-    inversion H0; subst; clear H0.
-    inversion H8; subst; clear H8.
-    inversion H1; subst; clear H1.
-    inversion H9; subst; clear H9.
-    inversion H2; subst; clear H2.
-    simpl in *.
-    inversion H4; subst; clear H4.
-    rename nx into nb.
-    rename prev into nx.
-    assert (curr = length vs) by eauto using maps_to_inv_eq; subst.
-    clear H16.
-    assert (ny = length (x :: vs)) by eauto using maps_to_inv_eq; subst.
-    clear H13 H11 H6.
-    inversion H2; subst; clear H2. {
-      assert (R: length (x :: vs) = length (Cons y nx :: sj)). {
-        simpl; rewrite Heq.
-        trivial.
-      }
-      rewrite R in *.
-      inversion H3; subst; clear H3. {
-        apply in_absurd_le in H2; auto.
-      }
-      simpl in *.
-      assert (nx < length vs) by eauto using maps_to_lt.
-      rewrite Heq in *.
-      apply in_le in H2; auto.
-      unfold not; intros; subst.
-      contradiction H8.
-      eauto using in_to_free.
-    }
-    inversion H9; subst; clear H9. {
-      rewrite Heq in *.
-      apply in_le in H3; auto.
-      inversion H3; subst; clear H3.
-      - apply in_absurd_le in H2; auto.
-      - assumption.
-      - unfold not; intros; subst.
-        apply Hn in H15.
-        contradiction.
-    }
-    assert (nb < length vs) by eauto using maps_to_lt.
-    rewrite Heq in *.
-    apply in_le in H3; simpl; auto.
-    apply in_le in H3; simpl; auto.
-    eauto using knows_def.
-  Qed.
-
-  Let nrefl_preserves:
-    forall cg sj cg' sj' e k' k,
-    NRefl (fst cg) sj ->
-    Events.Reduces k e k' ->
-    CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
-    NRefl (fst cg') sj'.
-  Proof.
-    intros.
-    unfold NRefl; intros.
-    destruct e as (x, [y|y|]).
-    - 
   Qed.
 
   Let flat_sj := MN.t (list tid).
