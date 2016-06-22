@@ -931,7 +931,7 @@ Section HB.
       apply in_length_absurd in Hx; auto; contradiction.
   Qed.
 
-  Let incl_preserve:
+  Lemma incl_preserve:
     forall sj cg k sj' cg' k' e,
     Incl cg sj ->
     Events.Reduces k e k' ->
@@ -948,6 +948,79 @@ Section HB.
     - eauto.
     - eauto.
     - eauto.
+  Qed.
+
+  Let hb_edge_in:
+    forall cg sj n1 n2 x,
+    Incl cg sj ->
+    CanJoin n1 x sj ->
+    HB_Edge cg (n1, n2) ->
+    CanJoin n2 x sj.
+  Proof.
+    intros.
+    rewrite hb_edge_spec in *.
+    eauto.
+  Qed.
+
+  Let InEdge sj x (e:nat*nat) := CanJoin (fst e) x sj /\ CanJoin (snd e) x sj.
+
+  Let in_edge:
+    forall sj cg a b x,
+    Incl cg sj ->
+    HB_Edge cg (a, b) ->
+    CanJoin a x sj ->
+    InEdge sj x (a, b).
+  Proof.
+    intros.
+    unfold InEdge.
+    simpl.
+    eauto.
+  Qed.
+
+  Let wb_in_0:
+    forall cg  sj w x a b,
+    Incl cg sj ->
+    CanJoin a x sj ->
+    Walk2 (HB_Edge cg) a b w ->
+    Walk2 (InEdge sj x) a b w.
+  Proof.
+    induction w; intros. {
+      apply walk2_nil_inv in H1.
+      contradiction.
+    }
+    inversion H1; subst; clear H1.
+    inversion H4; subst; clear H4.
+    destruct a as (a, c).
+    apply starts_with_eq in H2; symmetry in H2; subst.
+    destruct w as [|(c',d)].
+    - apply ends_with_eq in H3.
+      subst.
+      eauto using edge_to_walk2.
+    - apply ends_with_inv in H3.
+      apply linked_inv in H8; subst.
+      apply walk2_cons.
+      + eauto using starts_with_def, walk2_def.
+      + eauto.
+  Qed.
+
+  Lemma hb_in:
+    forall cg sj n1 n2 x,
+    Incl cg sj ->
+    CanJoin n1 x sj ->
+    HB cg n1 n2 ->
+    CanJoin n2 x sj.
+  Proof.
+    intros.
+    unfold HB in *.
+    inversion H1.
+    apply wb_in_0 with (sj:=sj) (x:=x) in H2; auto.
+    inversion H2; subst.
+    destruct H4 as ((v1,v2),(Hx,Hy)); subst.
+    apply end_to_edge with (Edge := InEdge sj x) in Hx; auto.
+    simpl.
+    destruct Hx.
+    simpl in *.
+    auto.
   Qed.
 
 
