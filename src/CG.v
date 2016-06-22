@@ -61,9 +61,9 @@ Section Edges.
 
   Inductive Edge : computation_graph -> edge_type -> (node * node) -> Prop :=
   | edge_def:
-    forall vs es e t,
+    forall vs es e,
     List.In e es ->
-    Edge (vs, es) t (e_edge e).
+    Edge (vs, es) (e_t e) (e_edge e).
 
   Inductive HB_Edge cg e : Prop :=
   | hb_edge_def:
@@ -80,6 +80,8 @@ Section Edges.
     remember {| e_t := t; e_edge := (x, y) |} as e.
     assert (R:(x, y) = e_edge e) by (subst; auto).
     rewrite R.
+    assert (R2:t = e_t e) by (subst; auto).
+    rewrite R2.
     auto using edge_def.
   Qed.
 
@@ -88,8 +90,7 @@ Section Edges.
     List.In e es ->
     HB_Edge (vs,es) (e_edge e).
   Proof.
-    intros.
-    eapply hb_edge_def with (t:=e_t e); eauto using edge_def.
+    eauto using hb_edge_def, edge_def.
   Qed.
 
   Inductive TaskEdge cg t : (tid * tid) -> Prop :=
@@ -382,8 +383,7 @@ Section Props.
       destruct H as (?,(?,?)); subst.
       destruct cg.
       simpl in *.
-      destruct x as (t, x). 
-      apply hb_edge_def with (t:=t); eauto using edge_def.
+      eauto using hb_edge_in.
   Qed.
 
   Lemma node_lt_length_left:
