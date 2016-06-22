@@ -734,10 +734,12 @@ Section HB.
     List.In (n1, n2) (cg_edges cg') ->
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
+    FreeInGraph (fst cg) sj ->
     CanJoin n2 x sj'.
   Proof.
     intros.
     rename H5 into Heq.
+    rename H6 into Hdom.
     inversion H0; subst; clear H0.
     inversion H9; subst; clear H9.
     inversion H1; subst; clear H1.
@@ -775,6 +777,33 @@ Section HB.
       contradiction H12; auto.
     - rewrite Heq.
       apply can_join_cons.
+      assert (CanJoin n1 x sj). {
+        inversion H4; clear H4.
+        - subst.
+          inversion H3; subst; clear H3; auto.
+          rewrite <- Heq in *.
+          apply maps_to_lt in H12.
+          apply Lt.lt_irrefl in H12.
+          contradiction.
+        - rewrite H1 in *; clear H1.
+          subst.
+          apply can_join_absurd_le in H3; auto.
+          contradiction.
+      }
+      clear H4.
+      assert (b <> x). {
+        unfold not; intros; subst.
+        contradiction H9.
+        eauto.
+      }
+      auto using can_join_neq.
+    - inversion H4; subst; clear H4. {
+        inversion H5; subst; clear H5.
+        - eauto using can_join_cons.
+        - 
+        
+      }
+      
   Qed.
 
   Let incl_preserve:
