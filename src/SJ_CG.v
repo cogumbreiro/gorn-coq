@@ -169,7 +169,7 @@ Section HB.
     eauto using free_def, List.in_eq.
   Qed.
 
-  Let in_to_free:
+  Let can_join_to_free:
     forall sj x n ,
     CanJoin n x sj ->
     Free x sj.
@@ -180,7 +180,7 @@ Section HB.
     inversion H; subst; clear H; eauto.
   Qed.
 
-  Let in_absurd_le:
+  Let can_join_absurd_le:
     forall sj n b,
     length sj <= n ->
     ~ CanJoin n b sj.
@@ -189,7 +189,7 @@ Section HB.
     induction H0; simpl in *; auto with *.
   Qed.
 
-  Let in_le:
+  Let can_join_le:
     forall x n sj c,
     n < length sj ->
     CanJoin n x (c :: sj) ->
@@ -293,7 +293,7 @@ Section HB.
     assert (b <> y). {
       unfold not; intros; subst.
       contradiction H5.
-      eauto using Hdom, in_to_free.
+      eauto using Hdom, can_join_to_free.
     }
     destruct (tid_eq_dec a x). {
       subst.
@@ -561,14 +561,14 @@ Section HB.
         assert (rw: length (x :: vs) = length (Cons y nx :: sj)) by (simpl in *; auto).
         rewrite rw in *.
         inversion H9; subst; clear H9.
-        - apply in_absurd_le in H3; simpl; auto; contradiction.
+        - apply can_join_absurd_le in H3; simpl; auto; contradiction.
         - apply nat_absurd_succ in H1; contradiction.
         - apply nat_absurd_succ in H0; contradiction.
       }
       inversion H10; subst; clear H10. {
         rewrite Heq in *.
         inversion H9; subst; clear H9.
-        - apply in_absurd_le in H3; simpl; auto; contradiction.
+        - apply can_join_absurd_le in H3; simpl; auto; contradiction.
         - auto using in_fork_5.
         - eauto using knows_def, in_fork.
       }
@@ -583,7 +583,7 @@ Section HB.
     }
     assert (nx < length vs) by eauto using maps_to_lt.
     rewrite Heq in *.
-    apply in_le in H9; auto.
+    apply can_join_le in H9; auto.
     inversion H2; subst; clear H2. {
       eauto using in_fork_2, knows_def.
     }
@@ -620,7 +620,7 @@ Section HB.
     inversion H4; subst; clear H4.
     - inversion H2; subst; clear H2. {
         rewrite Heq in *.
-        apply in_absurd_le in H7; auto.
+        apply can_join_absurd_le in H7; auto.
         contradiction.
       }
       eauto using in_join, knows_def.
@@ -667,7 +667,7 @@ Section HB.
     inversion H2; subst; clear H2. {
       rewrite Heq in *.
       inversion H6; subst; clear H6. {
-        apply in_absurd_le in H3; auto.
+        apply can_join_absurd_le in H3; auto.
         contradiction.
       }
       eauto using knows_def.
@@ -755,7 +755,7 @@ Section HB.
         subst.
         assert (n1 < length vs) by eauto using maps_to_lt.
         rewrite Heq in *.
-        apply in_le in H3; auto.
+        apply can_join_le in H3; auto.
         apply can_join_copy.
         subst.
         destruct (tid_eq_dec x b). {
