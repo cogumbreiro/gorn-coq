@@ -104,7 +104,7 @@ Section HB.
     List.In p k ->
     Knows vs sj p.
 
-  Definition CanJoinToEdge vs sj k :=
+  Definition KnowsToEdge vs sj k :=
     forall p,
     Knows vs sj p ->
     List.In p k.
@@ -387,7 +387,7 @@ Section HB.
     auto.
   Qed.
 
-  Let knows_spec_preserves:
+  Let edge_to_knows_preserves:
     forall cg sj k k' cg' sj' e,
     EdgeToKnows (fst cg) sj k ->
     Events.Reduces k e k' ->
@@ -511,14 +511,9 @@ Section HB.
     - inversion H; auto.
   Qed.
 
-  Definition NRefl vs sj :=
-    forall a b,
-    Knows vs sj (a, b) ->
-    a <> b.
-
   Let can_join_fork:
     forall cg cg' sj sj' k k' a b x y,
-    CanJoinToEdge (fst cg) sj k ->
+    KnowsToEdge (fst cg) sj k ->
     Events.Reduces k (x, CG.FORK y) k' ->
     CG.Reduces cg (x, CG.FORK y) cg' ->
     Reduces sj cg' sj' ->
@@ -580,7 +575,7 @@ Section HB.
 
   Let can_join_join:
     forall cg cg' sj sj' k k' a b x y,
-    CanJoinToEdge (fst cg) sj k ->
+    KnowsToEdge (fst cg) sj k ->
     Events.Reduces k (x, CG.JOIN y) k' ->
     CG.Reduces cg (x, CG.JOIN y) cg' ->
     Reduces sj cg' sj' ->
@@ -630,7 +625,7 @@ Section HB.
 
   Let can_join_continue:
     forall cg cg' sj sj' k k' a b x,
-    CanJoinToEdge (fst cg) sj k ->
+    KnowsToEdge (fst cg) sj k ->
     Events.Reduces k (x, CG.CONTINUE) k' ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
     Reduces sj cg' sj' ->
@@ -661,22 +656,48 @@ Section HB.
     eauto using knows_def.
   Qed.
 
-  Let can_join_preserves:
+  Let knows_to_edge_preserves:
     forall cg sj cg' sj' e k' k,
-    CanJoinToEdge (fst cg) sj k ->
+    length (fst cg) = length sj ->
+    KnowsToEdge (fst cg) sj k ->
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
     Reduces sj cg' sj' ->
-    length (fst cg) = length sj ->
-    CanJoinToEdge (fst cg') sj' k'.
+    KnowsToEdge (fst cg') sj' k'.
   Proof.
     intros.
-    unfold CanJoinToEdge; intros; destruct p as (a,b).
+    unfold KnowsToEdge; intros; destruct p as (a,b).
     destruct e as (x, [y|y|]).
     - eapply can_join_fork; eauto.
     - eauto.
     - eauto.
   Qed.
+
+  Inductive SJ vs k sj: Prop :=
+  | sj_def:
+    length vs = length sj ->
+    FreeInGraph vs sj ->
+    KnowsToEdge vs sj k ->
+    EdgeToKnows vs sj k ->
+    SJ vs k sj.
+    
+
+
+  Let knows_to_edge_iff:
+    forall sj cg k sj' cg' k' e,
+    SJ (fst cg) k sj ->
+    Events.Reduces k e k' ->
+    CG.Reduces cg e cg' ->
+    Reduces sj cg' sj' ->
+    SJ (fst cg') k' sj'.
+  Proof.
+    intros.
+    inversion H.
+    apply sj_def; eauto.
+  Qed.
+    
+
+  (* ----------------------------------- *)
 
   Let flat_sj := MN.t (list tid).
 
