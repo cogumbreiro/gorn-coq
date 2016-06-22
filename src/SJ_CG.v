@@ -725,6 +725,19 @@ Section HB.
   CanJoin n1 x sj ->
   CanJoin n2 x sj.
 
+  Let in_length_absurd:
+    forall vs es n,
+    EdgeToIndex (vs, es) ->
+    ~ List.In (length vs, n) (map e_edge es).
+  Proof.
+    intros.
+    intuition.
+    assert (Hx:List.In (length vs, n) (cg_edges (vs, es))) by auto.
+    apply node_lt_length_left in Hx; auto.
+    simpl in Hx.
+    omega.
+  Qed.
+
   Let incl_fork:
     forall cg cg' sj sj' k k' x n1 n2 a b,
     Incl cg sj ->
@@ -803,15 +816,9 @@ Section HB.
         inversion H5; subst; clear H5.
         - eauto using can_join_cons.
         - rewrite <- Heq in *.
-          assert (Hx:List.In (length vs, n2) (cg_edges (vs, es))) by auto.
-          apply node_lt_length_left in Hx; auto.
-          simpl in Hx.
-          apply Lt.lt_irrefl in Hx; contradiction.
+          apply in_length_absurd in H0; auto; contradiction.
         - rewrite <- Heq in *.
-          assert (Hx:List.In (length vs, n2) (cg_edges (vs, es))) by auto.
-          apply node_lt_length_left in Hx; auto.
-          simpl in Hx.
-          apply Lt.lt_irrefl in Hx; contradiction.
+          apply in_length_absurd in H0; auto; contradiction.
       }
       simpl in *.
       rewrite <- Heq in *.
@@ -819,6 +826,71 @@ Section HB.
       apply node_lt_length_left in Hx; auto.
       simpl in Hx.
       omega.
+  Qed.
+
+  Let incl_join:
+    forall cg cg' sj sj' k k' x n1 n2 a b,
+    Incl cg sj ->
+    Events.Reduces k (a, CG.JOIN b) k' ->
+    CG.Reduces cg (a, CG.JOIN b) cg' ->
+    Reduces sj cg' sj' ->
+    List.In (n1, n2) (cg_edges cg') ->
+    CanJoin n1 x sj' ->
+    length (fst cg) = length sj ->
+    FreeInGraph (fst cg) sj ->
+    EdgeToIndex cg ->
+    CanJoin n2 x sj'.
+  Proof.
+    intros.
+    rename H5 into Heq.
+    rename H6 into Hdom.
+    rename H7 into Hlt.
+    inversion H0; subst; clear H0.
+    inversion H9; subst; clear H9.
+    inversion H1; subst; clear H1.
+    inversion H8; subst; clear H8.
+    inversion H2; subst; clear H2.
+    apply maps_to_inv_eq in H15; subst.
+    apply maps_to_inv_eq in H10; subst.
+    assert (ty = b) by eauto using maps_to_fun_1; subst; clear H18.
+    apply maps_to_neq in H12; auto.
+    simpl in *.
+    rename prev into na.
+    rename ny into nb.
+    destruct H3 as [R|[R|?]]; try (inversion R; subst; clear R).
+    - assert (CanJoin n1 x sj). {
+        inversion H4; subst; clear H4.
+        - assumption.
+        - rewrite Heq in *.
+          apply maps_to_lt in H12.
+          omega.
+        - rewrite Heq in *.
+          apply maps_to_lt in H12.
+          omega.
+      } clear H4.
+      rewrite Heq.
+      auto using can_join_append_right.
+    - assert (CanJoin n1 x sj). {
+        inversion H4; subst; clear H4.
+        - assumption.
+        - rewrite Heq in *.
+          apply maps_to_lt in H14.
+          omega.
+        - rewrite Heq in *.
+          apply maps_to_lt in H14.
+          omega.
+      } clear H4.
+      rewrite Heq.
+      auto using can_join_append_left.
+    - assert (CanJoin n1 x sj). {
+        inversion H4; subst; clear H4.
+        - assumption.
+        - rewrite <- Heq in *.
+          apply in_length_absurd in H0; auto; contradiction.
+        - rewrite <- Heq in *.
+          apply in_length_absurd in H0; auto; contradiction.
+      } clear H4.
+      eauto using can_join_cons.
   Qed.
 
   Let incl_preserve:
