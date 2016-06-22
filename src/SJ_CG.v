@@ -60,33 +60,31 @@ Section HB.
 
   Definition cg_safe_joins := list command.
 
-  Inductive In (x:tid) : node -> cg_safe_joins -> Prop :=
+  Inductive CanJoin : node -> tid -> cg_safe_joins -> Prop :=
   | can_join_cons:
-    forall l n c,
-    In x n l ->
-    In x n (c :: l)
+    forall l n c x,
+    CanJoin n x l ->
+    CanJoin n x (c :: l)
   | can_join_eq:
-    forall l n,
-    In x (length l) (Cons x n::l)
+    forall l n x,
+    CanJoin (length l) x (Cons x n::l)
   | can_join_neq:
-    forall l y n,
-    In x n l ->
+    forall l y n x,
+    CanJoin n x l ->
     x <> y ->
-    In x (length l) (Cons y n :: l)
+    CanJoin (length l) x (Cons y n :: l)
   | can_join_copy:
-    forall n l,
-    In x n l ->
-    In x (length l) (Copy n :: l)
+    forall n l x,
+    CanJoin n x l ->
+    CanJoin (length l) x (Copy n :: l)
   | can_join_append_left:
-    forall n' l n,
-    In x n l ->
-    In x (length l) (Append n n' :: l)
+    forall x n' l n,
+    CanJoin n x l ->
+    CanJoin (length l) x (Append n n' :: l)
   | can_join_append_right:
-    forall n' l n,
-    In x n' l ->
-    In x (length l) (Append n n' :: l).
-
-  Notation CanJoin := In.
+    forall n' l n x,
+    CanJoin n' x l ->
+    CanJoin (length l) x (Append n n' :: l).
 
   Inductive Free x (l:cg_safe_joins) : Prop :=
   | free_def:
@@ -98,7 +96,7 @@ Section HB.
   | knows_def:
     forall x y nx,
     MapsTo x nx vs ->
-    In y nx sj ->
+    CanJoin nx y sj ->
     Knows vs sj (x, y).
 
   Definition EdgeToKnows vs sj k :=
@@ -147,7 +145,7 @@ Section HB.
   | reduces_join:
     forall x y x' ty l vs es,
     MapsTo ty y vs ->
-    In ty x l -> (* check: ty \in x *)
+    CanJoin x ty l -> (* check: ty \in x *)
     Reduces l (vs, J (y,x') :: C (x,x')::es) (Append x y :: l)
 
   | e_safe_joins_continue:
@@ -173,7 +171,7 @@ Section HB.
 
   Let in_to_free:
     forall sj x n ,
-    In x n sj ->
+    CanJoin n x sj ->
     Free x sj.
   Proof.
     induction sj; intros. {
@@ -185,7 +183,7 @@ Section HB.
   Let in_absurd_le:
     forall sj n b,
     length sj <= n ->
-    ~ In b n sj.
+    ~ CanJoin n b sj.
   Proof.
     unfold not; intros.
     induction H0; simpl in *; auto with *.
@@ -194,8 +192,8 @@ Section HB.
   Let in_le:
     forall x n sj c,
     n < length sj ->
-    In x n (c :: sj) ->
-    In x n sj.
+    CanJoin n x (c :: sj) ->
+    CanJoin n x sj.
   Proof.
     intros.
     inversion H0; subst; try apply Lt.lt_irrefl in H; auto; contradiction.
@@ -311,7 +309,7 @@ Section HB.
       contradiction H5.
       eauto using maps_to_to_in.
     }
-    assert (In b na (Copy nx :: Cons y nx :: sj)). {
+    assert (CanJoin na b (Copy nx :: Cons y nx :: sj)). {
       eauto using can_join_cons, maps_to_lt.
     }
     eauto using knows_def, maps_to_cons.
@@ -562,19 +560,19 @@ Section HB.
       inversion H2; subst; clear H2. {
         assert (rw: length (x :: vs) = length (Cons y nx :: sj)) by (simpl in *; auto).
         rewrite rw in *.
-        inversion H3; subst; clear H3.
-        - apply in_absurd_le in H2; simpl; auto; contradiction.
+        inversion H9; subst; clear H9.
+        - apply in_absurd_le in H3; simpl; auto; contradiction.
         - apply nat_absurd_succ in H1; contradiction.
         - apply nat_absurd_succ in H0; contradiction.
       }
       inversion H10; subst; clear H10. {
         rewrite Heq in *.
-        inversion H3; subst; clear H3.
-        - apply in_absurd_le in H2; simpl; auto; contradiction.
+        inversion H9; subst; clear H9.
+        - apply in_absurd_le in H3; simpl; auto; contradiction.
         - auto using in_fork_5.
         - eauto using knows_def, in_fork.
       }
-      inversion H3; subst; clear H3.
+      inversion H9; subst; clear H9.
       - eauto using knows_def, in_fork.
       - rewrite <- Heq in *.
         apply maps_to_absurd_length in H11.
@@ -585,7 +583,7 @@ Section HB.
     }
     assert (nx < length vs) by eauto using maps_to_lt.
     rewrite Heq in *.
-    apply in_le in H3; auto.
+    apply in_le in H9; auto.
     inversion H2; subst; clear H2. {
       eauto using in_fork_2, knows_def.
     }
@@ -622,7 +620,7 @@ Section HB.
     inversion H4; subst; clear H4.
     - inversion H2; subst; clear H2. {
         rewrite Heq in *.
-        apply in_absurd_le in H3; auto.
+        apply in_absurd_le in H7; auto.
         contradiction.
       }
       eauto using in_join, knows_def.
@@ -669,7 +667,7 @@ Section HB.
     inversion H2; subst; clear H2. {
       rewrite Heq in *.
       inversion H6; subst; clear H6. {
-        apply in_absurd_le in H2; auto.
+        apply in_absurd_le in H3; auto.
         contradiction.
       }
       eauto using knows_def.
@@ -724,8 +722,8 @@ Section HB.
   Definition Incl cg sj :=
   forall n1 n2 x,
   List.In (n1, n2) (cg_edges cg) ->
-  In x n1 sj ->
-  In x n2 sj.
+  CanJoin n1 x sj ->
+  CanJoin n2 x sj.
 
   Let incl_fork:
     forall cg cg' sj sj' k k' x n1 n2 a b,
@@ -734,9 +732,9 @@ Section HB.
     CG.Reduces cg (a, CG.FORK b) cg' ->
     Reduces sj cg' sj' ->
     List.In (n1, n2) (cg_edges cg') ->
-    In x n1 sj' ->
+    CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
-    In x n2 sj'.
+    CanJoin n2 x sj'.
   Proof.
     intros.
     rename H5 into Heq.
@@ -757,8 +755,7 @@ Section HB.
         subst.
         assert (n1 < length vs) by eauto using maps_to_lt.
         rewrite Heq in *.
-        apply in_le in H2; auto.
-        remember ( _ :: sj) as l.
+        apply in_le in H3; auto.
         apply can_join_copy.
         subst.
         destruct (tid_eq_dec x b). {
@@ -768,9 +765,10 @@ Section HB.
         auto using can_join_cons.
       }
       simpl in *.
-      rewrite H3 in *; clear H3.
+      rewrite <- H0 in *.
       subst.
       simpl in *.
+      subst.
       rewrite <- Heq in *.
       apply maps_to_lt in H12.
       apply Lt.lt_asym in H12.
