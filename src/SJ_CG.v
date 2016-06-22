@@ -668,6 +668,11 @@ Section HB.
     - eauto.
   Qed.
 
+  Definition NReflSimpl vs sj :=
+    forall b n,
+    MapsTo b n vs ->
+    ~ In b n sj.
+
   Let nrefl_fork:
     forall cg sj cg' sj' x y k' k a b,
     NRefl (fst cg) sj ->
@@ -676,10 +681,14 @@ Section HB.
     Reduces sj cg' sj' ->
     length (fst cg) = length sj ->
     Knows (fst cg') sj' (a, b) ->
+    FreeInGraph (fst cg) sj ->
+    NReflSimpl (fst cg) sj ->
     a <> b.
   Proof.
     intros.
     rename H3 into Heq.
+    rename H5 into Hdom.
+    rename H6 into Hn.
     inversion H0; subst; clear H0.
     inversion H8; subst; clear H8.
     inversion H1; subst; clear H1.
@@ -702,16 +711,29 @@ Section HB.
       inversion H3; subst; clear H3. {
         apply in_absurd_le in H2; auto.
       }
-      inversion H2; subst; clear H2. {
-        assert (List.In b vs). {
-        }
-        assert (Knows vs sj (x, b)) by eauto using knows_def.
-        apply H in H1.
-        eauto.
-      }
       simpl in *.
-      rewrite <- Heq in *.
-    
+      assert (nx < length vs) by eauto using maps_to_lt.
+      rewrite Heq in *.
+      apply in_le in H2; auto.
+      unfold not; intros; subst.
+      contradiction H8.
+      eauto using in_to_free.
+    }
+    inversion H9; subst; clear H9. {
+      rewrite Heq in *.
+      apply in_le in H3; auto.
+      inversion H3; subst; clear H3.
+      - apply in_absurd_le in H2; auto.
+      - assumption.
+      - unfold not; intros; subst.
+        apply Hn in H15.
+        contradiction.
+    }
+    assert (nb < length vs) by eauto using maps_to_lt.
+    rewrite Heq in *.
+    apply in_le in H3; simpl; auto.
+    apply in_le in H3; simpl; auto.
+    eauto using knows_def.
   Qed.
 
   Let nrefl_preserves:
