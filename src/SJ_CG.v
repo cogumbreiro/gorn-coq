@@ -735,11 +735,13 @@ Section HB.
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
     FreeInGraph (fst cg) sj ->
+    EdgeToIndex cg ->
     CanJoin n2 x sj'.
   Proof.
     intros.
     rename H5 into Heq.
     rename H6 into Hdom.
+    rename H7 into Hlt.
     inversion H0; subst; clear H0.
     inversion H9; subst; clear H9.
     inversion H1; subst; clear H1.
@@ -800,10 +802,23 @@ Section HB.
     - inversion H4; subst; clear H4. {
         inversion H5; subst; clear H5.
         - eauto using can_join_cons.
-        - 
-        
+        - rewrite <- Heq in *.
+          assert (Hx:List.In (length vs, n2) (cg_edges (vs, es))) by auto.
+          apply node_lt_length_left in Hx; auto.
+          simpl in Hx.
+          apply Lt.lt_irrefl in Hx; contradiction.
+        - rewrite <- Heq in *.
+          assert (Hx:List.In (length vs, n2) (cg_edges (vs, es))) by auto.
+          apply node_lt_length_left in Hx; auto.
+          simpl in Hx.
+          apply Lt.lt_irrefl in Hx; contradiction.
       }
-      
+      simpl in *.
+      rewrite <- Heq in *.
+      assert (Hx:List.In (S (length vs), n2) (cg_edges (vs, es))) by auto.
+      apply node_lt_length_left in Hx; auto.
+      simpl in Hx.
+      omega.
   Qed.
 
   Let incl_preserve:
@@ -812,11 +827,15 @@ Section HB.
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
     Reduces sj cg' sj' ->
+    length (fst cg) = length sj ->
+    FreeInGraph (fst cg) sj ->
+    EdgeToIndex cg ->
     Incl cg' sj'.
   Proof.
     intros.
     unfold Incl; intros.
     destruct e as (a, [b|b|]).
+    - eauto.
     - 
   Qed.
 
