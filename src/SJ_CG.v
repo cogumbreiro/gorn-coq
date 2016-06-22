@@ -61,30 +61,32 @@ Section HB.
   Definition cg_safe_joins := list command.
 
   Inductive In (x:tid) : node -> cg_safe_joins -> Prop :=
-  | in_cons:
+  | can_join_cons:
     forall l n c,
     In x n l ->
     In x n (c :: l)
-  | in_eq:
+  | can_join_eq:
     forall l n,
     In x (length l) (Cons x n::l)
-  | in_neq:
+  | can_join_neq:
     forall l y n,
     In x n l ->
     x <> y ->
     In x (length l) (Cons y n :: l)
-  | in_copy:
+  | can_join_copy:
     forall n l,
     In x n l ->
     In x (length l) (Copy n :: l)
-  | in_append_left:
+  | can_join_append_left:
     forall n' l n,
     In x n l ->
     In x (length l) (Append n n' :: l)
-  | in_append_right:
+  | can_join_append_right:
     forall n' l n,
     In x n' l ->
     In x (length l) (Append n n' :: l).
+
+  Notation CanJoin := In.
 
   Inductive Free x (l:cg_safe_joins) : Prop :=
   | free_def:
@@ -117,7 +119,28 @@ Section HB.
   Section ESafeJoins.
 
   Inductive Reduces : cg_safe_joins -> computation_graph -> cg_safe_joins -> Prop :=
+
+  (**
+    Case Fork:
+    
+    x -- fork --> y
+     \
+      `-- continue --> x'
+  
+    We know that `x` is connected to y through a `fork` edge
+    and that `x` is connected to `x'` through a `continue` edge.
+    Let `ty` be the name of task associated with node `y`.
+    
+    The result is:
+
+     - x' is defined as `Cons ty x`, which means that the names of `x'` are defined as 
+       the names from `x` and also `ty`.
+      
+     - y is defined as `Copy x` which means that it contains the same names as in `x`.
+   *)
+
   | reduces_fork:
+
     forall x y x' ty l vs es,
     Reduces l (ty::vs, F (x,y)::C (x,x')::es) (Copy x::Cons ty x::l)
 
@@ -187,7 +210,7 @@ Section HB.
     intros.
     inversion H; subst; clear H.
     simpl in *.
-    eauto using knows_def, in_cons, maps_to_cons.
+    eauto using knows_def, can_join_cons, maps_to_cons.
   Qed.
 
   Let do_fork_1:
@@ -218,7 +241,7 @@ Section HB.
     simpl in *.
     rewrite Heq in *.
     assert (R: S (length sj) = length (Cons y nx :: sj)) by auto; rewrite R.
-    auto using in_copy, in_cons.
+    auto using can_join_copy, can_join_cons.
   Qed.
 
   Let do_fork_2:
@@ -246,7 +269,7 @@ Section HB.
         eauto using maps_to_inv_eq.
       }
       subst.
-      auto using in_cons, in_eq.
+      auto using can_join_cons, can_join_eq.
   Qed.
 
   Let do_fork_3:
@@ -281,7 +304,7 @@ Section HB.
       - simpl.
         eauto using maps_to_cons.
       - rewrite Heq.
-        eauto using in_neq, in_cons.
+        eauto using can_join_neq, can_join_cons.
     }
     assert (a <> y). {
       unfold not; intros; subst.
@@ -289,7 +312,7 @@ Section HB.
       eauto using maps_to_to_in.
     }
     assert (In b na (Copy nx :: Cons y nx :: sj)). {
-      eauto using in_cons, maps_to_lt.
+      eauto using can_join_cons, maps_to_lt.
     }
     eauto using knows_def, maps_to_cons.
   Qed.
@@ -316,7 +339,7 @@ Section HB.
     eauto using maps_to_inv_eq; subst.
     apply maps_to_neq in H10; auto.
     assert (ny' = ny) by eauto using maps_to_fun_2; subst.
-    auto using in_append_right.
+    auto using can_join_append_right.
   Qed.
 
   Let do_join_2:
@@ -348,7 +371,7 @@ Section HB.
       clear H3. (* MapsTo a nx vs *)
       assert (prev = nx) by eauto using maps_to_fun_2; subst.
       clear H17. (* In y nx sj *)
-      auto using in_append_left.
+      auto using can_join_append_left.
     }
     auto using knows_cons.
   Qed.
@@ -367,7 +390,7 @@ Section HB.
       assert (nx0 = nx) by eauto using maps_to_fun_2; subst.
       apply knows_def with (nx:=length vs); auto using maps_to_eq.
       rewrite <- H1.
-      auto using in_copy.
+      auto using can_join_copy.
     }
     auto.
   Qed.
@@ -680,10 +703,10 @@ Section HB.
     KnowsToEdge vs sj k ->
     EdgeToKnows vs sj k ->
     SJ vs k sj.
-    
 
+  (** Main theorem of SJ *)
 
-  Let knows_to_edge_iff:
+  Lemma sj_preserves:
     forall sj cg k sj' cg' k' e,
     SJ (fst cg) k sj ->
     Events.Reduces k e k' ->
@@ -695,7 +718,81 @@ Section HB.
     inversion H.
     apply sj_def; eauto.
   Qed.
-    
+
+  (* ------------------------------------------ *)
+
+  Definition Incl cg sj :=
+  forall n1 n2 x,
+  List.In (n1, n2) (cg_edges cg) ->
+  In x n1 sj ->
+  In x n2 sj.
+
+  Let incl_fork:
+    forall cg cg' sj sj' k k' x n1 n2 a b,
+    Incl cg sj ->
+    Events.Reduces k (a, CG.FORK b) k' ->
+    CG.Reduces cg (a, CG.FORK b) cg' ->
+    Reduces sj cg' sj' ->
+    List.In (n1, n2) (cg_edges cg') ->
+    In x n1 sj' ->
+    length (fst cg) = length sj ->
+    In x n2 sj'.
+  Proof.
+    intros.
+    rename H5 into Heq.
+    inversion H0; subst; clear H0.
+    inversion H9; subst; clear H9.
+    inversion H1; subst; clear H1.
+    inversion H10; subst; clear H10.
+    inversion H2; subst; clear H2.
+    apply maps_to_inv_eq in H17; subst.
+    apply maps_to_inv_eq in H14; subst.
+    simpl in *.
+    rename prev into na; clear H16 H7.
+    destruct H3 as [R|[R|?]]; try (inversion R; subst; clear R).
+    - assert (R: S (length vs) = length (Cons b n1 :: sj)) by
+      (simpl; rewrite Heq in *; auto).
+      rewrite R.
+      inversion H4; clear H4. {
+        subst.
+        assert (n1 < length vs) by eauto using maps_to_lt.
+        rewrite Heq in *.
+        apply in_le in H2; auto.
+        remember ( _ :: sj) as l.
+        apply can_join_copy.
+        subst.
+        destruct (tid_eq_dec x b). {
+          subst.
+          auto using can_join_cons.
+        }
+        auto using can_join_cons.
+      }
+      simpl in *.
+      rewrite H3 in *; clear H3.
+      subst.
+      simpl in *.
+      rewrite <- Heq in *.
+      apply maps_to_lt in H12.
+      apply Lt.lt_asym in H12.
+      contradiction H12; auto.
+    - rewrite Heq.
+      apply can_join_cons.
+  Qed.
+
+  Let incl_preserve:
+    forall sj cg k sj' cg' k' e,
+    Incl cg sj ->
+    Events.Reduces k e k' ->
+    CG.Reduces cg e cg' ->
+    Reduces sj cg' sj' ->
+    Incl cg' sj'.
+  Proof.
+    intros.
+    unfold Incl; intros.
+    destruct e as (a, [b|b|]).
+    - 
+  Qed.
+
 
   (* ----------------------------------- *)
 
@@ -1069,7 +1166,7 @@ Section HB.
       - destruct (tid_eq_dec (node_task x) (node_task y)). {
           rewrite e in *.
           unfold fork; rewrite in_app_iff; right.
-          auto using in_eq.
+          auto using can_join_eq.
         }
         unfold fork.
                 clear H8 H9 H11.
@@ -1110,7 +1207,7 @@ Section HB.
       - destruct (tid_eq_dec (node_task x) (node_task y)). {
           rewrite e in *.
           unfold fork; rewrite in_app_iff; right.
-          auto using in_eq.
+          auto using can_join_eq.
         }
         unfold fork.
                 clear H8 H9 H11.
