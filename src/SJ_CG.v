@@ -893,6 +893,44 @@ Section HB.
       eauto using can_join_cons.
   Qed.
 
+  Let incl_continue:
+    forall cg cg' sj sj' k k' x n1 n2 a,
+    Incl cg sj ->
+    Events.Reduces k (a, CG.CONTINUE) k' ->
+    CG.Reduces cg (a, CG.CONTINUE) cg' ->
+    Reduces sj cg' sj' ->
+    List.In (n1, n2) (cg_edges cg') ->
+    CanJoin n1 x sj' ->
+    length (fst cg) = length sj ->
+    FreeInGraph (fst cg) sj ->
+    EdgeToIndex cg ->
+    CanJoin n2 x sj'.
+  Proof.
+    intros.
+    rename H5 into Heq.
+    rename H6 into Hdom.
+    rename H7 into Hlt.
+    inversion H0; subst; clear H0.
+    inversion H1; subst; clear H1.
+    inversion H2; subst; clear H2.
+    apply maps_to_inv_eq in H8; subst.
+    simpl in *.
+    rename prev into na.
+    destruct H3 as [Hx|Hx].
+    - inversion Hx; subst; clear Hx.
+      rewrite Heq.
+      apply can_join_copy.
+      inversion H4; subst; clear H4. {
+        assumption.
+      }
+      apply maps_to_lt in H6; omega.
+    - inversion H4; subst; clear H4. {
+        eauto using can_join_cons.
+      }
+      rewrite <- Heq in *.
+      apply in_length_absurd in Hx; auto; contradiction.
+  Qed.
+
   Let incl_preserve:
     forall sj cg k sj' cg' k' e,
     Incl cg sj ->
@@ -908,7 +946,8 @@ Section HB.
     unfold Incl; intros.
     destruct e as (a, [b|b|]).
     - eauto.
-    - 
+    - eauto.
+    - eauto.
   Qed.
 
 
