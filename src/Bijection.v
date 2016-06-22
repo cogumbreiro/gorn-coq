@@ -6,6 +6,8 @@ Require Omega.
 Section Defs.
   Variable A:Type.
 
+  (** [MapsTo] is the last index of [x]. *)
+
   Inductive MapsTo (x:A) : nat -> list A -> Prop :=
   | maps_to_eq:
     forall l,
@@ -16,6 +18,8 @@ Section Defs.
     MapsTo x n l ->
     MapsTo x n (y :: l).
 
+  (** [IndexOf] assigns an element to an index with respect to a given list. *)
+
   Inductive IndexOf (x:A) : nat -> list A -> Prop :=
   | index_of_eq:
     forall l,
@@ -25,10 +29,15 @@ Section Defs.
     IndexOf x n l ->
     IndexOf x n (y :: l).
 
-  Inductive Contains (n:nat) (l:list A) : Prop :=
-  | contains_def:
-    n < length l ->
-    Contains n l.
+  (** Checks if a number is an index of the given list,
+      which is defined whenever there is an element [x] with an
+      index of [n]. *)
+
+  Inductive Index (n:nat) (l:list A) : Prop :=
+  | index_def:
+    forall x,
+    IndexOf x n l ->
+    Index n l.
 
   Lemma index_of_to_in:
     forall x n l,
@@ -79,6 +88,46 @@ Section Defs.
     - simpl.
       assert (n < length l) by eauto.
       eauto.
+  Qed.
+
+  Lemma index_cons:
+    forall n l x,
+    Index n l ->
+    Index n (x::l).
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    eauto using index_def, index_of_cons.
+  Qed.
+
+  Lemma lt_to_index:
+    forall n l,
+    n < length l ->
+    Index n l.
+  Proof.
+    induction l; intros; simpl in *. {
+      inversion H.
+    }
+    inversion H; subst; clear H.
+    - eauto using index_def, index_of_eq.
+    - auto using index_cons with *.
+  Qed.
+
+  Lemma index_to_lt:
+    forall n l,
+    Index n l ->
+    n < length l.
+  Proof.
+    intros.
+    inversion H.
+    eauto using index_of_length_lt.
+  Qed.
+
+  Lemma index_iff_length:
+    forall n l,
+    Index n l <-> n < length l.
+  Proof.
+    split; auto using index_to_lt, lt_to_index.
   Qed.
 
   Lemma in_to_index_of:
