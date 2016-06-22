@@ -109,10 +109,10 @@ Section HB.
     Knows vs sj p ->
     List.In p k.
 
-  Definition FreeInGraph (cg:computation_graph) sj :=
+  Definition FreeInGraph vs sj :=
     forall x,
     Free x sj ->
-    List.In x (fst cg).
+    List.In x vs.
 
   Section ESafeJoins.
 
@@ -254,7 +254,7 @@ Section HB.
     Reduces sj cg' sj' ->
     CG.Reduces cg (x, CG.FORK y) cg' ->
     Knows (fst cg) sj (a, b) ->
-    FreeInGraph cg sj ->
+    FreeInGraph (fst cg) sj ->
     length (fst cg) = length sj ->
     Knows (fst cg') sj' (a, b).
   Proof.
@@ -393,7 +393,7 @@ Section HB.
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
     Reduces sj cg' sj' ->
-    FreeInGraph cg sj ->
+    FreeInGraph (fst cg) sj ->
     length (fst cg) = length sj ->
     EdgeToKnows (fst cg') sj' k'.
   Proof.
@@ -470,10 +470,10 @@ Section HB.
 
   Let free_in_graph_preserves:
     forall cg sj cg' sj' e,
-    FreeInGraph cg sj ->
+    FreeInGraph (fst cg) sj ->
     CG.Reduces cg e cg' ->
     Reduces sj cg' sj' ->
-    FreeInGraph cg' sj'.
+    FreeInGraph (fst cg') sj'.
   Proof.
     unfold FreeInGraph.
     intros.
@@ -666,6 +666,66 @@ Section HB.
     - eauto.
     - eauto.
     - eauto.
+  Qed.
+
+  Let nrefl_fork:
+    forall cg sj cg' sj' x y k' k a b,
+    NRefl (fst cg) sj ->
+    Events.Reduces k (x, CG.FORK y) k' ->
+    CG.Reduces cg (x, CG.FORK y) cg'->
+    Reduces sj cg' sj' ->
+    length (fst cg) = length sj ->
+    Knows (fst cg') sj' (a, b) ->
+    a <> b.
+  Proof.
+    intros.
+    rename H3 into Heq.
+    inversion H0; subst; clear H0.
+    inversion H8; subst; clear H8.
+    inversion H1; subst; clear H1.
+    inversion H9; subst; clear H9.
+    inversion H2; subst; clear H2.
+    simpl in *.
+    inversion H4; subst; clear H4.
+    rename nx into nb.
+    rename prev into nx.
+    assert (curr = length vs) by eauto using maps_to_inv_eq; subst.
+    clear H16.
+    assert (ny = length (x :: vs)) by eauto using maps_to_inv_eq; subst.
+    clear H13 H11 H6.
+    inversion H2; subst; clear H2. {
+      assert (R: length (x :: vs) = length (Cons y nx :: sj)). {
+        simpl; rewrite Heq.
+        trivial.
+      }
+      rewrite R in *.
+      inversion H3; subst; clear H3. {
+        apply in_absurd_le in H2; auto.
+      }
+      inversion H2; subst; clear H2. {
+        assert (List.In b vs). {
+        }
+        assert (Knows vs sj (x, b)) by eauto using knows_def.
+        apply H in H1.
+        eauto.
+      }
+      simpl in *.
+      rewrite <- Heq in *.
+    
+  Qed.
+
+  Let nrefl_preserves:
+    forall cg sj cg' sj' e k' k,
+    NRefl (fst cg) sj ->
+    Events.Reduces k e k' ->
+    CG.Reduces cg e cg' ->
+    Reduces sj cg' sj' ->
+    NRefl (fst cg') sj'.
+  Proof.
+    intros.
+    unfold NRefl; intros.
+    destruct e as (x, [y|y|]).
+    - 
   Qed.
 
   Let flat_sj := MN.t (list tid).
