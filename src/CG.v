@@ -103,9 +103,8 @@ Section Edges.
 
   Inductive Live cg x : Prop :=
   | live_def:
-    (forall y, ~ TaskEdge cg E_JOIN (x, y)) ->
+    (forall y t, ~ TaskEdge cg t (x, y)) ->
     Live cg x.
-
 
   Inductive Reduces: computation_graph -> event -> computation_graph -> Prop :=
   | reduces_fork:
@@ -260,73 +259,6 @@ Section Props.
   Proof.
     intros.
     simpl; auto.
-  Qed.
-
-  Lemma reduces_edge_to_index:
-    forall cg e cg',
-    EdgeToIndex cg ->
-    Reduces cg e cg' ->
-    EdgeToIndex cg'.
-  Proof.
-    intros.
-    unfold EdgeToIndex; intros a b; intros.
-    inversion H0; subst; clear H0.
-    - inversion H4; subst; clear H4.
-      apply maps_to_inv_eq in H13; subst.
-      apply maps_to_inv_eq in H6; subst.
-      assert (prev = nx) by eauto using maps_to_fun_2; subst; clear H12.
-      simpl in *.
-      inversion H1; subst; clear H1.
-      inversion H0; subst; clear H0.
-      destruct H7 as [?|[?|?]].
-      + subst; inversion H8; subst; clear H8.
-        split; eauto using maps_to_lt, lt_to_index, index_cons.
-      + subst; simpl in *; inversion H8; subst; clear H8.
-        split; eauto using maps_to_lt, lt_to_index, index_cons.
-      + subst.
-        assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
-        rewrite H8 in *.
-        apply H in He.
-        simpl in *.
-        destruct He.
-        split; auto using index_cons.
-    - simpl in *.
-      inversion H3; subst; clear H3.
-      apply maps_to_inv_eq in H4; subst.
-      apply maps_to_inv_eq in H12; subst.
-      apply maps_to_neq in H5; auto.
-      inversion H1; subst; clear H1.
-      inversion H0; subst; clear H0.
-      destruct H6 as [Hx|[Hx|Hx]].
-      + subst.
-        inversion H7; subst; clear H7.
-        apply maps_to_lt in H5.
-        auto using lt_to_index, index_cons.
-      + subst.
-        inversion H7; subst; clear H7.
-        apply maps_to_lt in H11.
-        auto using lt_to_index, index_cons.
-      + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
-        rewrite H7 in *.
-        apply H in He.
-        simpl in *.
-        destruct He.
-        split; auto using index_cons.
-    - simpl in *.
-      apply maps_to_inv_eq in H4; subst.
-      inversion H1; subst; clear H1.
-      inversion H0; subst; clear H0.
-      destruct H6 as [Hx|Hx].
-      + subst.
-        inversion H7; subst; clear H7.
-        apply maps_to_lt in H3.
-        auto using lt_to_index, index_cons.
-     + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
-       rewrite H7 in *.
-       apply H in He.
-       simpl in *.
-       destruct He.
-       split; auto using index_cons.
   Qed.
 
   Inductive Prec : (nat * nat) -> cg_edge -> Prop :=
@@ -485,3 +417,96 @@ Section HB.
 
 End HB.
 
+Section PropsEx.
+  Lemma make_edge_to_index:
+    forall x,
+    EdgeToIndex (make_cg x).
+  Proof.
+    intros.
+    unfold make_cg, EdgeToIndex.
+    intros.
+    simpl in *.
+    rewrite hb_edge_spec in H.
+    simpl in *.
+    contradiction.
+  Qed.
+
+  Lemma reduces_edge_to_index:
+    forall cg e cg',
+    EdgeToIndex cg ->
+    Reduces cg e cg' ->
+    EdgeToIndex cg'.
+  Proof.
+    intros.
+    unfold EdgeToIndex; intros a b; intros.
+    inversion H0; subst; clear H0.
+    - inversion H4; subst; clear H4.
+      apply maps_to_inv_eq in H13; subst.
+      apply maps_to_inv_eq in H6; subst.
+      assert (prev = nx) by eauto using maps_to_fun_2; subst; clear H12.
+      simpl in *.
+      inversion H1; subst; clear H1.
+      inversion H0; subst; clear H0.
+      destruct H7 as [?|[?|?]].
+      + subst; inversion H8; subst; clear H8.
+        split; eauto using maps_to_lt, lt_to_index, index_cons.
+      + subst; simpl in *; inversion H8; subst; clear H8.
+        split; eauto using maps_to_lt, lt_to_index, index_cons.
+      + subst.
+        assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
+        rewrite H8 in *.
+        apply H in He.
+        simpl in *.
+        destruct He.
+        split; auto using index_cons.
+    - simpl in *.
+      inversion H3; subst; clear H3.
+      apply maps_to_inv_eq in H4; subst.
+      apply maps_to_inv_eq in H12; subst.
+      apply maps_to_neq in H5; auto.
+      inversion H1; subst; clear H1.
+      inversion H0; subst; clear H0.
+      destruct H6 as [Hx|[Hx|Hx]].
+      + subst.
+        inversion H7; subst; clear H7.
+        apply maps_to_lt in H5.
+        auto using lt_to_index, index_cons.
+      + subst.
+        inversion H7; subst; clear H7.
+        apply maps_to_lt in H11.
+        auto using lt_to_index, index_cons.
+      + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
+        rewrite H7 in *.
+        apply H in He.
+        simpl in *.
+        destruct He.
+        split; auto using index_cons.
+    - simpl in *.
+      apply maps_to_inv_eq in H4; subst.
+      inversion H1; subst; clear H1.
+      inversion H0; subst; clear H0.
+      destruct H6 as [Hx|Hx].
+      + subst.
+        inversion H7; subst; clear H7.
+        apply maps_to_lt in H3.
+        auto using lt_to_index, index_cons.
+     + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
+       rewrite H7 in *.
+       apply H in He.
+       simpl in *.
+       destruct He.
+       split; auto using index_cons.
+  Qed.
+
+  Lemma run_to_edge_to_index:
+    forall t a cg,
+    Run a t cg ->
+    EdgeToIndex cg.
+  Proof.
+    intros.
+    induction H.
+    - auto using make_edge_to_index.
+    - eauto using run_cons, reduces_edge_to_index.
+  Qed.
+
+End PropsEx.
