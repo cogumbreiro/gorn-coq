@@ -47,7 +47,7 @@ End Defs.
 
 End Events.
 
-Section HB.
+Section Props.
 
   Notation node := nat.
 
@@ -56,7 +56,8 @@ Section HB.
   Inductive command :=
   | Cons: tid -> node -> command
   | Copy : node -> command
-  | Append: node -> node -> command.
+  | Append: node -> node -> command
+  | Nil: command.
 
   Definition cg_safe_joins := list command.
 
@@ -148,7 +149,7 @@ Section HB.
     CanJoin x ty l -> (* check: ty \in x *)
     Reduces l (vs, J (y,x') :: C (x,x')::es) (Append x y :: l)
 
-  | e_safe_joins_continue:
+  | reduces_continue:
     forall x x' l es vs,
     Reduces l (vs, C (x,x')::es) (Copy x :: l).
 
@@ -717,6 +718,103 @@ Section HB.
     apply sj_def; eauto.
   Qed.
 
+  Let free_in_graph_nil:
+    forall a,
+    FreeInGraph (a :: nil) (Nil :: nil).
+  Proof.
+    unfold FreeInGraph.
+    intros.
+    inversion H; subst; clear H.
+    destruct H0. {
+      inversion H.
+    }
+    inversion H.
+  Qed.
+
+  Let knows_to_edge_nil:
+    forall a,
+    KnowsToEdge (a :: nil) (Nil :: nil) nil.
+  Proof.
+    unfold KnowsToEdge; intros.
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0. {
+      simpl in *.
+      inversion H1; subst; clear H1.
+      inversion H3.
+    }
+    inversion H5.
+  Qed.
+
+  Let edge_to_knows_nil:
+    forall a,
+    EdgeToKnows (a :: nil) (Nil :: nil) nil.
+  Proof.
+    unfold EdgeToKnows.
+    intros.
+    inversion H.
+  Qed.
+
+  Lemma sj_make_cg:
+    forall a,
+    SJ (fst (make_cg a)) nil (Nil :: nil).
+  Proof.
+    intros.
+    unfold make_cg.
+    simpl.
+    auto using sj_def.
+  Qed.
+
+  Let sj_reduces:
+    forall k k' cg e cg' sj,
+    Events.Reduces k e k' ->
+    CG.Reduces cg e cg' ->
+    EdgeToKnows (fst cg) sj k ->
+    exists sj', Reduces sj cg' sj'.
+  Proof.
+    intros.
+    rename H1 into He.
+    inversion H0; subst; clear H0.
+    - inversion H3; subst; clear H3.
+      inversion H; subst; clear H.
+      inversion H8; subst; clear H8.
+      assert (prev = nx) by eauto using maps_to_fun_2; subst.
+      eauto using reduces_fork.
+    - inversion H2; subst; clear H2.
+      inversion H; subst; clear H.
+      inversion H7; subst; clear H7.
+      assert (curr = nx) by eauto using maps_to_fun_2; subst.
+      assert (Hk: Knows vs sj (x, y)) by eauto.
+      inversion Hk; subst; clear Hk.
+      assert (nx0 = prev) by eauto using maps_to_fun_2; subst.
+      eauto using reduces_join.
+    - inversion H; subst; clear H.
+      simpl in *.
+      eauto using reduces_continue.
+  Qed.
+
+  Lemma sj_spec:
+    forall a t cg k,
+    CG.Run a t cg ->
+    Events.Run t k ->
+    exists sj, SJ (fst cg) k sj.
+  Proof.
+    induction t; intros. {
+      inversion H; subst; clear H.
+      inversion H0; subst; clear H0.
+      eauto using sj_make_cg.
+    }
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    eapply IHt in H3; eauto.
+    destruct H3 as (sj, Hsj).
+    assert (Hr: exists sj', Reduces sj cg sj'). {
+      inversion Hsj.
+      eauto.
+    }
+    destruct Hr as (sj', Hr).
+    eauto using sj_preserves.
+  Qed.
+
   (* ------------------------------------------ *)
 
   Definition Incl cg sj :=
@@ -1023,3 +1121,6 @@ Section HB.
     auto.
   Qed.
 
+End ESafeJoins.
+
+End Props.
