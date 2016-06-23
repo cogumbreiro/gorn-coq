@@ -13,4 +13,5 @@ src/Bijection.v
 src/Typesystem.v
 src/Memory.v
 src/SafeJoins.v
+src/SJ_CG.v
 
