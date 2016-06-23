@@ -695,29 +695,6 @@ Section Props.
     - eauto.
   Qed.
 
-  Inductive SJ vs k sj: Prop :=
-  | sj_def:
-    length vs = length sj ->
-    FreeInGraph vs sj ->
-    KnowsToEdge vs sj k ->
-    EdgeToKnows vs sj k ->
-    SJ vs k sj.
-
-  (** Main theorem of SJ *)
-
-  Lemma sj_preserves:
-    forall sj cg k sj' cg' k' e,
-    SJ (fst cg) k sj ->
-    Events.Reduces k e k' ->
-    CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
-    SJ (fst cg') k' sj'.
-  Proof.
-    intros.
-    inversion H.
-    apply sj_def; eauto.
-  Qed.
-
   Let free_in_graph_nil:
     forall a,
     FreeInGraph (a :: nil) (Nil :: nil).
@@ -754,16 +731,6 @@ Section Props.
     inversion H.
   Qed.
 
-  Lemma sj_make_cg:
-    forall a,
-    SJ (fst (make_cg a)) nil (Nil :: nil).
-  Proof.
-    intros.
-    unfold make_cg.
-    simpl.
-    auto using sj_def.
-  Qed.
-
   Let sj_reduces:
     forall k k' cg e cg' sj,
     Events.Reduces k e k' ->
@@ -790,29 +757,6 @@ Section Props.
     - inversion H; subst; clear H.
       simpl in *.
       eauto using reduces_continue.
-  Qed.
-
-  Lemma sj_spec:
-    forall a t cg k,
-    CG.Run a t cg ->
-    Events.Run t k ->
-    exists sj, SJ (fst cg) k sj.
-  Proof.
-    induction t; intros. {
-      inversion H; subst; clear H.
-      inversion H0; subst; clear H0.
-      eauto using sj_make_cg.
-    }
-    inversion H; subst; clear H.
-    inversion H0; subst; clear H0.
-    eapply IHt in H3; eauto.
-    destruct H3 as (sj, Hsj).
-    assert (Hr: exists sj', Reduces sj cg sj'). {
-      inversion Hsj.
-      eauto.
-    }
-    destruct Hr as (sj', Hr).
-    eauto using sj_preserves.
   Qed.
 
   (* ------------------------------------------ *)
@@ -1029,7 +973,7 @@ Section Props.
       apply in_length_absurd in Hx; auto; contradiction.
   Qed.
 
-  Lemma incl_preserve:
+  Let incl_reduces:
     forall sj cg k sj' cg' k' e,
     Incl cg sj ->
     Events.Reduces k e k' ->
@@ -1101,7 +1045,7 @@ Section Props.
       + eauto.
   Qed.
 
-  Lemma hb_in:
+  Let hb_in0:
     forall cg sj n1 n2 x,
     Incl cg sj ->
     CanJoin n1 x sj ->
@@ -1119,6 +1063,85 @@ Section Props.
     destruct Hx.
     simpl in *.
     auto.
+  Qed.
+
+
+  Let incl_nil:
+    forall a,
+    Incl (a :: nil, nil) (Nil :: nil).
+  Proof.
+    intros.
+    unfold Incl.
+    intros.
+    simpl in *.
+    contradiction.
+  Qed.
+
+  Inductive SJ cg k sj: Prop :=
+  | sj_def:
+    length (fst cg) = length sj ->
+    FreeInGraph (fst cg) sj ->
+    KnowsToEdge (fst cg) sj k ->
+    EdgeToKnows (fst cg) sj k ->
+    Incl cg sj ->
+    EdgeToIndex cg ->
+    SJ cg k sj.
+
+  (** Main theorem of SJ *)
+
+  Lemma sj_preserves:
+    forall sj cg k sj' cg' k' e,
+    SJ cg k sj ->
+    Events.Reduces k e k' ->
+    CG.Reduces cg e cg' ->
+    Reduces sj cg' sj' ->
+    SJ cg' k' sj'.
+  Proof.
+    intros.
+    inversion H.
+    apply sj_def; eauto 2 using reduces_edge_to_index.
+  Qed.
+
+  Lemma sj_make_cg:
+    forall a,
+    SJ (make_cg a) nil (Nil :: nil).
+  Proof.
+    intros.
+    apply sj_def; auto using make_edge_to_index; unfold make_cg; simpl; auto.
+  Qed.
+
+  Lemma sj_spec:
+    forall a t cg k,
+    CG.Run a t cg ->
+    Events.Run t k ->
+    exists sj, SJ cg k sj.
+  Proof.
+    induction t; intros. {
+      inversion H; subst; clear H.
+      inversion H0; subst; clear H0.
+      eauto using sj_make_cg.
+    }
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    eapply IHt in H3; eauto.
+    destruct H3 as (sj, Hsj).
+    assert (Hr: exists sj', Reduces sj cg sj'). {
+      inversion Hsj.
+      eauto.
+    }
+    destruct Hr as (sj', Hr).
+    eauto using sj_preserves.
+  Qed.
+
+  Theorem hb_spec:
+    forall cg k n1 n2 x sj,
+    SJ cg k sj ->
+    CanJoin n1 x sj ->
+    HB cg n1 n2 ->
+    CanJoin n2 x sj.
+  Proof.
+    intros.
+    inversion H; eauto.
   Qed.
 
 End ESafeJoins.
