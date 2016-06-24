@@ -8,7 +8,7 @@ src/Cid.v
 src/Lang.v
 src/Node.v
 src/CG.v
-src/Shadow_Ext.v
+src/Shadow.v
 src/Bijection.v
 src/Typesystem.v
 src/Memory.v

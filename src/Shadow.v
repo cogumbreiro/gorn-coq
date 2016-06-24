@@ -5,6 +5,7 @@ Require Import HJ.Mid.
 Require Import HJ.Cid.
 Require Import HJ.Var.
 Require Import HJ.Dep.
+(*Require Import Node.*)
 
 (* ----- end of boiler-plate code ---- *)
 
@@ -16,84 +17,105 @@ Require Aniceto.Graphs.Graph.
 
 Require Import Coq.Structures.OrderedTypeEx.
 
-Require Lang.
-
 Require CG.
 
-Section Shadow.
+Module Trace.
+
+  (** There are two kinds of events we observe: reading and writing to shared memory. *)
+
+  Inductive mode := READ | WRITE.
+
+  (**
+    An represents the kind of access the node in the CG responsible for the access
+    and the target variable.
+   *)
+
   Structure access := {
-    write_access: list CG.node;
-    read_access: list CG.node
+    a_t : mode;           (* how *)
+    a_src : nat; (* when *)
+    a_dst : mid           (* what *)
   }.
 
-  Definition a_add_write n a := Build_access (n :: write_access a) (read_access a).
+  Definition access_history := list access.
 
-  Definition a_add_read n a := Build_access (write_access a) (n :: read_access a).
+End Trace.
 
-  Definition shadow := MM.t access.
+Section Shadow_Ext.
+  Import Trace.
 
-  Definition sh_update (h:mid) (f: access->access) (sh:shadow) : shadow :=
-  match MM.find h sh with
-  | Some a => MM.add h (f a) sh
-  | _ => sh
+  (** An access history is just a sequence of optional accesses; none when 
+    the event is neither a read nor a write. *)
+
+  (** compares if two access modes. *)
+
+  Definition mode_eq m1 m2 :=
+  match (m1, m2) with
+  | (READ, READ) => true
+  | (WRITE, WRITE) => true
+  | _ => false
   end.
 
-  Definition sh_read cg t h sh : shadow :=
-  match CG.cg_lookup t cg with
-  | Some n => sh_update h (a_add_read n) sh
-  | _ => sh
-  end.
+  (** Matches what and how *)
 
-  Definition sh_write cg t h sh : shadow :=
-  match CG.cg_lookup t cg with
-  | Some n => sh_update h (a_add_write n) sh
-  | _ => sh
-  end.
+  Definition a_match x m (a:access) :=
+  andb (Mid.eqb x (a_dst a)) (mode_eq m (a_t a)).
 
-  Inductive Reduces cg: shadow -> Lang.effect -> shadow -> Prop :=
-  | reduces_read:
-    forall sh t h,
-    Reduces cg sh (t,Lang.READ h) (sh_read cg t h sh)
-  | sh_reduces_write:
-    forall sh t h,
-    Reduces cg sh (t,Lang.WRITE h) (sh_write cg t h sh)
-  | reduces_skip:
-    forall sh t o,
-    Lang.is_m_op o = true ->
-    Reduces cg sh (t,o) sh.
+  (** Returns any access that matches what and how. *)
 
-  Section Opts.
-  Variable sh:shadow.
+  Definition ah_filter (x:mid) (m:mode) (ah:access_history) := filter (a_match x m) ah.
 
-  Inductive Reads (n:CG.node) (h:mid) : Prop :=
-  | reads_def:
-    forall a,
-    MM.MapsTo h a sh ->
-    List.In n (read_access a) ->
-    Reads n h.
+  (** Returns all reads on a certain variable. *)
 
-  Inductive Writes (n:CG.node) (h:mid) : Prop :=
-  | writes_def:
-    forall a,
-    MM.MapsTo h a sh ->
-    List.In n (write_access a) ->
-    Writes n h.
+  Definition ah_reads (x:mid) (ah:access_history) := ah_filter x READ ah.
 
-  Inductive Node n h : Prop :=
-  | node_read:
-    Reads n h ->
-    Node n h
-  | node_write:
-    Writes n h ->
-    Node n h.
+  (** Returns all writes on a certain variable *)
 
-  Inductive CoAccess (n1 n2:CG.node) (h:mid): Prop :=
+  Definition ah_writes x ah := ah_filter x READ ah.
+
+  Section Defs.
+
+  Inductive LastWrite cg ah (a:access) (m:mid) : Prop :=
+  | last_write_def:
+    a_t a = WRITE ->
+    a_dst a = m ->
+    (forall a', a_t a' = WRITE -> List.In (Some a') ah -> CG.HB cg (a_src a') (a_src a)) ->
+    LastWrite cg ah a m.
+
+  (** Two accesses are racy *)
+
+  Inductive RacyAccess cg : access -> access -> Prop :=
+  | racy_access_def:
+    forall a b,
+    a_src a <> a_src b ->
+    a_dst a = a_dst b ->
+    (a_t a = WRITE \/ a_t b = WRITE) ->
+    CG.MHP cg (a_src a) (a_src b) ->
+    RacyAccess cg a b.
+
+  (** Two accesses are race-free. *)
+
+  Definition RaceFreeAccess cg a b := ~ RacyAccess cg a b.
+
+  (** An access can be appended to the access-history, yielding a race-free history. *)
+
+  Definition RaceFreeCons cg ah a  := Forall (RaceFreeAccess cg a) ah.
+
+  Variable cg:CG.computation_graph.
+
+  Variable ah:access_history.
+
+  Definition Access a t h := List.In {| a_t:=a; a_src:=t; a_dst:=h|} ah. 
+
+  Definition Writes t h := Access WRITE t h.
+
+  Definition Reads t h := Access READ t h.
+
+  Inductive CoAccess (x y:nat) (h:mid): Prop :=
   | co_access_def:
-    Writes n1 h ->
-    Node n2 h ->
-    CoAccess n1 n2 h.
-
-  Variable cg: CG.computation_graph.
+    forall a,
+    Writes x h ->
+    Access a y h ->
+    CoAccess x y h.
 
   Inductive HasRace h : Prop :=
   | has_race_def:
@@ -102,219 +124,159 @@ Section Shadow.
     CG.MHP cg n1 n2 ->
     HasRace h.
 
-  Inductive OrderedAccesses (lhs:list CG.node) (rhs:list CG.node): Prop :=
-  | safe_reads_def:
-    (forall x y, List.In x lhs -> List.In y rhs -> CG.Ordered cg x y) ->
-    OrderedAccesses lhs rhs.
+  Inductive RaceFreeRef h: Prop :=
+  | race_free_ref_def:
+    (forall x a y,
+      Access a x h ->
+      Writes y h ->
+      x <> y ->
+      CG.Comparable cg x y) ->
+    RaceFreeRef h.
 
-  Inductive RaceFree h : Prop :=
+  Inductive RaceFree : Prop :=
   | race_free_def:
-      forall a,
-      MM.MapsTo h a sh ->
-      OrderedAccesses (read_access a) (write_access a) ->
-      OrderedAccesses (write_access a) (write_access a) ->
-      RaceFree h.
-
-  Inductive RaceFreeMemory : Prop :=
-  | race_free_memory_def:
-    (forall h, MM.In h sh -> RaceFree h) ->
-    RaceFreeMemory.
+    (forall h, RaceFreeRef h) ->
+    RaceFree.
 
   Inductive Racy : Prop :=
     racy_def:
       forall h,
       HasRace h ->
       Racy.
+  End Defs.
 
-  End Opts.
-
-  Section Props.
-
-  Let reads_to_in_read_access:
-    forall sh n h a,
-    Reads sh n h ->
-    MM.MapsTo h a sh ->
-    List.In n (read_access a).
+  Let race_free_inv_1:
+    forall cg x y t1 t2 h,
+    RaceFreeAccess cg
+      {| a_t := t1; a_src := x; a_dst := h |}
+      {| a_t := t2; a_src := y; a_dst := h |} ->
+    x <> y ->
+    (t1 = WRITE \/ t2 = WRITE) ->
+    CG.Comparable cg x y.
   Proof.
+    unfold RaceFreeAccess.
     intros.
-    inversion H; subst; clear H.
-    assert (a0 = a) by eauto using MM_Facts.MapsTo_fun.
-    subst; auto.
+    destruct (CG.hb_dec cg x y).
+    - auto using CG.comparable_left_right.
+    - auto using CG.comparable_right_left.
+    - contradiction.
+    - contradiction H.
+      auto using racy_access_def.
   Qed.
 
-  Let writes_to_in_write_access:
-    forall sh n h a,
-    Writes sh n h ->
-    MM.MapsTo h a sh ->
-    List.In n (write_access a).
+  Let race_free_ref_to_race_free_access:
+    forall n1 n2 t1 t2 h cg ah,
+    RaceFreeRef cg ah h ->
+    In {| a_t := t1; a_src := n1; a_dst := h |} ah ->
+    In {| a_t := t2; a_src := n2; a_dst := h |} ah ->
+    RaceFreeAccess cg
+      {| a_t := t1; a_src := n1; a_dst := h |}
+      {| a_t := t2; a_src := n2; a_dst := h |}.
   Proof.
     intros.
-    inversion H; subst; clear H.
-    assert (a0 = a) by eauto using MM_Facts.MapsTo_fun.
-    subst; auto.
+    inversion H.
+    unfold RaceFreeAccess.
+    unfold not; intros.
+    inversion H3; simpl in *; subst; clear H5.
+    destruct H6; subst; assert (CG.Comparable cg n1 n2) by eauto using CG.comparable_symm;
+    apply CG.comparable_to_not_mhp in H5; contradiction.
   Qed.
 
-  Let in_read_access_add_read:
-    forall n a n',
-    List.In n (read_access a) ->
-    List.In n (read_access (a_add_read n' a)).
+  Let race_free_access_ref_neq:
+    forall t1 t2 n1 n2 h1 h2 cg,
+    h1 <> h2 ->
+    RaceFreeAccess cg
+       {| a_t := t1; a_src := n1; a_dst := h1 |}
+       {| a_t := t2; a_src := n2; a_dst := h2 |}.
   Proof.
     intros.
-    destruct a; simpl in *.
-    auto.
+    unfold RaceFreeAccess; intuition.
+    inversion H0; simpl in *; subst.
+    contradiction H; auto.
   Qed.
 
-  Let in_read_access_add_write:
-    forall n a n',
-    List.In n (read_access a) ->
-    List.In n (read_access (a_add_write n' a)).
+  Let race_free_to_race_free_access:
+    forall ah cg a1 a2,
+    RaceFree cg ah ->
+    In a1 ah ->
+    In a2 ah ->
+    RaceFreeAccess cg a1 a2.
   Proof.
     intros.
-    destruct a; simpl in *.
-    auto.
+    inversion H.
+    destruct a1, a2; auto.
+    destruct (MID.eq_dec a_dst0 a_dst1); rewrite mid_eq_rw in *; auto.
+    subst.
+    eauto.
   Qed.
 
-  Let in_write_access_add_read:
-    forall n a n',
-    List.In n (write_access a) ->
-    List.In n (write_access (a_add_read n' a)).
+  Lemma race_free_cons:
+    forall cg ah a,
+    RaceFree cg ah ->
+    RaceFreeCons cg ah a ->
+    RaceFree cg (a::ah).
   Proof.
     intros.
-    destruct a; simpl in *.
-    auto.
+    apply race_free_def.
+    intros.
+    apply race_free_ref_def.
+    intros.
+    unfold RaceFreeCons in *.
+    destruct H1.
+    - subst.
+      inversion H2; clear H2.
+      + inversion H1; subst; clear H1.
+        contradiction H3; auto.
+      + rewrite Forall_forall in *.
+        apply H0 in H1.
+        apply race_free_inv_1 in H1; auto.
+    - inversion H2; clear H2.
+      + subst.
+        rewrite Forall_forall in *.
+        apply H0 in H1.
+        apply race_free_inv_1 in H1; auto using CG.comparable_symm.
+      + assert (X: RaceFreeAccess cg
+           {| a_t := a0; a_src := x; a_dst := h |}
+           {| a_t := WRITE; a_src := y; a_dst := h |}) by eauto.
+        apply race_free_inv_1 in X; auto.
   Qed.
 
-  Let in_write_access_add_write:
-    forall n a n',
-    List.In n (write_access a) ->
-    List.In n (write_access (a_add_write n' a)).
-  Proof.
-    intros.
-    destruct a; simpl in *.
-    auto.
-  Qed.
+End Shadow_Ext.
 (*
-  Let reads_preservation_read:
-    forall cg t sh n h h',
-    Reads sh n h ->
-    Reads (sh_read cg t h' sh) n h.
-  Proof.
-    intros.
-    unfold sh_read.
-    unfold CG.cg_lookup.
-    destruct (MT_Extra.find_rw t (CG.cg_tasks cg)) as [(rw,?)|(e,(rw,?))].
-    - rewrite rw.
-      auto.
-    - rewrite rw; clear rw.
-      unfold sh_update.
-      destruct (MM_Extra.find_rw h' sh) as [(rw,?)|(a,(rw,?))]; rewrite rw; clear rw.
-      + assumption.
-      + destruct (MID.eq_dec h' h).
-        * rewrite mid_eq_rw in *; subst.
-          eauto using reads_def, MM.add_1.
-        * rewrite mid_eq_rw in *; subst.
-          inversion H.
-          eauto using reads_def, MM.add_2.
-  Qed.
+Module Lang.
+  Import Trace.
 
-  Let reads_preservation_write:
-    forall cg t sh n h h',
-    Reads sh n h ->
-    Reads (sh_write cg t h' sh) n h.
-  Proof.
-    intros.
-    unfold sh_write.
-    unfold CG.cg_lookup.
-    destruct (MT_Extra.find_rw t (CG.cg_tasks cg)) as [(rw,?)|(e,(rw,?))].
-    - rewrite rw.
-      auto.
-    - rewrite rw; clear rw.
-      unfold sh_update.
-      destruct (MM_Extra.find_rw h' sh) as [(rw,?)|(a,(rw,?))]; rewrite rw; clear rw.
-      + assumption.
-      + destruct (MID.eq_dec h' h).
-        * rewrite mid_eq_rw in *; subst.
-          eauto using reads_def, MM.add_1.
-        * rewrite mid_eq_rw in *; subst.
-          inversion H.
-          eauto using reads_def, MM.add_2.
-  Qed.
+  (** Checks if a language event is either a read or a write. *)
 
-  Let writes_preservation_read:
-    forall cg t sh n h h',
-    Writes sh n h ->
-    Writes (sh_read cg t h' sh) n h.
-  Proof.
-    intros.
-    unfold sh_read.
-    unfold CG.cg_lookup.
-    destruct (MT_Extra.find_rw t (CG.cg_tasks cg)) as [(rw,?)|(e,(rw,?))].
-    - rewrite rw.
-      auto.
-    - rewrite rw; clear rw.
-      unfold sh_update.
-      destruct (MM_Extra.find_rw h' sh) as [(rw,?)|(a,(rw,?))]; rewrite rw; clear rw.
-      + assumption.
-      + destruct (MID.eq_dec h' h).
-        * rewrite mid_eq_rw in *; subst.
-          eauto using writes_def, MM.add_1.
-        * rewrite mid_eq_rw in *; subst.
-          inversion H.
-          eauto using writes_def, MM.add_2.
-  Qed.
+  Definition is_access (o:Lang.op) :=
+  match o with
+  | Lang.WRITE _ => true
+  | Lang.READ _ => true
+  | _ => false
+  end.
 
-  Let writes_preservation_write:
-    forall cg t sh n h h',
-    Writes sh n h ->
-    Writes (sh_write cg t h' sh) n h.
-  Proof.
-    intros.
-    unfold sh_write.
-    unfold CG.cg_lookup.
-    destruct (MT_Extra.find_rw t (CG.cg_tasks cg)) as [(rw,?)|(e,(rw,?))].
-    - rewrite rw.
-      auto.
-    - rewrite rw; clear rw.
-      unfold sh_update.
-      destruct (MM_Extra.find_rw h' sh) as [(rw,?)|(a,(rw,?))]; rewrite rw; clear rw.
-      + assumption.
-      + destruct (MID.eq_dec h' h).
-        * rewrite mid_eq_rw in *; subst.
-          eauto using writes_def, MM.add_1.
-        * rewrite mid_eq_rw in *; subst.
-          inversion H.
-          eauto using writes_def, MM.add_2.
-  Qed.
+  (**
+    Converts an event from the language to an event we can interpret.
+    *)
 
-  Let co_access_preservation_read:
-    forall cg t sh n1 n2 h h',
-    CoAccess sh n1 n2 h ->
-    CoAccess (sh_read cg t h' sh) n1 n2 h.
-  Proof.
-    intros.
-    destruct H.
-    inversion H0; eauto using co_access_def, node_read, node_write.
-  Qed.
+  Definition e_to_a cg (e:Lang.effect) : option access :=
+  match e with
+  | (t, Lang.WRITE m) =>
+    match CG.cg_lookup t cg with
+    | Some n => Some {| a_t:= WRITE; a_src:=n; a_dst:= m |}
+    | _ => None
+    end
+  | (t, Lang.READ m) =>
+    match CG.cg_lookup t cg with
+    | Some n => Some {| a_t:= READ; a_src:=n; a_dst:= m |}
+    | _ => None
+    end
+  | _ => None
+  end.
 
-  Let co_access_preservation_write:
-    forall cg t sh n1 n2 h h',
-    CoAccess sh n1 n2 h ->
-    CoAccess (sh_write cg t h' sh) n1 n2 h.
-  Proof.
-    intros.
-    destruct H.
-    inversion H0; eauto using co_access_def, node_read, node_write.
-  Qed.
+  Definition effects_to_ah_0 cg : list Lang.effect -> access_history := List.omap (e_to_a cg).
 
-  Lemma co_access_preservation:
-    forall sh o sh' n1 n2 h cg,
-    CoAccess sh n1 n2 h ->
-    Reduces cg sh o sh' ->
-    CoAccess sh' n1 n2 h.
-  Proof.
-    intros.
-    inversion H0; subst; clear H0; eauto.
-  Qed.
+  Definition ah_add cg e ah := e_to_a cg e::ah.
+End Lang.
+
 *)
-  End Props.
-End Shadow.
