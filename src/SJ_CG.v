@@ -113,6 +113,7 @@ Section Props.
     forall x,
     Free x sj ->
     List.In x vs.
+End Props.
 
   Section ESafeJoins.
 
@@ -1194,6 +1195,45 @@ Section SJ.
     inversion H; eauto using incl_hb.
   Qed.
 
+  Let sj_fresh_rw:
+    forall vs es k sj,
+    SJ (vs, es) k sj ->
+    fresh vs = fresh sj.
+  Proof.
+    intros.
+    inversion H.
+    simpl in *.
+    auto using maps_to_length_rw.
+  Qed.
+
+  Lemma knows_copy_1:
+    forall vs sj x y z n,
+    length vs = length sj ->
+    MapsTo x n vs ->
+    Knows vs sj (x, y) ->
+    Knows (z :: vs) (Copy n :: sj) (z, y).
+  Proof.
+    intros.
+    inversion H1; subst; clear H1.
+    apply knows_def with (nx:=fresh vs).
+    - auto using maps_to_eq.
+    - apply maps_to_length_rw in H.
+      rewrite H.
+      apply can_join_copy.
+      assert (nx = n) by eauto using maps_to_fun_2; subst.
+      assumption.
+  Qed.
+
+  Lemma knows_copy_2:
+    forall vs sj a b x n,
+    Knows vs sj (a, b) ->
+    a <> x ->
+    Knows (x :: vs) (Copy n :: sj) (a, b).
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    eauto using knows_def, maps_to_cons, can_join_cons.
+  Qed.
+
 End SJ.
 
-End Props.
