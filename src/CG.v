@@ -9,8 +9,7 @@ Require Import Mid.
 Require Import Cid.
 Require Import Var.
 Require Import Dep.
-Require Import Bijection.
-
+Require Import Node.
 (* ----- end of boiler-plate code ---- *)
 
 Set Implicit Arguments.
@@ -38,7 +37,7 @@ Section Defs.
 
   Structure cg_edge := cg_e {
     e_t: edge_type;
-    e_edge: (nat * nat)
+    e_edge: (node * node)
   }.
 End Defs.
 
@@ -54,7 +53,6 @@ Section Edges.
     *)
 
 
-  Notation node := nat.
   Notation edge := (node * node) % type.
 
   Definition computation_graph := (list tid * list cg_edge) % type.
@@ -93,7 +91,7 @@ Section Edges.
     eauto using hb_edge_def, edge_def.
   Qed.
 
-  Inductive TaskEdge cg t : (tid * tid) -> Prop :=
+  Inductive TaskEdge (cg:computation_graph) t : (tid * tid) -> Prop :=
   | task_edge_def:
     forall x y nx ny,
     Edge cg t (nx, ny) ->
@@ -153,7 +151,7 @@ Section Edges.
     ~ List.In y vs ->
     TraceOf (vs, es) a t ->
     MapsTo x nx vs ->
-    TraceOf (y::x::vs, F (nx, S (length vs)) :: C (nx, length vs) :: es)
+    TraceOf (y::x::vs, F (nx, fresh (x::vs)) :: C (nx, fresh vs) :: es)
        a ((x, FORK y)::t)
   | trace_of_join:
     forall vs es a t x y ny nx,
@@ -162,14 +160,14 @@ Section Edges.
     TraceOf (vs, es) a t ->
     MapsTo x nx vs ->
     MapsTo y ny vs ->
-    TraceOf (x::vs, J (ny, length vs) :: C (nx, length vs) :: es)
+    TraceOf (x::vs, J (ny, fresh vs) :: C (nx, fresh vs) :: es)
        a ((x, JOIN y)::t)
   | trace_of_continue:
     forall vs es a t x nx,
     Live (vs, es) x ->
     TraceOf (vs, es) a t ->
     MapsTo x nx vs ->
-    TraceOf (x::vs, C (nx, length vs) :: es) a ((x, CONTINUE)::t).
+    TraceOf (x::vs, C (nx, fresh vs) :: es) a ((x, CONTINUE)::t).
 
   Lemma trace_of_cons:
     forall cg a t e cg',
@@ -181,20 +179,15 @@ Section Edges.
     inversion H0; subst; clear H0.
     - inversion H3; subst; clear H3.
       assert (prev = nx) by eauto using maps_to_fun_2; subst.
-      assert (curr = length vs)
-      by eauto using maps_to_inv_eq; subst.
-      assert (ny = length (x::vs))
-      by eauto using maps_to_inv_eq; subst.
-      simpl.
+      apply maps_to_inv_eq in H12; subst.
+      apply maps_to_inv_eq in H5; subst.
       auto using trace_of_fork.
     - inversion H2; subst; clear H2.
-      assert (curr = length vs)
-      by eauto using maps_to_inv_eq; subst.
-      assert (nx = length vs)
-      by eauto using maps_to_inv_eq; subst.
-      eauto using trace_of_join, maps_to_neq.
-    - assert (curr = length vs)
-      by eauto using maps_to_inv_eq; subst.
+      apply maps_to_inv_eq in H3; subst.
+      apply maps_to_inv_eq in H11; subst.
+      apply maps_to_neq in H4; auto.
+      eauto using trace_of_join.
+    - apply maps_to_inv_eq in H3; subst.
       auto using trace_of_continue.
   Qed.
 
@@ -220,9 +213,6 @@ Section Edges.
     - apply run_nil.
     - eapply run_cons; eauto.
       apply reduces_fork; auto using maps_to_eq, reduces_continue.
-      assert (MapsTo y (length (x::vs)) (y :: x :: vs)) 
-      by auto using maps_to_eq.
-      simpl in *; assumption.
     - eauto using run_cons, reduces_join, reduces_continue, maps_to_eq, maps_to_cons.
     - eauto using run_cons, reduces_continue, maps_to_eq, maps_to_cons.
   Qed.
@@ -248,7 +238,7 @@ Section Edges.
   Definition EdgeToIndex cg :=
     forall x y,
     HB_Edge cg (x, y) ->
-    Index x (fst cg) /\ Index y (fst cg).
+    Node x (fst cg) /\ Node y (fst cg).
 End Edges.
 
 Section Props.
@@ -261,7 +251,7 @@ Section Props.
     simpl; auto.
   Qed.
 
-  Inductive Prec : (nat * nat) -> cg_edge -> Prop :=
+  Inductive Prec : (node * node) -> cg_edge -> Prop :=
   | prec_def:
     forall e,
     Prec (e_edge e) e.
@@ -322,13 +312,13 @@ Section Props.
     forall n1 n2,
     EdgeToIndex cg ->
     List.In (n1, n2) (cg_edges cg) ->
-    n1 < length (fst cg).
+    NODE.lt n1 (fresh (fst cg)).
   Proof.
     intros.
     apply hb_edge_spec in H0.
     apply H in H0.
     destruct H0.
-    auto using index_to_lt.
+    auto using node_to_lt.
   Qed.
 
   (** Comparable with respect to the happens-before relation [n1 < n2 \/ n2 < n1] *)
@@ -449,16 +439,16 @@ Section PropsEx.
       inversion H0; subst; clear H0.
       destruct H7 as [?|[?|?]].
       + subst; inversion H8; subst; clear H8.
-        split; eauto using maps_to_lt, lt_to_index, index_cons.
+        split; eauto using maps_to_lt, lt_to_node, node_cons, maps_to_eq.
       + subst; simpl in *; inversion H8; subst; clear H8.
-        split; eauto using maps_to_lt, lt_to_index, index_cons.
+        split; eauto using maps_to_lt, lt_to_node, node_cons, maps_to_eq.
       + subst.
         assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
         rewrite H8 in *.
         apply H in He.
         simpl in *.
         destruct He.
-        split; auto using index_cons.
+        split; auto using node_cons.
     - simpl in *.
       inversion H3; subst; clear H3.
       apply maps_to_inv_eq in H4; subst.
@@ -469,18 +459,16 @@ Section PropsEx.
       destruct H6 as [Hx|[Hx|Hx]].
       + subst.
         inversion H7; subst; clear H7.
-        apply maps_to_lt in H5.
-        auto using lt_to_index, index_cons.
+        split; eauto using lt_to_node, node_cons, maps_to_eq, maps_to_lt.
       + subst.
         inversion H7; subst; clear H7.
-        apply maps_to_lt in H11.
-        auto using lt_to_index, index_cons.
+        split; eauto using lt_to_node, node_cons, maps_to_lt, maps_to_eq.
       + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
         rewrite H7 in *.
         apply H in He.
         simpl in *.
         destruct He.
-        split; auto using index_cons.
+        split; auto using node_cons.
     - simpl in *.
       apply maps_to_inv_eq in H4; subst.
       inversion H1; subst; clear H1.
@@ -488,14 +476,13 @@ Section PropsEx.
       destruct H6 as [Hx|Hx].
       + subst.
         inversion H7; subst; clear H7.
-        apply maps_to_lt in H3.
-        auto using lt_to_index, index_cons.
+        split; eauto using lt_to_node, node_cons, maps_to_lt, maps_to_eq.
      + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
        rewrite H7 in *.
        apply H in He.
        simpl in *.
        destruct He.
-       split; auto using index_cons.
+       split; auto using node_cons.
   Qed.
 
   Lemma run_to_edge_to_index:

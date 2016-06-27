@@ -1,120 +1,311 @@
+Set Implicit Arguments.
+
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FMapAVL.
 Require Import Coq.FSets.FSetAVL.
 Require Import Coq.Arith.Peano_dec.
+
 Require Import Aniceto.Map.
 
 Require Coq.FSets.FMapFacts.
 
-Require Import Tid.
+Inductive node := make : nat -> node.
 
-Structure node := {
-  n_task: tid;
-  n_id: nat
-}.
+Definition node_id r := match r with | make n => n end.
 
-Definition zero t := {| n_task := t; n_id:= 0 |}.
+Definition node_first := make 0.
 
+Definition node_next m := make (S (node_id m)).
 
-Module NODE <: OrderedType.
+Module NODE <: UsualOrderedType.
   Definition t := node.
   Definition eq := @eq node.
-  Definition lt n1 n2 := n_id n1 < n_id n2 \/ (n_id n1 = n_id n2 /\ TID.lt (n_task n1) (n_task n2)).
-
-  Lemma eq_refl:
-    forall x,
-    eq x x.
+  Definition lt x y := lt (node_id x) (node_id y).
+  Definition eq_refl := @eq_refl t.
+  Definition eq_sym := @eq_sym t.
+  Definition eq_trans := @eq_trans t.
+  Lemma lt_trans: forall x y z : t, lt x y -> lt y z -> lt x z.
   Proof.
-    unfold eq; trivial.
-  Qed.
-
-  Lemma eq_sym:
-    forall x y,
-    eq x y ->
-    eq y x.
-  Proof.
-    unfold eq; auto.
-  Qed.
-
-  Lemma eq_trans :
-    forall x y z,
-    eq x y ->
-    eq y z ->
-    eq x z.
-  Proof.
-    unfold eq.
-    intros; subst; trivial.
-  Qed.
-
-  Lemma lt_trans:
-    forall x y z : t, lt x y -> lt y z -> lt x z.
-  Proof.
-    unfold lt.
     intros.
-    destruct H as [?|(?,?)], H0 as [?|(?,?)]; eauto using TID.lt_trans with *.
+    unfold lt in *.
+    destruct x, y, z.
+    simpl in *.
+    omega.
   Qed.
 
   Lemma lt_not_eq : forall x y : t, lt x y -> ~ eq x y.
   Proof.
-    unfold eq, lt.
+    unfold lt in *.
     intros.
-    destruct H as [?|(?,?)].
-    - intuition; subst; auto with *.
-    - intuition; subst.
-      apply TID.lt_not_eq in H0.
-      eauto using TID.lt_not_eq with *.
+    destruct x, y.
+    simpl in *.
+    unfold not; intros.
+    inversion H0.
+    subst.
+    apply Lt.lt_irrefl in H.
+    inversion H.
   Qed.
 
-  Require Import Coq.Structures.OrderedTypeEx.
   Require Import Coq.Arith.Compare_dec.
   Lemma compare:
     forall x y, Compare lt eq x y.
   Proof.
     intros.
-    unfold lt.
-    destruct (Nat_as_OT.compare (n_id x) (n_id y));
-    unfold Nat_as_OT.lt, Nat_as_OT.eq in *;
-    auto using LT, GT.
-    destruct (TID.compare (n_task x) (n_task y));
-    auto using LT, GT. 
     destruct x, y.
-    unfold TID.eq in *.
-    simpl in *; subst.
+    destruct (Nat_as_OT.compare n n0);
+    eauto using LT, GT.
     apply EQ.
-    unfold eq; auto.
+    unfold Nat_as_OT.eq in *.
+    subst.
+    intuition.
   Qed.
 
   Lemma eq_dec : forall x y : t, {eq x y} + {~ eq x y}.
   Proof.
     intros.
     unfold eq.
-    destruct x as (x1,x2), y as (y1,y2).
-    destruct (tid_eq_dec x1 y1), (eq_nat_dec x2 y2); subst; eauto;
-      right;
-      intuition;
-      inversion H; subst;
-      contradiction n; auto.
+    destruct x, y.
+    destruct (eq_nat_dec n n0).
+    - subst; eauto.
+    - right.
+      unfold not.
+      intros.
+      contradiction n1.
+      inversion H; auto.
   Qed.
-
 End NODE.
 
-Lemma node_eq_rw:
-  forall x y, NODE.eq x y <-> x = y.
-Proof.
-  unfold NODE.eq; intuition. 
-Qed.
-
-Lemma node_eq_dec:
-  forall (x y:node),
-  { x = y } + { x <> y }.
-Proof.
-  intros.
-  destruct (NODE.eq_dec x y); rewrite node_eq_rw in *; auto.
-Qed.
 
 Module MN := FMapAVL.Make NODE.
 Module MN_Facts := FMapFacts.Facts MN.
 Module MN_Props := FMapFacts.Properties MN.
 Module MN_Extra := MapUtil MN.
+Module SN := FSetAVL.Make NODE.
+Definition set_node := SN.t.
 
+Lemma node_eq_rw:
+  forall (k k':node), NODE.eq k k' <-> k = k'.
+Proof.
+  intros.
+  auto with *.
+Qed.
+
+Lemma node_eq_dec:
+  forall x y : node, {x = y} + {x <> y}.
+Proof.
+  auto using node_eq_rw, NODE.eq_dec.
+Qed.
+
+Section NotIn.
+  Variable elt:Type.
+
+  Let lt_irrefl:
+    forall x : node, ~ NODE.lt x x.
+  Proof.
+    unfold not; intros.
+    apply NODE.lt_not_eq in H.
+    contradiction H.
+    apply NODE.eq_refl.
+  Qed.
+
+  Let lt_next:
+    forall x, NODE.lt x (node_next x).
+  Proof.
+    intros.
+    destruct x.
+    unfold node_next, node_id, NODE.lt.
+    simpl.
+    auto.
+  Qed.
+
+  Let node_impl_eq:
+    forall k k' : node, k = k' -> k = k'.
+  Proof.
+    auto.
+  Qed.
+
+  Definition supremum {elt:Type} := @MN_Extra.supremum elt node_first node_next NODE.lt NODE.compare.
+
+  Theorem find_not_in:
+    forall (m: MN.t elt),
+    ~ MN.In (supremum m) m.
+  Proof.
+    intros.
+    eauto using MN_Extra.find_not_in, NODE.lt_trans.
+  Qed.
+
+End NotIn.
+
+Section Props.
+  Require Import Tid.
+  Require Bijection.
+
+  Variable A:Type.
+
+  Definition MapsTo (x:A) (n:node) (vs:list A) := Bijection.MapsTo x (node_id n) vs.
+
+  Definition fresh (vs:list A) := make (length vs).
+
+  Definition Node x (vs:list A) := Bijection.Index (node_id x) vs.
+
+  Lemma maps_to_fun_1:
+    forall x y n (vs:list A),
+    MapsTo x n vs ->
+    MapsTo y n vs ->
+    y = x.
+  Proof.
+    unfold MapsTo; eauto using Bijection.maps_to_fun_1.
+  Qed.
+
+  Lemma maps_to_fun_2:
+    forall vs (x:A) n n',
+    MapsTo x n vs ->
+    MapsTo x n' vs ->
+    n' = n.
+  Proof.
+    intros.
+    unfold MapsTo in *.
+    destruct n as (n), n' as (n').
+    simpl in *.
+    eauto using Bijection.maps_to_fun_2.
+  Qed.
+
+  Lemma maps_to_inv_eq:
+    forall (x:A) n vs,
+    MapsTo x n (x :: vs) ->
+    n = fresh vs.
+  Proof.
+    intros.
+    unfold MapsTo, fresh in *.
+    destruct n as (n).
+    simpl in *.
+    eauto using Bijection.maps_to_inv_eq.
+  Qed.
+
+  Lemma maps_to_neq:
+    forall (x:A) y vs n,
+    x <> y ->
+    MapsTo y n (x :: vs) ->
+    MapsTo y n vs.
+  Proof.
+    intros.
+    destruct n as (n).
+    unfold MapsTo in *; simpl in *.
+    eauto using Bijection.maps_to_neq.
+  Qed.
+
+  Lemma maps_to_eq:
+    forall x vs,
+    MapsTo x (fresh vs) (x::vs).
+  Proof.
+    intros.
+    unfold MapsTo, fresh.
+    simpl.
+    auto using Bijection.maps_to_eq.
+  Qed.
+
+  Lemma maps_to_cons:
+    forall x vs y n,
+    x <> y ->
+    MapsTo x n vs ->
+    MapsTo x n (y :: vs).
+  Proof.
+    unfold MapsTo, fresh.
+    auto using Bijection.maps_to_cons.
+  Qed.
+
+  Lemma maps_to_lt:
+    forall (x:A) n vs,
+    MapsTo x n vs ->
+    NODE.lt n (fresh vs).
+  Proof.
+    intros.
+    unfold NODE.lt, fresh, MapsTo in *.
+    destruct n; simpl in *.
+    eauto using Bijection.maps_to_lt.
+  Qed.
+
+  Lemma node_to_lt:
+    forall n vs,
+    Node n vs ->
+    NODE.lt n (fresh vs).
+  Proof.
+    intros.
+    destruct n.
+    unfold Node, fresh, NODE.lt in *.
+    eauto using Bijection.index_to_lt.
+  Qed.
+
+  Lemma lt_to_node:
+    forall n vs,
+    NODE.lt n (fresh vs) ->
+    Node n vs.
+  Proof.
+    unfold NODE.lt, Node, fresh.
+    auto using Bijection.lt_to_index.
+  Qed.
+
+  Lemma node_cons:
+    forall n vs x,
+    Node n vs ->
+    Node n (x::vs).
+  Proof.
+    unfold NODE.lt, Node, fresh.
+    auto using Bijection.index_cons.
+  Qed.
+
+  Lemma maps_to_absurd_fresh:
+    forall (x:A) vs,
+    ~ MapsTo x (fresh vs) vs.
+  Proof.
+    unfold fresh, MapsTo.
+    eauto using Bijection.maps_to_absurd_length.
+  Qed.
+
+End Props.
+
+Section MoreProps.
+
+  Lemma maps_to_length_rw:
+    forall {A:Type} {B:Type} (vs:list A) (vs':list B),
+    length vs = length vs' ->
+    fresh vs = fresh vs'.
+  Proof.
+    intros.
+    unfold fresh.
+    auto.
+  Qed.
+
+  Let length_node_id_rw:
+    forall {A} (vs:list A) n,
+    length vs = node_id n ->
+    fresh vs = n.
+  Proof.
+    unfold fresh.
+    intros.
+    destruct n; auto.
+  Qed.
+
+  Lemma maps_to_to_in:
+    forall {A} x n (vs:list A),
+    MapsTo x n vs ->
+    List.In x vs.
+  Proof.
+    unfold MapsTo; eauto using Bijection.maps_to_to_in.
+  Qed.
+
+  Lemma maps_to_inv:
+    forall {A} x (y:A) n vs,
+    MapsTo x n (y :: vs) ->
+    (x = y /\ n = fresh vs) \/ (x <> y /\ MapsTo x n vs).
+  Proof.
+    intros.
+    inversion H; subst.
+    - apply length_node_id_rw in H1.
+      subst.
+      intuition.
+    - intuition.
+  Qed.
+
+End MoreProps.
