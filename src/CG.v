@@ -127,6 +127,28 @@ Section Edges.
     MapsTo x curr (x::vs) ->
     Reduces (vs,es) (x, CONTINUE) (x::vs, C (prev, curr) :: es).
 
+  (** The cannonical way to interpret the results of a reduction step in a CG. *)
+
+  Inductive result :=
+  | R_FORK: cg_edge -> cg_edge -> result
+  | R_JOIN: cg_edge -> cg_edge -> result
+  | R_CONTINUE: cg_edge -> result.
+
+  Inductive ReductionResult : event ->  computation_graph -> result -> Prop :=
+  | reduction_result_fork:
+    forall y x vs es nx,
+    MapsTo x nx vs ->
+    ReductionResult (x, FORK y) (y::x::vs, F (nx,fresh (x::vs))::C (nx,fresh vs)::es) (R_FORK (F (nx,fresh (x::vs))) (C (nx,fresh vs)))
+  | result_join:
+    forall x y nx ny vs es,
+    MapsTo y ny vs ->
+    MapsTo x nx vs ->
+    ReductionResult (x, JOIN y) (x::vs, J (ny,fresh vs) :: C (nx,fresh vs)::es) (R_JOIN (J (ny,fresh vs)) (C (nx,fresh vs)))
+  | result_continue:
+    forall x nx es vs,
+    MapsTo x nx vs ->
+    ReductionResult (x, CONTINUE) (x::vs, C (nx,fresh vs)::es) (R_CONTINUE (C (nx,fresh vs))).
+
   Definition make_cg x : computation_graph := (x::nil, nil).
 
   Inductive Run (x:tid): trace -> computation_graph -> Prop :=
@@ -494,6 +516,27 @@ Section PropsEx.
     induction H.
     - auto using make_edge_to_index.
     - eauto using run_cons, reduces_edge_to_index.
+  Qed.
+
+  Lemma reduction_results_spec:
+    forall cg e cg',
+    Reduces cg e cg' ->
+    exists r, ReductionResult e cg' r.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    - apply maps_to_inv_eq in H4; subst.
+      inversion H2; subst; clear H2.
+      apply maps_to_inv_eq in H10; subst.
+      apply maps_to_fun_2 with (n:=nx) in H9; subst; auto.
+      eauto using reduction_result_fork.
+    - inversion H1; subst; clear H1.
+      apply maps_to_inv_eq in H10; subst.
+      apply maps_to_neq in H3; auto.
+      apply maps_to_inv_eq in H2; subst.
+      eauto using result_join.
+    - apply maps_to_inv_eq in H2; subst.
+      eauto using result_continue.
   Qed.
 
 End PropsEx.
