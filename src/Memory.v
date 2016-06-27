@@ -1,17 +1,21 @@
 Set Implicit Arguments.
 
 Require Import Coq.Lists.List.
+
 Require Import Tid.
 Require Import Lang.
 Require Import Mid.
 Require Import Shadow.
 Require Import Node.
+Require Import CG.
+Require SJ_CG.
 
 Module Locals.
 Section Defs.
   Variable A:Type.
 
   Inductive op :=
+  | COPY : node -> op
   | CONS : A -> node -> op
   | NEW : list A -> op.
 
@@ -20,7 +24,12 @@ Section Defs.
   Definition local_memory := MN.t task_local.
 
   Inductive Reduces (m:local_memory): (node * op) -> local_memory -> Prop :=
-  | reduces_add:
+  | reduces_copy:
+    forall l n n',
+    MN.MapsTo n l m ->
+    ~ MN.In n' m ->
+    Reduces m (n', COPY n) (MN.add n' l m)
+  | reduces_cons:
     forall l x n n',
     MN.MapsTo n l m ->
     ~ MN.In n' m ->
@@ -58,6 +67,19 @@ Section Defs.
 
   Definition m_local (m:memory) := snd m.
 
+  Inductive Infer: computation_graph -> event -> cg_edge -> Prop :=
+  | infer_fork:
+    forall nx vs es x y e,
+    Infer (vs, es) (x,CONTINUE) e ->
+    Infer (y::vs,F (nx, fresh vs) :: es) (x, FORK y) (F (nx, fresh vs))
+  | infer_join:
+    forall ny vs es x y e,
+    Infer (vs, es) (x,CONTINUE) e ->
+    Infer (vs,J (ny, fresh vs) :: es) (x, JOIN y) (J (ny, fresh vs))
+  | infer_continue:
+    forall x vs n n' es,
+    Infer (x::vs,C (n,n') :: es) (x, CONTINUE) (C (n,n')).
+
   Inductive op :=
   | CONTINUE: op
   | GLOBAL_ALLOC: mid -> datum -> op
@@ -66,17 +88,15 @@ Section Defs.
   | FUTURE: tid -> list datum -> op
   | FORCE: tid -> datum -> op.
 
-  Definition effect := (tid * op) % type.
+  Definition event := (tid * op) % type.
 
-  Require Import CG.
 
-  Variable cg: computation_graph.
+  Variable cg : computation_graph.
 
-  Inductive Reduces : memory -> effect -> memory -> Prop :=
+  Inductive Reduces : memory -> event -> memory -> Prop :=
   | reduces_g_read:
-    forall g l d n n' (x:tid) y l' g',
-    (* a global read is a continue in the CG *)
-    ReductionResult (x, CG.CONTINUE) cg (R_CONTINUE (C (n,n'))) ->
+    forall g l d n n' (x:tid) y l' g' es,
+    snd cg = C (n, n') :: es ->
     (* the reference y is in the locals of task x *)
     Locals.MapsTo n (d_mem y) l ->
     (* the contents of reference y is datum d *)
@@ -84,13 +104,13 @@ Section Defs.
     (* add datum d to the locals of x *)
     Locals.Reduces l (n', CONS d n) l' ->
     (* update the shared memory to record the read *)
-    Shadow.Reduces cg g (y, {| a_when := n'; a_what:=@READ datum |}) g' ->
+    Shadow.Reduces cg g (y, {| a_when := n'; a_what:=READ datum |}) g' ->
     Reduces (g, l) (x, GLOBAL_READ y) (g', l')
 
   | reduces_g_write:
-    forall g (l:local_memory datum) (x:tid) (y:mid) d n n' g',
+    forall g (l:local_memory datum) (x:tid) (y:mid) d n n' g' es,
     (* a global write is a continue in the CG *)
-    ReductionResult (x, CG.CONTINUE) cg (R_CONTINUE (C (n,n'))) ->
+    snd cg = C (n, n') :: es ->
     (* datum d being written is in the locals of task x *)
     Locals.MapsTo n d l ->
     (* the target reference is also in the locals of task x *)
@@ -100,9 +120,9 @@ Section Defs.
     Reduces (g, l) (x, GLOBAL_WRITE y d) (g', l)
 
   | reduces_g_alloc:
-    forall g l (x:tid) n n' d l' g' y,
+    forall g l (x:tid) n n' d l' g' y es,
     (* a global alloc is a continue edge in the CG *)
-    ReductionResult (x, CG.CONTINUE) cg (R_CONTINUE (C (n,n'))) ->
+    snd cg = C (n, n') :: es ->
     (* the datum being alloc'ed is a local *)
     Locals.MapsTo n d l ->
     (* update the shared memory with an alloc *)
@@ -112,8 +132,8 @@ Section Defs.
     Reduces (g, l) (x, GLOBAL_ALLOC y d) (g', l')
 
   | reduces_future:
-    forall x nx nx' ny ds l g y l' l'',
-    ReductionResult (x, CG.FORK y) cg (R_FORK (F (nx,ny)) (C (nx,nx'))) ->
+    forall x nx nx' ny ds l g y l' l'' es,
+    snd cg = F (nx, ny) :: C (nx, nx') :: es ->
     (* the locals of the new task are copied from the locals of the current task *)
     List.Forall (fun d => Locals.MapsTo nx d l) ds ->
     (* add task y to the locals of x *)
@@ -123,15 +143,20 @@ Section Defs.
     Reduces (g, l) (x, FUTURE y ds) (g, l)
 
   | reduce_force:
-    forall g l nx nx' ny d l' x y,
+    forall g l nx nx' ny d l' x y es,
     (* CG reduced with a join *)
-    ReductionResult (x, CG.JOIN y) cg (R_JOIN (J (ny,nx')) (C (nx,nx'))) ->
+    snd cg = J (ny,nx') :: C (nx,nx') :: es ->
     (* Datum d is in the locals of y *)
     Locals.MapsTo ny d l ->
     (* Add d to the locals of x *)
     Locals.Reduces l (nx, CONS d nx') l' ->
-    Reduces (g, l) (x, FORCE y d) (g, l').
+    Reduces (g, l) (x, FORCE y d) (g, l')
 
+  | reduce_continue:
+    forall g l x n n' l' es,
+    snd cg = C (n, n') :: es ->
+    Locals.Reduces l (n', COPY datum n) l' ->
+    Reduces (g, l) (x, CONTINUE) (g, l').
 
   Inductive Knows (l:local_memory datum) : tid * tid -> Prop :=
   | knows_def:
@@ -141,3 +166,172 @@ Section Defs.
     Knows l (x, y).
 
 End Defs.
+
+
+Section SR.
+
+  Definition op_to_cg (o:op) : CG.op :=
+  match o with
+  | CONTINUE => CG.CONTINUE
+  | GLOBAL_ALLOC _ _ => CG.CONTINUE
+  | GLOBAL_WRITE _ _ => CG.CONTINUE
+  | GLOBAL_READ _ => CG.CONTINUE
+  | FUTURE x _ => CG.FORK x
+  | FORCE x _ => CG.JOIN x
+  end.
+
+  Definition event_to_cg (e:event) : CG.event :=
+  let (x,o) := e in (x, op_to_cg o).
+
+  Definition LocalToKnows (l:Locals.local_memory datum) cg sj :=
+    forall p,
+    Knows cg l p ->
+    SJ_CG.Knows (fst cg) sj p.
+
+  Let local_to_knows_continue_0:
+    forall ls vs es x n l a an b sj k,
+    LocalToKnows ls (vs, es) sj ->
+    MapsTo x n vs ->
+    MN.MapsTo n l ls ->
+    ~ MN.In (fresh vs) ls ->
+    MapsTo a an (x :: vs) ->
+    Locals.MapsTo an (d_task b) (MN.add (fresh vs) l ls) ->
+    SJ_CG.SJ (vs,es) k sj ->
+    SJ_CG.Knows (x :: vs) (SJ_CG.Copy n :: sj) (a, b).
+  Proof.
+    intros.
+    inversion H4; subst; clear H4.
+    rename l0 into al.
+    apply maps_to_inv in H3.
+    destruct H3 as [(?,?)|(?,mt)]; subst. {
+      rewrite MN_Facts.add_mapsto_iff in *.
+      destruct H6 as [(_,?)|(N,_)]. {
+        subst.
+        assert (Hk: Knows (vs,es) ls (x, b))
+        by eauto using knows_def, Locals.local_def.
+        inversion H5.
+        simpl in *.
+        eauto using SJ_CG.knows_copy_1.
+      }
+      contradiction N; trivial.
+    }
+    rewrite MN_Facts.add_mapsto_iff in *.
+    destruct H6 as [(?,?)|(?,mt')]. {
+      subst.
+      apply maps_to_absurd_fresh in mt.
+      contradiction.
+    }
+    assert (Hk: Knows (vs,es) ls (a, b))
+    by eauto using knows_def, Locals.local_def.
+    apply H in Hk.
+    simpl in *.
+    inversion H5.
+    simpl in *.
+    eauto using SJ_CG.knows_copy_2.
+  Qed.
+
+  Let local_to_knows_continue:
+    forall cg sj sj' cg' m m' a b x k,
+    LocalToKnows (snd m) cg sj ->
+    CG.Reduces cg (x, CG.CONTINUE) cg' ->
+    Reduces cg' m (x, CONTINUE) m' ->
+    Knows cg' (snd m') (a, b) ->
+    SJ_CG.Reduces sj cg' sj' ->
+    SJ_CG.SJ cg k sj ->
+    SJ_CG.Knows (fst cg') sj' (a, b).
+  Proof.
+    intros.
+    rename H0 into CG_R.
+    rename H1 into R.
+    rename H2 into Hk.
+    rename H3 into SJ_R.
+    rename H4 into Hsj.
+    inversion CG_R; subst; clear CG_R.
+    simpl in *.
+    apply maps_to_inv_eq in H4; subst.
+    rename prev into nx.
+    rename H2 into mt. (* MapsTo x nx vs *)
+    clear H1. (* Live (vs, es) x *)
+    inversion R; subst; clear R.
+    simpl in *.
+    inversion H1; subst; clear H1.
+    rename es0 into es.
+    inversion H3; subst; clear H3.
+    rename l into ls; rename l0 into l.
+    inversion SJ_R; subst; clear SJ_R.
+    inversion Hk; subst; clear Hk.
+    simpl in *.
+    rename n0 into an.
+    eauto.
+  Qed.
+
+  Let local_to_knows_alloc:
+    forall cg sj sj' cg' m m' a b x k y d,
+    LocalToKnows (snd m) cg sj ->
+    CG.Reduces cg (x, CG.CONTINUE) cg' ->
+    Reduces cg' m (x, GLOBAL_ALLOC y d) m' ->
+    Knows cg' (snd m') (a, b) ->
+    SJ_CG.Reduces sj cg' sj' ->
+    SJ_CG.SJ cg k sj ->
+    SJ_CG.Knows (fst cg') sj' (a, b).
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    apply maps_to_inv_eq in H9; subst.
+    rename prev into nx.
+    inversion H1; subst; clear H1.
+    simpl in *.
+    inversion H9; subst; clear H9.
+    rename es0 into es.
+    inversion H14; subst; clear H14.
+    inversion H3; subst; clear H3.
+    inversion H13; subst; clear H13.
+    rename l0 into ln.
+    inversion H2; subst; clear H2.
+    simpl in *.
+    rename n0 into an.
+    inversion H5; subst; clear H5.
+    rename l0 into la.
+    apply maps_to_inv in H3.
+    rewrite MN_Facts.add_mapsto_iff in *.
+    destruct H3 as [(?,?)|(?,mt)]. {
+      subst.
+      destruct H0 as [(_,?)|(N,_)]. {
+        subst.
+        destruct H1 as [Hx|?]. { inversion Hx. }
+        inversion H4; subst.
+        eauto using SJ_CG.knows_copy_1, knows_def, Locals.local_def.
+      }
+      contradiction N; trivial.
+    }
+    destruct H0 as [(?,?)|(?,mt')]. {
+      subst.
+      apply maps_to_absurd_fresh in mt.
+      contradiction.
+    }
+    inversion H4; subst.
+    eauto using SJ_CG.knows_copy_2, knows_def, Locals.local_def.
+  Qed.
+
+  Lemma local_to_knows_reduces:
+    forall cg k sj sj' cg' m m' e k',
+    SJ_CG.SJ cg k sj ->
+    LocalToKnows (snd m) cg sj ->
+    SJ_CG.Events.Reduces k (event_to_cg e) k' ->
+    CG.Reduces cg (event_to_cg e) cg' ->
+    SJ_CG.SJ cg' k' sj' ->
+    Reduces cg' m e m' ->
+    SJ_CG.Reduces sj cg' sj' ->
+    LocalToKnows (snd m') cg' sj'.
+  Proof.
+    intros.
+    unfold LocalToKnows.
+    intros (a,b); intros.
+    destruct e as (x, []); simpl in *.
+    - eapply local_to_knows_continue; eauto.
+    - eauto.
+    - 
+  Qed.
+    
+
+End SR.
