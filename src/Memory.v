@@ -521,16 +521,14 @@ Section SR.
 
   Lemma local_to_knows_reduces:
     forall cg k sj sj' cg' m m' e k',
-    SJ_CG.SJ cg k sj ->
     LocalToKnows (snd m) cg sj ->
-    SJ_CG.Events.Reduces k (event_to_cg e) k' ->
-    CG.Reduces cg (event_to_cg e) cg' ->
+    SJ_CG.SJ cg k sj ->
     SJ_CG.SJ cg' k' sj' ->
+    CG.Reduces cg (event_to_cg e) cg' ->
     Reduces cg' m e m' ->
     SJ_CG.Reduces sj cg' sj' ->
     DomIncl (snd m) (fst cg) ->
     LastWriteCanJoin (fst m) cg sj ->
-    SJ_CG.SJ cg' k' sj' ->
     LocalToKnows (snd m') cg' sj'.
   Proof.
     intros.
@@ -544,6 +542,131 @@ Section SR.
     - eauto.
     - eauto.
   Qed.
-    
+
+  Ltac expand H := inversion H; subst; clear H.
+
+  Lemma dom_incl_reduces:
+    forall m m' cg cg' e,
+    DomIncl (snd m) (fst cg) ->
+    CG.Reduces cg (event_to_cg e) cg' ->
+    Reduces cg' m e m' ->
+    DomIncl (snd m') (fst cg').
+  Proof.
+    intros.
+    unfold DomIncl.
+    intros.
+    destruct e as (x, []); simpl in *.
+    - expand H0.
+      expand H1.
+      expand H8.
+      simpl.
+      expand H3.
+      rename es0 into es.
+      apply maps_to_inv_eq in H7; subst.
+      simpl in *.
+      rewrite MN_Facts.add_in_iff in *.
+      destruct H2. {
+        subst.
+        auto using node_eq.
+      }
+      eauto using node_cons, maps_to_to_node.
+    - expand H0.
+      expand H1.
+      expand H13.
+      simpl in *.
+      expand H8.
+      apply maps_to_inv_eq in H7; subst.
+      simpl in *.
+      rewrite MN_Facts.add_in_iff in *.
+      destruct H2. {
+        subst.
+        auto using node_eq.
+      }
+      eauto using node_cons, maps_to_to_node.
+    - expand H0.
+      expand H1.
+      expand H13.
+      simpl in *.
+      expand H8.
+      apply maps_to_inv_eq in H7; subst.
+      simpl in *.
+      eauto using node_cons, maps_to_to_node.
+    - expand H0; expand H1; expand H13.
+      simpl in *.
+      expand H8.
+      apply maps_to_inv_eq in H7; subst.
+      simpl in *.
+      expand H6.
+      rewrite MN_Facts.add_in_iff in *.
+      destruct H2. {
+        subst.
+        auto using node_eq.
+      }
+      eauto using node_cons, maps_to_to_node.
+    - expand H0; expand H7.
+      apply maps_to_inv_eq in H14; subst.
+      apply maps_to_inv_eq in H11; subst.
+      expand H1; expand H14; expand H15.
+      simpl in *.
+      eauto using node_cons, maps_to_to_node.
+    - inversion H0; subst; clear H0.
+      inversion H6; subst; clear H6.
+      apply maps_to_inv_eq in H13; subst.
+      apply maps_to_inv_eq in H8; subst.
+      apply maps_to_neq in H10; auto.
+      expand H1; expand H7.
+      simpl in *.
+      expand H13.
+      rewrite MN_Facts.add_in_iff in *.
+      destruct H2. {
+        subst.
+        auto using node_eq.
+      }
+      eauto using node_cons, maps_to_to_node.
+  Qed.
+
+  Let last_write_can_join_continue:
+    forall cg sj cg' sj' m m' x r n a,
+    LastWriteCanJoin (fst m) cg sj ->
+    CG.Reduces cg (x, CG.CONTINUE) cg' ->
+    Reduces cg' m (x, CONTINUE) m' ->
+    SJ_CG.Reduces sj cg' sj' ->
+    LastWrite r n (d_task a) (fst m) cg' ->
+    SJ_CG.CanJoin n a sj'.
+  Proof.
+    intros.
+    expand H0.
+    apply maps_to_inv_eq in H8; subst.
+    expand H1.
+    simpl in *.
+    expand H2.
+    rename prev into nx.
+    expand H4.
+    rename es0 into es.
+    apply SJ_CG.can_join_cons.
+    eauto.
+  Qed.
+
+
+  Lemma last_write_can_join:
+    forall m cg sj cg' m' sj' e,
+    LastWriteCanJoin (fst m) cg sj ->
+    CG.Reduces cg (event_to_cg e) cg' ->
+    Reduces cg' m e m' ->
+    SJ_CG.Reduces sj cg' sj' ->
+    LastWriteCanJoin (fst m) cg' sj'.
+  Proof.
+    intros.
+    unfold LastWriteCanJoin.
+    intros r n a; intros.
+    destruct e as (x, []); simpl in *.
+    - expand H0.
+      expand H1.
+      expand H3.
+      apply maps_to_inv_eq in H7; subst.
+      expand H8.
+      simpl in *.
+  Qed.
+
 
 End SR.
