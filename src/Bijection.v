@@ -451,4 +451,21 @@ Section MapsTo.
     }
     auto using List.in_cons.
   Qed.
+
+  Lemma index_eq:
+    forall (x:A) vs,
+    Index (length vs) (x::vs).
+  Proof.
+    intros.
+    eauto using index_def, index_of_eq.
+  Qed.
+
+  Lemma maps_to_to_index:
+    forall (x:A) n vs,
+    MapsTo x n vs ->
+    Index n vs.
+  Proof.
+    intros.
+    eauto using index_def, maps_to_to_index_of.
+  Qed.
 End MapsTo.

@@ -195,6 +195,15 @@ Section Props.
     eauto using Bijection.maps_to_neq.
   Qed.
 
+  Lemma node_eq:
+    forall x vs,
+    Node (fresh vs) (x::vs).
+  Proof.
+    intros.
+    unfold Node, fresh in *.
+    eauto using Bijection.index_eq.
+  Qed.
+
   Lemma maps_to_eq:
     forall x vs,
     MapsTo x (fresh vs) (x::vs).
@@ -271,6 +280,16 @@ Section Props.
     unfold Node.
     simpl.
     apply Bijection.index_absurd_length.
+  Qed.
+
+  Lemma maps_to_to_node:
+    forall (x:A) n vs,
+    MapsTo x n vs ->
+    Node n vs.
+  Proof.
+    unfold MapsTo, Node.
+    intros.
+    eauto using Bijection.maps_to_to_index.
   Qed.
 
 End Props.
