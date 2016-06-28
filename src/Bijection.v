@@ -74,7 +74,7 @@ Section Defs.
       + eauto.
   Qed.
 
-  Lemma index_of_length_lt:
+  Lemma index_of_lt:
     forall x n l,
     IndexOf x n l ->
     n < length l.
@@ -113,21 +113,21 @@ Section Defs.
     - auto using index_cons with *.
   Qed.
 
-  Lemma index_to_lt:
+  Lemma index_lt:
     forall n l,
     Index n l ->
     n < length l.
   Proof.
     intros.
     inversion H.
-    eauto using index_of_length_lt.
+    eauto using index_of_lt.
   Qed.
 
   Lemma index_iff_length:
     forall n l,
     Index n l <-> n < length l.
   Proof.
-    split; auto using index_to_lt, lt_to_index.
+    split; auto using index_lt, lt_to_index.
   Qed.
 
   Lemma in_to_index_of:
@@ -166,12 +166,12 @@ Section Defs.
     - inversion H1; subst; clear H1.
       + trivial.
       + assert (length l < length l). {
-          eauto using index_of_length_lt.
+          eauto using index_of_lt.
         }
         omega.
     - inversion H1; subst; clear H1.
       + assert (length l < length l). {
-          eauto using index_of_length_lt.
+          eauto using index_of_lt.
         }
         omega.
       + eauto.
@@ -378,6 +378,25 @@ Section MapsTo.
     apply maps_to_lt in H.
     apply Lt.lt_irrefl in H.
     assumption.
+  Qed.
+
+  Lemma index_of_absurd_length:
+    forall (x:A) vs,
+    ~ IndexOf x (length vs) vs.
+  Proof.
+    intuition.
+    apply index_of_lt in H.
+    omega.
+  Qed.
+
+  Lemma index_absurd_length:
+    forall (vs:list A),
+    ~ Index (length vs) vs.
+  Proof.
+    intuition.
+    inversion H.
+    apply index_of_absurd_length in H0.
+    contradiction.
   Qed.
 
   Lemma maps_to_absurd_cons:

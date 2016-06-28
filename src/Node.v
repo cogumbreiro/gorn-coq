@@ -226,7 +226,7 @@ Section Props.
     eauto using Bijection.maps_to_lt.
   Qed.
 
-  Lemma node_to_lt:
+  Lemma node_lt:
     forall n vs,
     Node n vs ->
     NODE.lt n (fresh vs).
@@ -234,7 +234,7 @@ Section Props.
     intros.
     destruct n.
     unfold Node, fresh, NODE.lt in *.
-    eauto using Bijection.index_to_lt.
+    eauto using Bijection.index_lt.
   Qed.
 
   Lemma lt_to_node:
@@ -261,6 +261,16 @@ Section Props.
   Proof.
     unfold fresh, MapsTo.
     eauto using Bijection.maps_to_absurd_length.
+  Qed.
+
+  Lemma node_absurd_fresh:
+    forall (x:A) vs,
+    ~ Node (fresh vs) vs.
+  Proof.
+    intros.
+    unfold Node.
+    simpl.
+    apply Bijection.index_absurd_length.
   Qed.
 
 End Props.

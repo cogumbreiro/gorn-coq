@@ -340,7 +340,7 @@ Section Props.
     apply hb_edge_spec in H0.
     apply H in H0.
     destruct H0.
-    auto using node_to_lt.
+    auto using node_lt.
   Qed.
 
   (** Comparable with respect to the happens-before relation [n1 < n2 \/ n2 < n1] *)
