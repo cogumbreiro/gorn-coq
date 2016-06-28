@@ -46,6 +46,16 @@ Section Defs.
     List.In x l ->
     MapsTo n x ls.
 
+
+  Lemma maps_to_to_in:
+    forall n x l,
+    MapsTo n x l ->
+    MN.In n l.
+  Proof.
+    intros.
+    inversion H.
+    eauto using MN_Extra.mapsto_to_in.
+  Qed.
 End Defs.
 End Locals.
 
@@ -67,19 +77,6 @@ Section Defs.
 
   Definition m_local (m:memory) := snd m.
 
-  Inductive Infer: computation_graph -> event -> cg_edge -> Prop :=
-  | infer_fork:
-    forall nx vs es x y e,
-    Infer (vs, es) (x,CONTINUE) e ->
-    Infer (y::vs,F (nx, fresh vs) :: es) (x, FORK y) (F (nx, fresh vs))
-  | infer_join:
-    forall ny vs es x y e,
-    Infer (vs, es) (x,CONTINUE) e ->
-    Infer (vs,J (ny, fresh vs) :: es) (x, JOIN y) (J (ny, fresh vs))
-  | infer_continue:
-    forall x vs n n' es,
-    Infer (x::vs,C (n,n') :: es) (x, CONTINUE) (C (n,n')).
-
   Inductive op :=
   | CONTINUE: op
   | GLOBAL_ALLOC: mid -> datum -> op
@@ -95,12 +92,15 @@ Section Defs.
 
   Inductive Reduces : memory -> event -> memory -> Prop :=
   | reduces_g_read:
-    forall g l d n n' (x:tid) y l' g' es,
+    forall g l d n n' (x:tid) y l' g' es nw vs,
     snd cg = C (n, n') :: es ->
+    fst cg = x :: vs ->
     (* the reference y is in the locals of task x *)
     Locals.MapsTo n (d_mem y) l ->
     (* the contents of reference y is datum d *)
-    Shadow.MapsTo y d g cg ->
+    Shadow.LastWrite y nw d g (vs,es) ->
+    (* and the read is safe (race-free) *)
+    HB cg nw n' ->
     (* add datum d to the locals of x *)
     Locals.Reduces l (n', CONS d n) l' ->
     (* update the shared memory to record the read *)
@@ -149,7 +149,7 @@ Section Defs.
     (* Datum d is in the locals of y *)
     Locals.MapsTo ny d l ->
     (* Add d to the locals of x *)
-    Locals.Reduces l (nx, CONS d nx') l' ->
+    Locals.Reduces l (nx', CONS d nx) l' ->
     Reduces (g, l) (x, FORCE y d) (g, l')
 
   | reduce_continue:
@@ -211,7 +211,7 @@ Section SR.
         by eauto using knows_def, Locals.local_def.
         inversion H5.
         simpl in *.
-        eauto using SJ_CG.knows_copy_1.
+        eauto using SJ_CG.knows_copy.
       }
       contradiction N; trivial.
     }
@@ -227,7 +227,7 @@ Section SR.
     simpl in *.
     inversion H5.
     simpl in *.
-    eauto using SJ_CG.knows_copy_2.
+    eauto using SJ_CG.knows_neq.
   Qed.
 
   Let local_to_knows_continue:
@@ -300,7 +300,7 @@ Section SR.
         subst.
         destruct H1 as [Hx|?]. { inversion Hx. }
         inversion H4; subst.
-        eauto using SJ_CG.knows_copy_1, knows_def, Locals.local_def.
+        eauto using SJ_CG.knows_copy, knows_def, Locals.local_def.
       }
       contradiction N; trivial.
     }
@@ -310,7 +310,213 @@ Section SR.
       contradiction.
     }
     inversion H4; subst.
-    eauto using SJ_CG.knows_copy_2, knows_def, Locals.local_def.
+    eauto using SJ_CG.knows_neq, knows_def, Locals.local_def.
+  Qed.
+
+  Definition DomIncl (l:Locals.local_memory datum) (vs:list tid) :=
+    forall n,
+    MN.In n l ->
+    Node n vs.
+
+  Let local_to_knows_write:
+    forall cg sj sj' cg' m m' a b x k y d,
+    LocalToKnows (snd m) cg sj ->
+    CG.Reduces cg (x, CG.CONTINUE) cg' ->
+    Reduces cg' m (x, GLOBAL_WRITE y d) m' ->
+    Knows cg' (snd m') (a, b) ->
+    SJ_CG.Reduces sj cg' sj' ->
+    SJ_CG.SJ cg k sj ->
+    DomIncl (snd m) (fst cg) ->
+    SJ_CG.Knows (fst cg') sj' (a, b).
+  Proof.
+    intros.
+    rename H5 into Hdom.
+    inversion H0; subst; clear H0.
+    apply maps_to_inv_eq in H9; subst.
+    rename prev into nx.
+    inversion H1; subst; clear H1.
+    simpl in *.
+    inversion H9; subst; clear H9.
+    rename es0 into es.
+    inversion H14; subst; clear H14.
+    inversion H3; subst; clear H3.
+    inversion H2; subst; clear H2;
+    simpl in *.
+    rename n0 into an.
+    apply maps_to_inv in H3.
+    destruct H3 as [(?,?)|(?,mt)]. {
+      subst.
+      rename l0 into ly.
+      apply Locals.maps_to_to_in in H5.
+      apply Hdom in H5.
+      apply node_absurd_fresh with (vs:=vs) in H5; auto; contradiction.
+    }
+    inversion H4; subst.
+    eauto using SJ_CG.knows_neq, knows_def, Locals.local_def.
+  Qed.
+
+  Definition LastWriteCanJoin (g:access_history datum) cg sj :=
+    forall m n x,
+    LastWrite m n (d_task x) g cg ->
+    SJ_CG.CanJoin n x sj.
+
+  Let local_to_knows_read:
+    forall cg sj sj' cg' m m' a b x k y k',
+    LocalToKnows (snd m) cg sj ->
+    CG.Reduces cg (x, CG.CONTINUE) cg' ->
+    Reduces cg' m (x, GLOBAL_READ y) m' ->
+    Knows cg' (snd m') (a, b) ->
+    SJ_CG.Reduces sj cg' sj' ->
+    SJ_CG.SJ cg k sj ->
+    DomIncl (snd m) (fst cg) ->
+    LastWriteCanJoin (fst m) cg sj ->
+    SJ_CG.SJ cg' k' sj' ->
+    SJ_CG.Knows (fst cg') sj' (a, b).
+  Proof.
+    intros.
+    rename H5 into Hdom.
+    rename H6 into Hwrite.
+    rename H7 into Hsj'.
+    inversion H1; subst; clear H1.
+    destruct cg' as (vs', es').
+    simpl in *.
+    subst.
+    inversion H0; subst; rename H0 into Hcg.
+    apply maps_to_inv_eq in H17; subst.
+    inversion H3; subst; clear H3.
+    simpl in *.
+    inversion H2; subst; clear H2.
+    rename n0 into an.
+    simpl in *.
+    apply maps_to_inv in H3.
+    inversion H13; subst; clear H13.
+    inversion H15; subst; clear H15.
+    rename l0 into ln.
+    rename l1 into ly.
+    inversion H5; subst; clear H5.
+    rename l0 into la'.
+    rewrite MN_Facts.add_mapsto_iff in *.
+    destruct H3 as [(?,?)|(?,mt)]; subst. {
+      subst.
+      destruct H0 as [(_,Hx)|(N,_)]; subst. {
+        destruct H1 as [?|Hi]. {
+          subst.
+          eauto using SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons.
+        }
+        inversion H4.
+        eauto using knows_def, Locals.local_def, SJ_CG.knows_copy.
+      }
+      contradiction N; trivial.
+    }
+    destruct H0 as [(?,?)|(?,mt')]. {
+      subst.
+      apply maps_to_absurd_fresh in mt; contradiction.
+    }
+    inversion H4; subst.
+    eauto using SJ_CG.knows_neq, knows_def, Locals.local_def.
+  Qed.
+
+  Let local_to_knows_future:
+    forall cg sj sj' cg' m m' a b x y k ds,
+    LocalToKnows (snd m) cg sj ->
+    CG.Reduces cg (x, CG.FORK y) cg' ->
+    Reduces cg' m (x, FUTURE y ds) m' ->
+    Knows cg' (snd m') (a, b) ->
+    SJ_CG.Reduces sj cg' sj' ->
+    SJ_CG.SJ cg k sj ->
+    DomIncl (snd m) (fst cg) ->
+    SJ_CG.Knows (fst cg') sj' (a, b).
+  Proof.
+    intros.
+    rename H5 into Hdom.
+    inversion H1; subst; clear H1.
+    inversion H0; subst; rename H0 into Hcg.
+    inversion H9; subst; clear H9.
+    simpl in *.
+    inversion H8; subst; clear H8.
+    apply maps_to_inv_eq in H19; subst.
+    apply maps_to_inv_eq in H16; subst.
+    clear H18. (* MapsTo x nx vs *)
+    inversion H3; subst; clear H3 H15.
+    inversion H12; subst; clear H12.
+    inversion H13; subst; clear H13.
+    rename l0 into lx.
+    inversion H2; subst; clear H2.
+    simpl in *.
+    apply maps_to_inv in H3.
+    destruct H3 as [(?,?)|(?,mt)]. {
+      subst.
+      apply Locals.maps_to_to_in in H11.
+      apply Hdom in H11.
+      apply node_lt in H11.
+      unfold NODE.lt, fresh in *.
+      simpl in *.
+      omega.
+    }
+    inversion H11; subst; clear H11.
+    rename l0 into ln.
+    apply maps_to_inv in mt.
+    destruct mt as [(?,?)|(?,mt)]. {
+      subst.
+      apply MN_Extra.mapsto_to_in in H1.
+      apply Hdom in H1.
+      apply node_absurd_fresh with (vs:=vs) in H1; auto.
+      contradiction.
+    }
+    eauto 6 using SJ_CG.knows_neq, knows_def, Locals.local_def.
+  Qed.
+
+  Let local_to_knows_force:
+    forall cg sj sj' cg' m m' a b x k y d,
+    LocalToKnows (snd m) cg sj ->
+    CG.Reduces cg (x, CG.JOIN y) cg' ->
+    Reduces cg' m (x, FORCE y d) m' ->
+    Knows cg' (snd m') (a, b) ->
+    SJ_CG.Reduces sj cg' sj' ->
+    SJ_CG.SJ cg k sj ->
+    SJ_CG.Knows (fst cg') sj' (a, b).
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    inversion H8; subst; clear H8.
+    inversion H1; subst; clear H1.
+    inversion H9; subst; clear H9.
+    apply maps_to_inv_eq in H15; subst.
+    simpl in *.
+    inversion H3; subst; clear H3.
+    assert (ty = y) by eauto using maps_to_fun_1; subst.
+    clear H18 H11.
+    apply maps_to_neq in H12; auto.
+    rename nx0 into nx; rename ny0 into ny; rename es0 into es.
+    inversion H17; subst; clear H17.
+    apply maps_to_inv_eq in H10; subst.
+    clear H10.
+    rename l0 into lx.
+    inversion H2; subst; clear H2.
+    simpl in *.
+    inversion H5; subst; clear H5.
+    rename l0 into ln.
+    rewrite MN_Facts.add_mapsto_iff in *.
+    apply maps_to_inv in H3.
+    destruct H3 as [(?,?)|(?,mt)]. {
+      subst.
+      destruct H0 as [(_,?)|(N,_)]. {
+        subst.
+        destruct H1 as [|Hi]. {
+          subst.
+          inversion H4; subst.
+          eauto using SJ_CG.knows_append_right, knows_def, Locals.local_def.
+        }
+        inversion H4; subst.
+        eauto using SJ_CG.knows_append_left, knows_def, Locals.local_def.
+      }
+      contradiction N; trivial.
+    }
+    destruct H0 as [(?,?)|(?, mt')]. {
+      subst.
+      apply maps_to_absurd_fresh in mt; contradiction.
+    }
+    eauto 6 using SJ_CG.knows_neq, knows_def, Locals.local_def.
   Qed.
 
   Lemma local_to_knows_reduces:
@@ -322,6 +528,9 @@ Section SR.
     SJ_CG.SJ cg' k' sj' ->
     Reduces cg' m e m' ->
     SJ_CG.Reduces sj cg' sj' ->
+    DomIncl (snd m) (fst cg) ->
+    LastWriteCanJoin (fst m) cg sj ->
+    SJ_CG.SJ cg' k' sj' ->
     LocalToKnows (snd m') cg' sj'.
   Proof.
     intros.
@@ -330,7 +539,10 @@ Section SR.
     destruct e as (x, []); simpl in *.
     - eapply local_to_knows_continue; eauto.
     - eauto.
-    - 
+    - eauto.
+    - eauto.
+    - eauto.
+    - eauto.
   Qed.
     
 
