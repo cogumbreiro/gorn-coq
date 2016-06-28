@@ -1206,7 +1206,7 @@ Section SJ.
     auto using maps_to_length_rw.
   Qed.
 
-  Lemma knows_copy_1:
+  Lemma knows_copy:
     forall vs sj x y z n,
     length vs = length sj ->
     MapsTo x n vs ->
@@ -1224,16 +1224,51 @@ Section SJ.
       assumption.
   Qed.
 
-  Lemma knows_copy_2:
-    forall vs sj a b x n,
+  Lemma knows_neq:
+    forall vs sj a b x c,
     Knows vs sj (a, b) ->
     a <> x ->
-    Knows (x :: vs) (Copy n :: sj) (a, b).
+    Knows (x :: vs) (c :: sj) (a, b).
   Proof.
     intros.
     inversion H; subst; clear H.
     eauto using knows_def, maps_to_cons, can_join_cons.
   Qed.
 
+  Lemma knows_append_right:
+    forall y ny nx x vs b sj,
+    length vs = length sj ->
+    MapsTo y ny vs ->
+    Knows vs sj (y, b) ->
+    Knows (x :: vs) (Append nx ny :: sj) (x, b).
+  Proof.
+    intros.
+    inversion H1; subst; clear H1.
+    assert (nx0 = ny) by eauto using maps_to_fun_2; subst.
+    apply knows_def with (nx:=fresh vs).
+    - auto using maps_to_eq.
+    - apply maps_to_length_rw in H.
+      rewrite H.
+      apply can_join_append_right.
+      assumption.
+  Qed.
+
+  Lemma knows_append_left:
+    forall ny nx x vs b sj,
+    length vs = length sj ->
+    MapsTo x nx vs ->
+    Knows vs sj (x, b) ->
+    Knows (x :: vs) (Append nx ny :: sj) (x, b).
+  Proof.
+    intros.
+    inversion H1; subst; clear H1.
+    assert (nx0 = nx) by eauto using maps_to_fun_2; subst.
+    apply knows_def with (nx:=fresh vs).
+    - auto using maps_to_eq.
+    - apply maps_to_length_rw in H.
+      rewrite H.
+      apply can_join_append_left.
+      assumption.
+  Qed.
 End SJ.
 
