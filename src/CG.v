@@ -427,6 +427,41 @@ Section HB.
     contradiction.
   Qed.
 
+
+  Lemma hb_to_reaches_fgraph:
+    forall vs es x y,
+    HB (vs, es) x y ->
+    Reaches (FGraph.Edge (map e_edge es)) x y.
+  Proof.
+    unfold HB.
+    intros.
+    apply reaches_impl with (E:=HB_Edge (vs, es)); auto.
+    intros.
+    rewrite hb_edge_spec in *.
+    simpl in *.
+    auto.
+  Qed.
+
+  Lemma fgraph_reaches_to_hb:
+    forall vs es x y,
+    Reaches (FGraph.Edge (map e_edge es)) x y ->
+    HB (vs, es) x y.
+  Proof.
+    unfold  HB; intros.
+    apply reaches_impl with (E:=FGraph.Edge (map e_edge es)); auto.
+    intros.
+    rewrite hb_edge_spec.
+    auto.
+  Qed.
+
+  Lemma hb_fgraph_reaches_iff:
+    forall vs es x y,
+    HB (vs, es) x y <->
+    Reaches (FGraph.Edge (map e_edge es)) x y.
+  Proof.
+    split; eauto using hb_to_reaches_fgraph, fgraph_reaches_to_hb.
+  Qed.
+
 End HB.
 
 Section PropsEx.
@@ -540,3 +575,85 @@ Section PropsEx.
   Qed.
 
 End PropsEx.
+
+
+Section DAG.
+  Require Import Aniceto.Graphs.DAG.
+
+  Let LtEdge e := NODE.lt (fst e) (snd e).
+  Definition LtEdges es := List.Forall LtEdge es.
+  Let Sup x (e:node*node) := NODE.lt (snd e) x.
+  Definition HasSup x es := List.Forall (Sup x) es.
+
+  Let edge_to_lt:
+    forall es x y,
+    LtEdges es ->
+    FGraph.Edge es (x, y) ->
+    NODE.lt x y.
+  Proof.
+    intros.
+    unfold FGraph.Edge in *.
+    unfold LtEdges in *.
+    rewrite List.Forall_forall in H.
+    apply H in H0.
+    auto.
+  Qed.
+
+  Let walk_2_to_lt:
+    forall w x y es,
+    LtEdges es ->
+    Walk2 (FGraph.Edge es) x y w ->
+    NODE.lt x y.
+  Proof.
+    induction w; intros. {
+      apply walk2_nil_inv in H0.
+      contradiction.
+    }
+    inversion H0; subst; clear H0.
+    destruct a as (v1,v2).
+    apply starts_with_eq in H1; subst.
+    destruct w as [|(a,b)]. {
+      apply ends_with_eq in H2.
+      subst.
+      assert (Hi: FGraph.Edge es (x,y)). {
+        eapply walk_to_edge; eauto using List.in_eq.
+      }
+      eauto.
+    }
+    assert (Hlt: NODE.lt x v2). {
+      assert (FGraph.Edge es (x, v2)) by (eapply walk_to_edge; eauto using List.in_eq).
+      eauto.
+    }
+    inversion H3; subst; clear H3.
+    apply linked_inv in H6; symmetry in H6; subst.
+    apply ends_with_inv in H2.
+    assert (NODE.lt a y) by eauto using walk2_def, starts_with_def.
+    eauto using NODE.lt_trans.
+  Qed.
+
+  Let reaches_to_lt:
+    forall x y es,
+    LtEdges es ->
+    Reaches (FGraph.Edge es) x y ->
+    NODE.lt x y.
+  Proof.
+    intros.
+    inversion H0.
+    eauto.
+  Qed.
+
+  Lemma cg_dag:
+    forall (es:list (node*node)),
+    LtEdges es ->
+    DAG (FGraph.Edge es).
+  Proof.
+    intros.
+    unfold DAG.
+    intros.
+    unfold not; intros.
+    apply reaches_to_lt in H0; auto.
+    unfold NODE.lt in *.
+    omega.
+  Qed.
+
+End DAG.
