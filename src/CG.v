@@ -90,7 +90,7 @@ Section Edges.
   Proof.
     eauto using hb_edge_def, edge_def.
   Qed.
-
+(*
   Inductive TaskEdge (cg:computation_graph) t : (tid * tid) -> Prop :=
   | task_edge_def:
     forall x y nx ny,
@@ -103,7 +103,7 @@ Section Edges.
   | live_def:
     (forall y t, ~ TaskEdge cg t (x, y)) ->
     Live cg x.
-
+*)
   Inductive Reduces: computation_graph -> event -> computation_graph -> Prop :=
   | reduces_fork:
     forall vs es es' vs' y x nx ny,
@@ -122,7 +122,7 @@ Section Edges.
     Reduces (vs,es) (x, JOIN y) (vs', J (ny, nx) :: es')
   | reduces_continue:
     forall vs (es:list cg_edge) x prev curr,
-    Live (vs,es) x ->
+(*    Live (vs,es) x ->*)
     MapsTo x prev vs ->
     MapsTo x curr (x::vs) ->
     Reduces (vs,es) (x, CONTINUE) (x::vs, C (prev, curr) :: es).
@@ -169,7 +169,7 @@ Section Edges.
   | trace_of_fork:
     forall vs es a t x y nx,
     x <> y ->
-    Live (vs, es) x ->
+(*    Live (vs, es) x ->*)
     ~ List.In y vs ->
     TraceOf (vs, es) a t ->
     MapsTo x nx vs ->
@@ -178,7 +178,7 @@ Section Edges.
   | trace_of_join:
     forall vs es a t x y ny nx,
     x <> y ->
-    Live (vs, es) x ->
+(*    Live (vs, es) x ->*)
     TraceOf (vs, es) a t ->
     MapsTo x nx vs ->
     MapsTo y ny vs ->
@@ -186,7 +186,7 @@ Section Edges.
        a ((x, JOIN y)::t)
   | trace_of_continue:
     forall vs es a t x nx,
-    Live (vs, es) x ->
+(*    Live (vs, es) x ->*)
     TraceOf (vs, es) a t ->
     MapsTo x nx vs ->
     TraceOf (x::vs, C (nx, fresh vs) :: es) a ((x, CONTINUE)::t).
@@ -201,15 +201,15 @@ Section Edges.
     inversion H0; subst; clear H0.
     - inversion H3; subst; clear H3.
       assert (prev = nx) by eauto using maps_to_fun_2; subst.
-      apply maps_to_inv_eq in H12; subst.
+      apply maps_to_inv_eq in H11; subst.
       apply maps_to_inv_eq in H5; subst.
       auto using trace_of_fork.
     - inversion H2; subst; clear H2.
       apply maps_to_inv_eq in H3; subst.
-      apply maps_to_inv_eq in H11; subst.
+      apply maps_to_inv_eq in H10; subst.
       apply maps_to_neq in H4; auto.
       eauto using trace_of_join.
-    - apply maps_to_inv_eq in H3; subst.
+    - apply maps_to_inv_eq in H2; subst.
       auto using trace_of_continue.
   Qed.
 
@@ -488,9 +488,9 @@ Section PropsEx.
     unfold EdgeToIndex; intros a b; intros.
     inversion H0; subst; clear H0.
     - inversion H4; subst; clear H4.
-      apply maps_to_inv_eq in H13; subst.
+      apply maps_to_inv_eq in H12; subst.
       apply maps_to_inv_eq in H6; subst.
-      assert (prev = nx) by eauto using maps_to_fun_2; subst; clear H12.
+      assert (prev = nx) by eauto using maps_to_fun_2; subst.
       simpl in *.
       inversion H1; subst; clear H1.
       inversion H0; subst; clear H0.
@@ -509,7 +509,7 @@ Section PropsEx.
     - simpl in *.
       inversion H3; subst; clear H3.
       apply maps_to_inv_eq in H4; subst.
-      apply maps_to_inv_eq in H12; subst.
+      apply maps_to_inv_eq in H11; subst.
       apply maps_to_neq in H5; auto.
       inversion H1; subst; clear H1.
       inversion H0; subst; clear H0.
@@ -527,15 +527,15 @@ Section PropsEx.
         destruct He.
         split; auto using node_cons.
     - simpl in *.
-      apply maps_to_inv_eq in H4; subst.
+      apply maps_to_inv_eq in H3; subst.
       inversion H1; subst; clear H1.
       inversion H0; subst; clear H0.
-      destruct H6 as [Hx|Hx].
+      destruct H5 as [Hx|Hx].
       + subst.
-        inversion H7; subst; clear H7.
+        inversion H6; subst; clear H6.
         split; eauto using lt_to_node, node_cons, maps_to_lt, maps_to_eq.
      + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
-       rewrite H7 in *.
+       rewrite H6 in *.
        apply H in He.
        simpl in *.
        destruct He.
@@ -562,15 +562,15 @@ Section PropsEx.
     inversion H; subst; clear H.
     - apply maps_to_inv_eq in H4; subst.
       inversion H2; subst; clear H2.
-      apply maps_to_inv_eq in H10; subst.
-      apply maps_to_fun_2 with (n:=nx) in H9; subst; auto.
+      apply maps_to_inv_eq in H9; subst.
+      apply maps_to_fun_2 with (n:=nx) in H7; subst; auto.
       eauto using reduction_result_fork.
     - inversion H1; subst; clear H1.
-      apply maps_to_inv_eq in H10; subst.
+      apply maps_to_inv_eq in H9; subst.
       apply maps_to_neq in H3; auto.
       apply maps_to_inv_eq in H2; subst.
       eauto using result_join.
-    - apply maps_to_inv_eq in H2; subst.
+    - apply maps_to_inv_eq in H1; subst.
       eauto using result_continue.
   Qed.
 
@@ -690,19 +690,18 @@ Section DAG.
     unfold cg_edges in *.
     inversion H0; subst; clear H0; simpl in *.
     - inversion H3; subst; clear H3.
-      apply maps_to_inv_eq in H12; subst.
+      apply maps_to_inv_eq in H11; subst.
       apply maps_to_inv_eq in H5; subst.
       simpl in *.
       assert (prev = nx) by eauto using maps_to_fun_2; subst.
-      clear H11.
       apply List.Forall_cons; eauto.
     - inversion H2; subst; clear H2.
-      apply maps_to_inv_eq in H11; subst.
+      apply maps_to_inv_eq in H10; subst.
       apply maps_to_inv_eq in H3; subst.
       apply maps_to_neq in H4; auto.
       simpl.
       apply List.Forall_cons; eauto.
-    - apply maps_to_inv_eq in H3; subst.
+    - apply maps_to_inv_eq in H2; subst.
       apply List.Forall_cons; eauto.
   Qed.
 
@@ -745,12 +744,11 @@ Section DAG.
     unfold cg_edges in *.
     inversion H0; subst; clear H0; simpl in *.
     - inversion H3; subst; clear H3.
-      apply maps_to_inv_eq in H12; subst.
+      apply maps_to_inv_eq in H11; subst.
       apply maps_to_inv_eq in H5; subst.
       simpl in *.
       unfold HasSup, cg_edges in *; simpl in *.
       assert (prev = nx) by eauto using maps_to_fun_2; subst.
-      clear H11.
       apply List.Forall_cons; eauto.
       apply List.Forall_cons; eauto.
       rewrite List.Forall_forall in *.
@@ -760,7 +758,7 @@ Section DAG.
       simpl in *.
       eauto using NODE.lt_trans.
     - inversion H2; subst; clear H2.
-      apply maps_to_inv_eq in H11; subst.
+      apply maps_to_inv_eq in H10; subst.
       apply maps_to_inv_eq in H3; subst.
       apply maps_to_neq in H4; auto.
       simpl.
@@ -773,7 +771,7 @@ Section DAG.
       unfold Sup in *.
       simpl in *.
       eauto using NODE.lt_trans.
-    - apply maps_to_inv_eq in H3; subst.
+    - apply maps_to_inv_eq in H2; subst.
       unfold HasSup, cg_edges in *; simpl in *.
       apply List.Forall_cons; eauto.
       rewrite List.Forall_forall in *.
@@ -783,6 +781,5 @@ Section DAG.
       simpl in *.
       eauto using NODE.lt_trans.
   Qed.
-    
 
 End DAG.

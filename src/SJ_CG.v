@@ -304,7 +304,6 @@ End Props.
     apply knows_def with (nx:=ny); auto.
     inversion H0; subst; clear H0.
     apply maps_to_inv_eq in H10; subst.
-    apply maps_to_inv_eq in H13; subst.
     simpl in *.
     assert (R: fresh (x :: vs) = fresh (Cons y nx :: sj))
     by (unfold fresh; simpl; auto); rewrite R.
@@ -325,7 +324,7 @@ End Props.
     inversion H0; subst; clear H0.
     inversion H5; subst; clear H5.
     inversion H; subst; clear H H7.
-    apply maps_to_inv_eq in H12; subst.
+    apply maps_to_inv_eq in H11; subst.
     apply maps_to_inv_eq in H9; subst.
     simpl in *.
     apply knows_def with (nx:=fresh sj).
@@ -353,9 +352,8 @@ End Props.
     rename es0 into es; rename x' into nx'.
     inversion H1; subst; clear H1; simpl in *.
     rename nx0 into na.
-    apply maps_to_inv_eq in H14; subst.
+    apply maps_to_inv_eq in H13; subst.
     apply maps_to_inv_eq in H10; subst.
-    clear H13.
     assert (b <> y). {
       unfold not; intros; subst.
       contradiction H5.
@@ -396,8 +394,6 @@ End Props.
     apply maps_to_inv_eq in H8.
     assert (ty = y) by eauto using maps_to_fun_1; subst; clear H16.
     apply maps_to_neq in H10; auto.
-    apply maps_to_fun_2 with (n:=nx) in H12; auto; subst.
-    clear H13 H17.
     apply knows_def with (nx:=fresh vs); auto using maps_to_eq.
     apply maps_to_length_rw in Heq.
     rewrite Heq.
@@ -420,12 +416,10 @@ End Props.
     inversion H; subst; clear H.
     inversion H6; subst; clear H6.
     inversion H0; subst; clear H0.
-    clear H8. (* MapsTo x curr (x :: vs) *)
-    assert (ty = y) by eauto using maps_to_fun_1; subst;
-    clear H16. (* MapsTo ty ny (x :: vs) *)
+    assert (ty = y) by eauto using maps_to_fun_1; subst.
+    apply maps_to_inv_eq in H12; subst.
+    apply maps_to_neq in H10; subst; auto; clear H15 H8.
     simpl in *.
-    apply maps_to_inv_eq in H13; subst.
-    apply maps_to_neq in H10; auto.
     destruct (tid_eq_dec x a). {
       subst.
       apply knows_def with (nx:=fresh sj).
@@ -651,7 +645,7 @@ Section KnowsToEdge.
     inversion H1; subst; clear H1.
     inversion H9; subst; clear H9.
     simpl in *.
-    apply maps_to_inv_eq in H16; subst.
+    apply maps_to_inv_eq in H15; subst.
     apply maps_to_inv_eq in H13; subst.
     inversion H2; subst; clear H2.
     inversion H3; subst; clear H3.
@@ -718,7 +712,6 @@ Section KnowsToEdge.
     simpl in *.
     inversion H2; subst; clear H2.
     inversion H3; subst; clear H3.
-    clear H14.
     assert (ty = y) by eauto using maps_to_fun_1; subst; clear H17.
     apply maps_to_inv_eq in H9; subst.
     apply maps_to_neq in H11; auto.
@@ -758,13 +751,13 @@ Section KnowsToEdge.
     simpl in *.
     rename k' into k.
     rename prev into nx.
-    apply maps_to_inv_eq in H7; subst.
+    apply maps_to_inv_eq in H6; subst.
     inversion H3; subst; clear H3.
     apply maps_to_length_rw in Heq.
     apply maps_to_inv in H2; destruct H2 as [(?,?)|(?,mt)]. {
       subst.
       rewrite Heq in *.
-      apply can_join_inv_copy_1 in H6.
+      apply can_join_inv_copy_1 in H5.
       eauto using knows_def.
     }
     rename nx0 into nb.
@@ -852,10 +845,10 @@ Section Incl.
     inversion H1; subst; clear H1.
     inversion H10; subst; clear H10.
     inversion H2; subst; clear H2.
-    apply maps_to_inv_eq in H17; subst.
+    apply maps_to_inv_eq in H16; subst.
     apply maps_to_inv_eq in H14; subst.
     simpl in *.
-    rename prev into na; clear H16 H7.
+    rename prev into na.
     assert (Rw: fresh (a::vs) = fresh (Cons b n1 :: sj)). {
       apply maps_to_length_rw.
       simpl; auto.
@@ -916,7 +909,7 @@ Section Incl.
     inversion H1; subst; clear H1.
     inversion H8; subst; clear H8.
     inversion H2; subst; clear H2.
-    apply maps_to_inv_eq in H15; subst.
+    apply maps_to_inv_eq in H14; subst.
     apply maps_to_inv_eq in H10; subst.
     assert (ty = b) by eauto using maps_to_fun_1; subst; clear H18.
     apply maps_to_neq in H12; auto.
@@ -939,9 +932,9 @@ Section Incl.
         inversion H4; subst; clear H4.
         - assumption.
         - rewrite <- Heq in *.
-          apply maps_to_absurd_fresh in H14; contradiction.
+          apply maps_to_absurd_fresh in H11; contradiction.
         - rewrite <- Heq in *.
-          apply maps_to_absurd_fresh in H14; contradiction.
+          apply maps_to_absurd_fresh in H11; contradiction.
       } clear H4.
       rewrite Heq.
       auto using can_join_append_left.
@@ -976,7 +969,7 @@ Section Incl.
     inversion H0; subst; clear H0.
     inversion H1; subst; clear H1.
     inversion H2; subst; clear H2.
-    apply maps_to_inv_eq in H8; subst.
+    apply maps_to_inv_eq in H7; subst.
     simpl in *.
     rename prev into na.
     apply maps_to_length_rw in Heq.

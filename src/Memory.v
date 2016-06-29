@@ -643,6 +643,7 @@ Section SR.
     rename prev into nx.
     expand H4.
     rename es0 into es.
+    clear H8.
     apply SJ_CG.can_join_cons.
     eauto.
   Qed.
