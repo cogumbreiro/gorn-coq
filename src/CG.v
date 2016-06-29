@@ -583,7 +583,7 @@ Section DAG.
   Let LtEdge e := NODE.lt (fst e) (snd e).
   Definition LtEdges es := List.Forall LtEdge es.
   Let Sup x (e:node*node) := NODE.lt (snd e) x.
-  Definition HasSup x es := List.Forall (Sup x) es.
+  Definition HasSup cg := List.Forall (Sup (fresh (fst cg))) (cg_edges cg).
 
   Let edge_to_lt:
     forall es x y,
@@ -655,5 +655,134 @@ Section DAG.
     unfold NODE.lt in *.
     omega.
   Qed.
+
+  Let maps_to_lt_edge_cons:
+    forall {A:Type} (x:A) n vs,
+    MapsTo x n vs ->
+    LtEdge (n, fresh (x :: vs)).
+  Proof.
+    intros.
+    apply maps_to_lt in H.
+    unfold NODE.lt, fresh in *.
+    unfold LtEdge; simpl in *.
+    omega.
+  Qed.
+
+  Let maps_to_lt_edge:
+    forall {A:Type} (x:A) n vs,
+    MapsTo x n vs ->
+    LtEdge (n, fresh vs).
+  Proof.
+    intros.
+    apply maps_to_lt in H.
+    unfold NODE.lt, fresh in *.
+    unfold LtEdge; simpl in *.
+    omega.
+  Qed.
+
+  Lemma lt_edges_reduces:
+    forall (cg cg':computation_graph) e,
+    LtEdges (cg_edges cg) ->
+    Reduces cg e cg' ->
+    LtEdges (cg_edges cg').
+  Proof.
+    intros.
+    unfold cg_edges in *.
+    inversion H0; subst; clear H0; simpl in *.
+    - inversion H3; subst; clear H3.
+      apply maps_to_inv_eq in H12; subst.
+      apply maps_to_inv_eq in H5; subst.
+      simpl in *.
+      assert (prev = nx) by eauto using maps_to_fun_2; subst.
+      clear H11.
+      apply List.Forall_cons; eauto.
+    - inversion H2; subst; clear H2.
+      apply maps_to_inv_eq in H11; subst.
+      apply maps_to_inv_eq in H3; subst.
+      apply maps_to_neq in H4; auto.
+      simpl.
+      apply List.Forall_cons; eauto.
+    - apply maps_to_inv_eq in H3; subst.
+      apply List.Forall_cons; eauto.
+  Qed.
+
+  Let sub_fresh_cons_lhs:
+    forall {A:Type} (x:A) vs n,
+    Sup (fresh (x :: vs)) (n, fresh vs).
+  Proof.
+    intros.
+    unfold Sup.
+    simpl.
+    unfold NODE.lt, fresh; simpl; omega.
+  Qed.
+
+  Let sub_fresh_cons_cons:
+    forall {A:Type} (x y:A) vs n,
+    MapsTo x n vs ->
+    Sup (fresh (y :: x :: vs)) (n, fresh vs).
+  Proof.
+    intros.
+    unfold Sup.
+    simpl.
+    unfold NODE.lt, fresh; simpl; omega.
+  Qed.
+
+  Let lt_fresh_cons:
+    forall {A:Type} (x:A) vs,
+    NODE.lt (fresh vs) (fresh (x::vs)).
+  Proof.
+    intros.
+    unfold NODE.lt, fresh; simpl; auto.
+  Qed.
+
+  Lemma has_sup_reduces:
+    forall cg cg' e,
+    HasSup cg ->
+    Reduces cg e cg' ->
+    HasSup cg'.
+  Proof.
+    intros.
+    unfold cg_edges in *.
+    inversion H0; subst; clear H0; simpl in *.
+    - inversion H3; subst; clear H3.
+      apply maps_to_inv_eq in H12; subst.
+      apply maps_to_inv_eq in H5; subst.
+      simpl in *.
+      unfold HasSup, cg_edges in *; simpl in *.
+      assert (prev = nx) by eauto using maps_to_fun_2; subst.
+      clear H11.
+      apply List.Forall_cons; eauto.
+      apply List.Forall_cons; eauto.
+      rewrite List.Forall_forall in *.
+      intros (a,b); intros.
+      apply H in H0.
+      unfold Sup in *.
+      simpl in *.
+      eauto using NODE.lt_trans.
+    - inversion H2; subst; clear H2.
+      apply maps_to_inv_eq in H11; subst.
+      apply maps_to_inv_eq in H3; subst.
+      apply maps_to_neq in H4; auto.
+      simpl.
+      unfold HasSup, cg_edges in *; simpl in *.
+      apply List.Forall_cons; eauto.
+      apply List.Forall_cons; eauto.
+      rewrite List.Forall_forall in *.
+      intros (a,b); intros.
+      apply H in H0.
+      unfold Sup in *.
+      simpl in *.
+      eauto using NODE.lt_trans.
+    - apply maps_to_inv_eq in H3; subst.
+      unfold HasSup, cg_edges in *; simpl in *.
+      apply List.Forall_cons; eauto.
+      rewrite List.Forall_forall in *.
+      intros (a,b); intros.
+      apply H in H0.
+      unfold Sup in *.
+      simpl in *.
+      eauto using NODE.lt_trans.
+  Qed.
+    
 
 End DAG.
