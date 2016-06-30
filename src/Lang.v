@@ -10,11 +10,6 @@ Require Import HJ.Dep.
 
 Section Lang.
 
-  Inductive type :=
-  | t_ref: type -> type
-  | t_task: type -> type
-  | t_number: type.
-
   Inductive word :=
   | Num: nat -> word    (* number *)
   | TaskLabel : tid -> word  (* task-id *)
@@ -287,5 +282,10 @@ Section Lang.
   | READ _ => true
   | _ => false
   end.
+
+  Inductive type :=
+  | t_ref: type -> type
+  | t_task: type -> type
+  | t_number: type.
 End Lang.
 
