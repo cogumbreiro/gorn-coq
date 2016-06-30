@@ -100,7 +100,7 @@ Qed.
 Section NotIn.
   Variable elt:Type.
 
-  Let lt_irrefl:
+  Lemma node_lt_irrefl:
     forall x : node, ~ NODE.lt x x.
   Proof.
     unfold not; intros.
@@ -132,7 +132,7 @@ Section NotIn.
     ~ MN.In (supremum m) m.
   Proof.
     intros.
-    eauto using MN_Extra.find_not_in, NODE.lt_trans.
+    eauto using MN_Extra.find_not_in, NODE.lt_trans, node_lt_irrefl.
   Qed.
 
 End NotIn.
