@@ -188,6 +188,22 @@ Section SR.
     Knows cg l p ->
     SJ_CG.Knows (fst cg) sj p.
 
+  Ltac expand H := inversion H; subst; clear H.
+
+  Ltac simpl_map := 
+  repeat match goal with
+  | [ H1: MapsTo ?x ?n ?v, H2: MapsTo ?y ?n ?v |- _ ] =>
+      let H' := fresh "H" in
+      assert (H': x = y) by eauto using maps_to_fun_1;
+      rewrite H' in *;
+      clear H' H2
+  | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H
+  | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H
+  | [ H1: MapsTo ?x _ (?y :: _), H2: ?x <> ?y |- _ ] => apply maps_to_neq in H1; auto
+  | [ H1: MapsTo ?x _ (?y :: _), H2: ?y <> ?x |- _ ] => apply maps_to_neq in H1; auto
+  | [ H: MapsTo ?x _ (?x :: _) |- _ ] => apply maps_to_inv_eq in H; rewrite H in *; clear H
+  end.
+
   Let local_to_knows_continue_0:
     forall ls vs es x n l a an b sj k,
     LocalToKnows ls (vs, es) sj ->
@@ -247,19 +263,18 @@ Section SR.
     rename H3 into SJ_R.
     rename H4 into Hsj.
     inversion CG_R; subst; clear CG_R.
+    simpl_map.
     simpl in *.
-    apply maps_to_inv_eq in H4; subst.
     rename prev into nx.
-    rename H2 into mt. (* MapsTo x nx vs *)
-    clear H1. (* Live (vs, es) x *)
-    inversion R; subst; clear R.
+    rename H1 into mt. (* MapsTo x nx vs *)
+    expand R.
     simpl in *.
-    inversion H1; subst; clear H1.
+    expand H1.
     rename es0 into es.
-    inversion H3; subst; clear H3.
+    expand H3.
     rename l into ls; rename l0 into l.
-    inversion SJ_R; subst; clear SJ_R.
-    inversion Hk; subst; clear Hk.
+    expand SJ_R.
+    expand Hk.
     simpl in *.
     rename n0 into an.
     eauto.
@@ -277,15 +292,15 @@ Section SR.
   Proof.
     intros.
     inversion H0; subst; clear H0.
-    apply maps_to_inv_eq in H9; subst.
+    apply maps_to_inv_eq in H8; subst.
     rename prev into nx.
     inversion H1; subst; clear H1.
     simpl in *.
-    inversion H9; subst; clear H9.
+    inversion H8; subst; clear H8.
     rename es0 into es.
-    inversion H14; subst; clear H14.
-    inversion H3; subst; clear H3.
     inversion H13; subst; clear H13.
+    inversion H3; subst; clear H3.
+    inversion H12; subst; clear H12.
     rename l0 into ln.
     inversion H2; subst; clear H2.
     simpl in *.
@@ -332,13 +347,13 @@ Section SR.
     intros.
     rename H5 into Hdom.
     inversion H0; subst; clear H0.
-    apply maps_to_inv_eq in H9; subst.
+    apply maps_to_inv_eq in H8; subst.
     rename prev into nx.
     inversion H1; subst; clear H1.
     simpl in *.
-    inversion H9; subst; clear H9.
+    inversion H8; subst; clear H8.
     rename es0 into es.
-    inversion H14; subst; clear H14.
+    inversion H13; subst; clear H13.
     inversion H3; subst; clear H3.
     inversion H2; subst; clear H2;
     simpl in *.
@@ -382,7 +397,7 @@ Section SR.
     simpl in *.
     subst.
     inversion H0; subst; rename H0 into Hcg.
-    apply maps_to_inv_eq in H17; subst.
+    apply maps_to_inv_eq in H16; subst.
     inversion H3; subst; clear H3.
     simpl in *.
     inversion H2; subst; clear H2.
@@ -434,9 +449,9 @@ Section SR.
     inversion H9; subst; clear H9.
     simpl in *.
     inversion H8; subst; clear H8.
-    apply maps_to_inv_eq in H19; subst.
+    apply maps_to_inv_eq in H18; subst.
     apply maps_to_inv_eq in H16; subst.
-    clear H18. (* MapsTo x nx vs *)
+    clear H15. (* MapsTo x nx vs *)
     inversion H3; subst; clear H3 H15.
     inversion H12; subst; clear H12.
     inversion H13; subst; clear H13.
@@ -477,25 +492,19 @@ Section SR.
     SJ_CG.Knows (fst cg') sj' (a, b).
   Proof.
     intros.
-    inversion H0; subst; clear H0.
-    inversion H8; subst; clear H8.
-    inversion H1; subst; clear H1.
-    inversion H9; subst; clear H9.
-    apply maps_to_inv_eq in H15; subst.
+    expand H0;
+    expand H8;
+    expand H1;
+    expand H9.
     simpl in *.
-    inversion H3; subst; clear H3.
-    assert (ty = y) by eauto using maps_to_fun_1; subst.
-    clear H18 H11.
-    apply maps_to_neq in H12; auto.
+    expand H3.
+    simpl_map.
     rename nx0 into nx; rename ny0 into ny; rename es0 into es.
-    inversion H17; subst; clear H17.
-    apply maps_to_inv_eq in H10; subst.
-    clear H10.
-    rename l0 into lx.
-    inversion H2; subst; clear H2.
+    expand H16.
+    clear H13. (* fresh vs = fresh vs *)
+    expand H2.
     simpl in *.
-    inversion H5; subst; clear H5.
-    rename l0 into ln.
+    expand H5.
     rewrite MN_Facts.add_mapsto_iff in *.
     apply maps_to_inv in H3.
     destruct H3 as [(?,?)|(?,mt)]. {
@@ -543,8 +552,6 @@ Section SR.
     - eauto.
   Qed.
 
-  Ltac expand H := inversion H; subst; clear H.
-
   Lemma dom_incl_reduces:
     forall m m' cg cg' e,
     DomIncl (snd m) (fst cg) ->
@@ -558,11 +565,11 @@ Section SR.
     destruct e as (x, []); simpl in *.
     - expand H0.
       expand H1.
-      expand H8.
+      expand H7.
       simpl.
       expand H3.
+      simpl_map.
       rename es0 into es.
-      apply maps_to_inv_eq in H7; subst.
       simpl in *.
       rewrite MN_Facts.add_in_iff in *.
       destruct H2. {
@@ -572,10 +579,10 @@ Section SR.
       eauto using node_cons, maps_to_to_node.
     - expand H0.
       expand H1.
-      expand H13.
+      expand H12.
       simpl in *.
-      expand H8.
-      apply maps_to_inv_eq in H7; subst.
+      expand H7. (* C (prev, curr) :: es = C (n0, n') :: es0 *)
+      simpl_map.
       simpl in *.
       rewrite MN_Facts.add_in_iff in *.
       destruct H2. {
@@ -585,18 +592,18 @@ Section SR.
       eauto using node_cons, maps_to_to_node.
     - expand H0.
       expand H1.
-      expand H13.
+      expand H12.
       simpl in *.
-      expand H8.
-      apply maps_to_inv_eq in H7; subst.
+      expand H7.
+      simpl_map.
       simpl in *.
       eauto using node_cons, maps_to_to_node.
-    - expand H0; expand H1; expand H13.
+    - expand H0; expand H1; expand H12.
       simpl in *.
-      expand H8.
-      apply maps_to_inv_eq in H7; subst.
+      expand H7.
+      simpl_map.
       simpl in *.
-      expand H6.
+      expand H5.
       rewrite MN_Facts.add_in_iff in *.
       destruct H2. {
         subst.
@@ -604,19 +611,16 @@ Section SR.
       }
       eauto using node_cons, maps_to_to_node.
     - expand H0; expand H7.
-      apply maps_to_inv_eq in H14; subst.
-      apply maps_to_inv_eq in H11; subst.
-      expand H1; expand H14; expand H15.
+      simpl_map.
+      expand H1; expand H13; expand H14.
       simpl in *.
       eauto using node_cons, maps_to_to_node.
     - inversion H0; subst; clear H0.
       inversion H6; subst; clear H6.
-      apply maps_to_inv_eq in H13; subst.
-      apply maps_to_inv_eq in H8; subst.
-      apply maps_to_neq in H10; auto.
+      simpl_map.
       expand H1; expand H7.
       simpl in *.
-      expand H13.
+      expand H12.
       rewrite MN_Facts.add_in_iff in *.
       destruct H2. {
         subst.
@@ -624,7 +628,7 @@ Section SR.
       }
       eauto using node_cons, maps_to_to_node.
   Qed.
-
+(*
   Let last_write_can_join_continue:
     forall cg sj cg' sj' m m' x r n a,
     LastWriteCanJoin (fst m) cg sj ->
@@ -636,14 +640,12 @@ Section SR.
   Proof.
     intros.
     expand H0.
-    apply maps_to_inv_eq in H8; subst.
+    simpl_mapsto.
     expand H1.
     simpl in *.
     expand H2.
-    rename prev into nx.
     expand H4.
-    rename es0 into es.
-    clear H8.
+    clear H7.
     apply SJ_CG.can_join_cons.
     eauto.
   Qed.
@@ -668,6 +670,6 @@ Section SR.
       expand H8.
       simpl in *.
   Qed.
-
+*)
 
 End SR.

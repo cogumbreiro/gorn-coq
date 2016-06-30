@@ -159,3 +159,32 @@ Section History.
 
 End Defs.
 
+Section Props.
+(*
+  Lemma last_write_inv_cons:
+    forall (A:Type) r (d:A) g x vs nx nx' es n,
+    LtEdges (cg_edges (x :: vs, C (nx, nx') :: es)) ->
+    DAG (FGraph.Edge (map e_edge (C (nx, nx') :: es))) ->
+    LastWrite r n d g (x :: vs, C (nx, nx') :: es) ->
+    LastWrite r n d g (vs, es).
+  Proof.
+    intros.
+    inversion H1; subst; clear H1.
+    apply last_write_def with (a:=a); auto.
+    intros.
+    assert (Hx: b = a \/ HB (x :: vs, C (nx, nx') :: es) (a_when b) (a_when a)) by auto.
+    destruct Hx as [?|Hx]; auto; clear H4.
+    assert (NODE.lt (a_when b) (a_when a)) by eauto using hb_to_lt.
+    apply hb_to_fgraph in Hx.
+    inversion Hx as (w, Hw).
+    simpl in *.
+    destruct (in_dec (FGraph.edge_eq_dec node_eq_dec) (nx,nx') w). {
+      assert (Hy := Hw).
+      apply Graph.walk2_split with (a0:=nx) (b0:=nx') in Hw; auto.
+      destruct Hw as [Heq|[?|?]].
+      - subst.
+    }
+    
+  Qed.
+*)
+End Props.
