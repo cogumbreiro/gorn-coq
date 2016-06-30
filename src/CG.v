@@ -428,7 +428,7 @@ Section HB.
   Qed.
 
 
-  Lemma hb_to_reaches_fgraph:
+  Lemma hb_to_fgraph:
     forall vs es x y,
     HB (vs, es) x y ->
     Reaches (FGraph.Edge (map e_edge es)) x y.
@@ -442,7 +442,7 @@ Section HB.
     auto.
   Qed.
 
-  Lemma fgraph_reaches_to_hb:
+  Lemma fgraph_to_hb:
     forall vs es x y,
     Reaches (FGraph.Edge (map e_edge es)) x y ->
     HB (vs, es) x y.
@@ -454,12 +454,12 @@ Section HB.
     auto.
   Qed.
 
-  Lemma hb_fgraph_reaches_iff:
+  Lemma hb_fgraph_spec:
     forall vs es x y,
     HB (vs, es) x y <->
     Reaches (FGraph.Edge (map e_edge es)) x y.
   Proof.
-    split; eauto using hb_to_reaches_fgraph, fgraph_reaches_to_hb.
+    split; eauto using hb_to_fgraph, fgraph_to_hb.
   Qed.
 
 End HB.
@@ -639,6 +639,20 @@ Section DAG.
   Proof.
     intros.
     inversion H0.
+    eauto.
+  Qed.
+
+  Lemma hb_to_lt:
+    forall x y cg,
+    LtEdges (cg_edges cg) ->
+    HB cg x y ->
+    NODE.lt x y.
+  Proof.
+    intros.
+    destruct cg as (vs, es).
+    apply hb_to_fgraph in H0.
+    unfold cg_edges in *.
+    simpl in *.
     eauto.
   Qed.
 
