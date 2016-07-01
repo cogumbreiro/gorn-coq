@@ -126,7 +126,7 @@ Section Defs.
     (* the datum being alloc'ed is a local *)
     Locals.MapsTo n d l ->
     (* update the shared memory with an alloc *)
-    Shadow.Reduces cg g (y, {|a_when:=n;a_what:=ALLOC d|}) g' ->
+    Shadow.Reduces cg g (y, {|a_when:=n';a_what:=ALLOC d|}) g' ->
     (* add reference y to the locals of task x *)
     Locals.Reduces l (n', CONS (d_mem y) n) l' ->
     Reduces (g, l) (x, GLOBAL_ALLOC y d) (g', l')
@@ -628,28 +628,116 @@ Section SR.
       }
       eauto using node_cons, maps_to_to_node.
   Qed.
-(*
+
+  Variable max_write_continue:
+    forall {A:Type} x n n' vs es g (v:A) r,
+    MapsTo x n vs ->
+    LastWrite r n' v g (x :: vs, C (n, fresh vs) :: es) ->
+    LastWrite r n' v g (vs, es).
+
   Let last_write_can_join_continue:
     forall cg sj cg' sj' m m' x r n a,
     LastWriteCanJoin (fst m) cg sj ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
     Reduces cg' m (x, CONTINUE) m' ->
     SJ_CG.Reduces sj cg' sj' ->
-    LastWrite r n (d_task a) (fst m) cg' ->
+    LastWrite r n (d_task a) (fst m') cg' ->
     SJ_CG.CanJoin n a sj'.
   Proof.
     intros.
     expand H0.
-    simpl_mapsto.
     expand H1.
-    simpl in *.
     expand H2.
     expand H4.
-    clear H7.
+    simpl in *.
+    simpl_map.
+    rename n0 into nx.
     apply SJ_CG.can_join_cons.
-    eauto.
+    rename es0 into es.
+    apply max_write_continue in H3; auto.
+    apply H in H3.
+    assumption.
   Qed.
 
+  Variable hb_irrefl:
+    forall cg x,
+    ~ HB cg x x.
+
+  Let last_write_inv_add:
+    forall {A} r n n' (x y:A) g cg,
+    LastWrite r n' y
+       (MM.add r ({| a_when := n; a_what := ALLOC x |} :: nil) g) cg ->
+     n' = n /\ y = x.
+  Proof.
+    intros.
+    expand H.
+    expand H2.
+    rewrite MM_Facts.add_mapsto_iff in *.
+    destruct H as [(_,?)|(N,_)]. {
+      subst.
+      destruct H3. {
+        subst.
+        expand H4.
+        clear H5.
+        apply H3 in H0; clear H3.
+        destruct H0. {
+          clear H.
+          inversion H1; simpl in *; inversion H.
+          auto.
+        }
+        apply hb_irrefl in H.
+        contradiction.
+      }
+      inversion H.
+    }
+    contradiction N.
+    trivial.
+  Qed.
+
+  Let last_write_can_join_alloc:
+    forall cg sj cg' sj' m m' x r n a d z k,
+    LastWriteCanJoin (fst m) cg sj ->
+    CG.Reduces cg (x, CG.CONTINUE) cg' ->
+    Reduces cg' m (x, GLOBAL_ALLOC z d) m' ->
+    SJ_CG.Reduces sj cg' sj' ->
+    LastWrite r n (d_task a) (fst m') cg' ->
+    LocalToKnows (snd m) cg sj ->
+    SJ_CG.SJ cg k sj ->
+    SJ_CG.CanJoin n a sj'.
+  Proof.
+    intros.
+    rename H4 into Hk.
+    rename H5 into Hs.
+    expand H0.
+    expand H1.
+    expand H13.
+    expand H8.
+    expand H2.
+    simpl_map.
+    simpl in *.
+    expand H12.
+    rename es0 into es.
+    rename n0 into nx.
+    destruct (mid_eq_dec r z). {
+      subst.
+      apply last_write_inv_add in H3.
+      destruct H3; subst.
+      assert (R: fresh vs = fresh sj). {
+        inversion Hs.
+        auto using maps_to_length_rw.
+      }
+      rewrite R.
+      apply SJ_CG.can_join_copy.
+      assert (Hx : Knows (vs, es) l (x,a)). {
+       eauto using knows_def, Locals.local_def.
+      }
+      eauto.
+    }
+    apply max_write_continue in H3; auto.
+    apply H in H3.
+    apply SJ_CG.can_join_cons.
+    assumption.
+  Qed.
 
   Lemma last_write_can_join:
     forall m cg sj cg' m' sj' e,
@@ -657,18 +745,16 @@ Section SR.
     CG.Reduces cg (event_to_cg e) cg' ->
     Reduces cg' m e m' ->
     SJ_CG.Reduces sj cg' sj' ->
-    LastWriteCanJoin (fst m) cg' sj'.
+    LastWriteCanJoin (fst m') cg' sj'.
   Proof.
     intros.
     unfold LastWriteCanJoin.
     intros r n a; intros.
     destruct e as (x, []); simpl in *.
-    - expand H0.
-      expand H1.
-      expand H3.
-      apply maps_to_inv_eq in H7; subst.
-      expand H8.
-      simpl in *.
+    - eauto.
+    - eauto.
+    - 
+    - rename m0 into z.
   Qed.
 *)
 
