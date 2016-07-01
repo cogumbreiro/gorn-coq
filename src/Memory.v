@@ -669,7 +669,7 @@ Section SR.
     contradiction N.
     trivial.
   Qed.
-
+(*
   Let last_write_can_join_alloc:
     forall cg sj cg' sj' m m' x r n a d z k,
     LastWriteCanJoin (fst m) cg sj ->
@@ -684,14 +684,13 @@ Section SR.
     intros.
     rename H4 into Hk.
     rename H5 into Hs.
-    expand H0.
+    simpl_red.
     expand H1.
-    expand H13.
-    expand H8.
-    expand H2.
-    simpl_map.
-    simpl in *.
     expand H12.
+    expand H11.
+    expand H7.
+    simpl in *.
+    expand H2.
     rename es0 into es.
     rename n0 into nx.
     destruct (mid_eq_dec r z). {
