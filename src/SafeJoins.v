@@ -1,3 +1,5 @@
+Set Implicit Arguments.
+
 Require Import Coq.Lists.List.
 
 Require Import Aniceto.List.
