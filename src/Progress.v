@@ -1,3 +1,5 @@
+Set Implicit Arguments.
+
 Require Import Lang.
 Require Import Tid.
 Require Import Cid.
@@ -76,9 +78,10 @@ Section Progress.
 
   Variable CF: code_segment.
   Variable s:state.
-  Variable trc: CG.Trace.trace.
+  Require SafeJoins.
+  Variable trc: SafeJoins.trace.
   Variable k: list (tid*tid).
-  Variable S: CG.SafeJoins.Safe trc k.
+  Variable S: SafeJoins.Safe trc k.
 
   Variable edge_to_task_fst:
     forall x y,
@@ -759,7 +762,7 @@ Section Progress.
   Theorem progress:
     exists e s', Reduces CF s e s'.
   Proof.
-    destruct (CG.SafeJoins.progress S N) as (x, (Hi,?)).
+    destruct (SafeJoins.progress _ _ _ S N) as (x, (Hi,?)).
     apply MT_Extra.keys_spec_1 in Hi.
     apply MT_Extra.in_to_mapsto in Hi.
     destruct Hi as (tsk,Hmt).
