@@ -504,7 +504,7 @@ Section PropsEx.
   Proof.
     intros.
     unfold EdgeToIndex; intros a b; intros.
-    destruct e as (?,[]); simpl_red; simpl in *.
+    destruct e as (?,[]); simpl_red.
     - inversion H1; subst; clear H1.
       inversion H0; subst; clear H0.
       destruct H6 as [?|[?|?]]; subst.
@@ -561,10 +561,7 @@ Section PropsEx.
     exists r, ReductionResult e cg' r.
   Proof.
     intros.
-    destruct e as (?,[]); simpl_red; simpl in *.
-    - eauto using reduction_result_fork.
-    - eauto using result_join.
-    - eauto using result_continue.
+    destruct e as (?,[]); simpl_red; eauto using reduction_result_fork, result_join, result_continue.
   Qed.
 
 End PropsEx.
@@ -736,7 +733,7 @@ Section DAG.
   Proof.
     intros.
     unfold cg_edges in *.
-    destruct e as (?,[]); simpl_red; simpl in *;
+    destruct e as (?,[]); simpl_red;
       unfold HasSup, cg_edges in *; simpl in *;
       apply List.Forall_cons; eauto;
       try (apply List.Forall_cons; eauto);
