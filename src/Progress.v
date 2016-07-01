@@ -762,7 +762,7 @@ Section Progress.
   Theorem progress:
     exists e s', Reduces CF s e s'.
   Proof.
-    destruct (SafeJoins.progress _ _ _ S N) as (x, (Hi,?)).
+    destruct (SafeJoins.progress S N) as (x, (Hi,?)).
     apply MT_Extra.keys_spec_1 in Hi.
     apply MT_Extra.in_to_mapsto in Hi.
     destruct Hi as (tsk,Hmt).
