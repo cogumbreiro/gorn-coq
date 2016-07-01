@@ -104,15 +104,21 @@ Section History.
       List.In a l ->
       Access a ah.
 
-    Let Le cg (a:access) b := a = b \/ CG.HB cg (a_when a) (a_when b).
+    Inductive MaxWrite a (ah:access_history) cg : Prop :=
+    | greatest_write_def:
+      forall l,
+      MM.MapsTo h l ah ->
+      IsWrite a ->
+      List.In a l->
+      Forall (fun b => IsWrite b -> Le cg (a_when b) (a_when a)) l ->
+      MaxWrite a ah cg.
 
     Inductive LastWrite (n:node) (x:A) ah cg : Prop :=
     | last_write_def:
       forall (a:access),
-      Access a ah ->
       a_when a = n ->
       Write a x ->
-      (forall b, Access b ah -> IsWrite b -> Le cg b a) ->
+      MaxWrite a ah cg ->
       LastWrite n x ah cg.
 
     Inductive MapsTo (x:A) ah cg : Prop :=
@@ -160,16 +166,21 @@ Section History.
 End Defs.
 
 Section Props.
+
+  Require Import Aniceto.Graphs.Graph.
+  Require Import Aniceto.Graphs.FGraph.
 (*
   Lemma last_write_inv_cons:
-    forall (A:Type) r (d:A) g x vs nx nx' es n,
-    LtEdges (cg_edges (x :: vs, C (nx, nx') :: es)) ->
-    DAG (FGraph.Edge (map e_edge (C (nx, nx') :: es))) ->
-    LastWrite r n d g (x :: vs, C (nx, nx') :: es) ->
+    forall (A:Type) r (d:A) g x (vs:list tid) es n,
+    Node.MapsTo x n vs ->
+    LtEdges (cg_edges (x :: vs, C (n, fresh vs) :: es)) ->
+    DAG (FGraph.Edge (cg_edges (x :: vs, C (n, fresh vs) :: es))) ->
+    LastWrite r n d g (x :: vs, C (n, fresh vs) :: es) ->
     LastWrite r n d g (vs, es).
   Proof.
     intros.
-    inversion H1; subst; clear H1.
+    unfold cg_edges in *; simpl in *.
+    inversion H2; subst.
     apply last_write_def with (a:=a); auto.
     intros.
     assert (Hx: b = a \/ HB (x :: vs, C (nx, nx') :: es) (a_when b) (a_when a)) by auto.
@@ -178,8 +189,20 @@ Section Props.
     apply hb_to_fgraph in Hx.
     inversion Hx as (w, Hw).
     simpl in *.
-    destruct (in_dec (FGraph.edge_eq_dec node_eq_dec) (nx,nx') w). {
-      assert (Hy := Hw).
+    destruct (in_dec (edge_eq_dec node_eq_dec) (nx,nx') w). {
+      destruct w. {
+        apply walk2_nil_inv in Hw.
+        contradiction.
+      }
+      destruct p as (v1,v2).
+      assert (v1 = a_when b) by eauto using walk2_inv_eq_fst; subst.
+      destruct w. {
+        assert (v2 = a_when a) by eauto using walk2_inv_eq_snd; subst.
+        destruct (node_eq_dec nx (a_when b)), (node_eq_dec nx' (a_when a)).
+        - subst.
+          clear i.
+      }
+      - subst.
       apply Graph.walk2_split with (a0:=nx) (b0:=nx') in Hw; auto.
       destruct Hw as [Heq|[?|?]].
       - subst.
