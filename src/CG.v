@@ -286,6 +286,8 @@ Section Props.
 
   Definition MHP x y : Prop := ~ HB x y /\ ~ HB y x.
 
+  Definition Le x y := x = y \/ HB x y.
+
   Let in_edges_to_tees:
     forall e,
     List.In e (cg_edges cg) ->
