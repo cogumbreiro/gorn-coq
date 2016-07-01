@@ -466,6 +466,21 @@ Section HB.
 
 End HB.
 
+  Ltac simpl_red :=
+  repeat match goal with
+  | [ H: Reduces _ (_, FORK _) _ |- _ ] =>
+      inversion H; subst; clear H;
+      match goal with
+      | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_map
+      end
+  | [ H: Reduces _ (_, JOIN _) _ |- _ ] =>
+      inversion H; subst; clear H;
+      match goal with
+      | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_map
+      end
+  | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; Node.simpl_map
+  end.
+
 Section PropsEx.
   Lemma make_edge_to_index:
     forall x,
@@ -480,6 +495,7 @@ Section PropsEx.
     contradiction.
   Qed.
 
+
   Lemma reduces_edge_to_index:
     forall cg e cg',
     EdgeToIndex cg ->
@@ -488,53 +504,37 @@ Section PropsEx.
   Proof.
     intros.
     unfold EdgeToIndex; intros a b; intros.
-    inversion H0; subst; clear H0.
-    - inversion H4; subst; clear H4.
-      apply maps_to_inv_eq in H12; subst.
-      apply maps_to_inv_eq in H6; subst.
-      assert (prev = nx) by eauto using maps_to_fun_2; subst.
-      simpl in *.
-      inversion H1; subst; clear H1.
+    destruct e as (?,[]); simpl_red; simpl in *.
+    - inversion H1; subst; clear H1.
       inversion H0; subst; clear H0.
-      destruct H7 as [?|[?|?]].
-      + subst; inversion H8; subst; clear H8.
+      destruct H6 as [?|[?|?]]; subst.
+      + inversion H7; subst; clear H7.
         split; eauto using maps_to_lt, lt_to_node, node_cons, maps_to_eq.
-      + subst; simpl in *; inversion H8; subst; clear H8.
+      + inversion H7; subst; clear H7.
         split; eauto using maps_to_lt, lt_to_node, node_cons, maps_to_eq.
-      + subst.
-        assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
-        rewrite H8 in *.
-        apply H in He.
-        simpl in *.
-        destruct He.
-        split; auto using node_cons.
-    - simpl in *.
-      inversion H3; subst; clear H3.
-      apply maps_to_inv_eq in H4; subst.
-      apply maps_to_inv_eq in H11; subst.
-      apply maps_to_neq in H5; auto.
-      inversion H1; subst; clear H1.
-      inversion H0; subst; clear H0.
-      destruct H6 as [Hx|[Hx|Hx]].
-      + subst.
-        inversion H7; subst; clear H7.
-        split; eauto using lt_to_node, node_cons, maps_to_eq, maps_to_lt.
-      + subst.
-        inversion H7; subst; clear H7.
-        split; eauto using lt_to_node, node_cons, maps_to_lt, maps_to_eq.
       + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
         rewrite H7 in *.
         apply H in He.
         simpl in *.
         destruct He.
         split; auto using node_cons.
-    - simpl in *.
-      apply maps_to_inv_eq in H3; subst.
-      inversion H1; subst; clear H1.
+    - inversion H1; subst; clear H1.
       inversion H0; subst; clear H0.
-      destruct H5 as [Hx|Hx].
-      + subst.
-        inversion H6; subst; clear H6.
+      destruct H5 as [Hx|[Hx|Hx]]; subst; simpl in *.
+      + inversion H6; subst.
+        split; eauto using lt_to_node, node_cons, maps_to_eq, maps_to_lt.
+      + inversion H6; subst;
+        split; eauto using lt_to_node, node_cons, maps_to_lt, maps_to_eq.
+      + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
+        rewrite H6 in *.
+        apply H in He.
+        simpl in *.
+        destruct He.
+        split; auto using node_cons.
+    - inversion H1; subst; clear H1.
+      inversion H0; subst; clear H0.
+      destruct H5 as [Hx|Hx]; subst.
+      + inversion H6; subst; clear H6.
         split; eauto using lt_to_node, node_cons, maps_to_lt, maps_to_eq.
      + assert (He: HB_Edge (vs, es) (e_edge e)) by auto using hb_edge_in.
        rewrite H6 in *.
@@ -561,19 +561,10 @@ Section PropsEx.
     exists r, ReductionResult e cg' r.
   Proof.
     intros.
-    inversion H; subst; clear H.
-    - apply maps_to_inv_eq in H4; subst.
-      inversion H2; subst; clear H2.
-      apply maps_to_inv_eq in H9; subst.
-      apply maps_to_fun_2 with (n:=nx) in H7; subst; auto.
-      eauto using reduction_result_fork.
-    - inversion H1; subst; clear H1.
-      apply maps_to_inv_eq in H9; subst.
-      apply maps_to_neq in H3; auto.
-      apply maps_to_inv_eq in H2; subst.
-      eauto using result_join.
-    - apply maps_to_inv_eq in H1; subst.
-      eauto using result_continue.
+    destruct e as (?,[]); simpl_red; simpl in *.
+    - eauto using reduction_result_fork.
+    - eauto using result_join.
+    - eauto using result_continue.
   Qed.
 
 End PropsEx.
@@ -704,21 +695,8 @@ Section DAG.
   Proof.
     intros.
     unfold cg_edges in *.
-    inversion H0; subst; clear H0; simpl in *.
-    - inversion H3; subst; clear H3.
-      apply maps_to_inv_eq in H11; subst.
-      apply maps_to_inv_eq in H5; subst.
-      simpl in *.
-      assert (prev = nx) by eauto using maps_to_fun_2; subst.
-      apply List.Forall_cons; eauto.
-    - inversion H2; subst; clear H2.
-      apply maps_to_inv_eq in H10; subst.
-      apply maps_to_inv_eq in H3; subst.
-      apply maps_to_neq in H4; auto.
-      simpl.
-      apply List.Forall_cons; eauto.
-    - apply maps_to_inv_eq in H2; subst.
-      apply List.Forall_cons; eauto.
+    destruct e as (?,[]); simpl_red; simpl in *;
+    apply List.Forall_cons; eauto.
   Qed.
 
   Let sub_fresh_cons_lhs:
@@ -758,43 +736,15 @@ Section DAG.
   Proof.
     intros.
     unfold cg_edges in *.
-    inversion H0; subst; clear H0; simpl in *.
-    - inversion H3; subst; clear H3.
-      apply maps_to_inv_eq in H11; subst.
-      apply maps_to_inv_eq in H5; subst.
-      simpl in *.
-      unfold HasSup, cg_edges in *; simpl in *.
-      assert (prev = nx) by eauto using maps_to_fun_2; subst.
-      apply List.Forall_cons; eauto.
-      apply List.Forall_cons; eauto.
-      rewrite List.Forall_forall in *.
-      intros (a,b); intros.
-      apply H in H0.
-      unfold Sup in *.
-      simpl in *.
-      eauto using NODE.lt_trans.
-    - inversion H2; subst; clear H2.
-      apply maps_to_inv_eq in H10; subst.
-      apply maps_to_inv_eq in H3; subst.
-      apply maps_to_neq in H4; auto.
-      simpl.
-      unfold HasSup, cg_edges in *; simpl in *.
-      apply List.Forall_cons; eauto.
-      apply List.Forall_cons; eauto.
-      rewrite List.Forall_forall in *.
-      intros (a,b); intros.
-      apply H in H0.
-      unfold Sup in *.
-      simpl in *.
-      eauto using NODE.lt_trans.
-    - apply maps_to_inv_eq in H2; subst.
-      unfold HasSup, cg_edges in *; simpl in *.
-      apply List.Forall_cons; eauto.
-      rewrite List.Forall_forall in *.
-      intros (a,b); intros.
-      apply H in H0.
-      unfold Sup in *.
-      simpl in *.
+    destruct e as (?,[]); simpl_red; simpl in *;
+      unfold HasSup, cg_edges in *; simpl in *;
+      apply List.Forall_cons; eauto;
+      try (apply List.Forall_cons; eauto);
+      rewrite List.Forall_forall in *;
+      intros (a,b); intros;
+      apply H in H0;
+      unfold Sup in *;
+      simpl in *;
       eauto using NODE.lt_trans.
   Qed.
 

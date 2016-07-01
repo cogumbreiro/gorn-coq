@@ -190,19 +190,28 @@ Section SR.
 
   Ltac expand H := inversion H; subst; clear H.
 
-  Ltac simpl_map := 
-  repeat match goal with
-  | [ H1: MapsTo ?x ?n ?v, H2: MapsTo ?y ?n ?v |- _ ] =>
-      let H' := fresh "H" in
-      assert (H': x = y) by eauto using maps_to_fun_1;
-      rewrite H' in *;
-      clear H' H2
-  | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H
-  | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H
-  | [ H1: MapsTo ?x _ (?y :: _), H2: ?x <> ?y |- _ ] => apply maps_to_neq in H1; auto
-  | [ H1: MapsTo ?x _ (?y :: _), H2: ?y <> ?x |- _ ] => apply maps_to_neq in H1; auto
-  | [ H: MapsTo ?x _ (?x :: _) |- _ ] => apply maps_to_inv_eq in H; rewrite H in *; clear H
-  end.
+  Let knows_eq:
+    forall l ls (x y:tid) n vs es,
+    MN.MapsTo n l ls ->
+    In (d_task y) l ->
+    MapsTo x n vs ->
+    Knows (vs, es) ls (x, y).
+  Proof.
+    eauto using knows_def, Locals.local_def.
+  Qed.
+
+  Let sj_knows_copy:
+    forall vs es k sj x y n,
+    SJ_CG.SJ (vs, es) k sj ->
+    MapsTo x n vs ->
+    SJ_CG.Knows vs sj (x, y) ->
+    SJ_CG.Knows (x :: vs) (SJ_CG.Copy n :: sj) (x, y).
+  Proof.
+    intros.
+    inversion H.
+    simpl in *.
+    eauto using SJ_CG.knows_copy.
+  Qed.
 
   Let local_to_knows_continue_0:
     forall ls vs es x n l a an b sj k,
@@ -223,27 +232,16 @@ Section SR.
       rewrite MN_Facts.add_mapsto_iff in *.
       destruct H6 as [(_,?)|(N,_)]. {
         subst.
-        assert (Hk: Knows (vs,es) ls (x, b))
-        by eauto using knows_def, Locals.local_def.
-        inversion H5.
-        simpl in *.
-        eauto using SJ_CG.knows_copy.
+        eauto using knows_eq, sj_knows_copy.
       }
       contradiction N; trivial.
     }
     rewrite MN_Facts.add_mapsto_iff in *.
     destruct H6 as [(?,?)|(?,mt')]. {
       subst.
-      apply maps_to_absurd_fresh in mt.
-      contradiction.
+      simpl_map.
     }
-    assert (Hk: Knows (vs,es) ls (a, b))
-    by eauto using knows_def, Locals.local_def.
-    apply H in Hk.
-    simpl in *.
-    inversion H5.
-    simpl in *.
-    eauto using SJ_CG.knows_neq.
+    eauto using SJ_CG.knows_neq. 
   Qed.
 
   Let local_to_knows_continue:
@@ -294,18 +292,18 @@ Section SR.
     inversion H0; subst; clear H0.
     apply maps_to_inv_eq in H8; subst.
     rename prev into nx.
-    inversion H1; subst; clear H1.
+    expand H1.
     simpl in *.
-    inversion H8; subst; clear H8.
+    expand H8.
     rename es0 into es.
-    inversion H13; subst; clear H13.
-    inversion H3; subst; clear H3.
-    inversion H12; subst; clear H12.
+    expand H13.
+    expand H3.
+    expand H12.
     rename l0 into ln.
-    inversion H2; subst; clear H2.
+    expand H2.
     simpl in *.
     rename n0 into an.
-    inversion H5; subst; clear H5.
+    expand H5.
     rename l0 into la.
     apply maps_to_inv in H3.
     rewrite MN_Facts.add_mapsto_iff in *.
@@ -314,18 +312,15 @@ Section SR.
       destruct H0 as [(_,?)|(N,_)]. {
         subst.
         destruct H1 as [Hx|?]. { inversion Hx. }
-        inversion H4; subst.
-        eauto using SJ_CG.knows_copy, knows_def, Locals.local_def.
+        eauto.
       }
       contradiction N; trivial.
     }
     destruct H0 as [(?,?)|(?,mt')]. {
       subst.
-      apply maps_to_absurd_fresh in mt.
-      contradiction.
+      simpl_map.
     }
-    inversion H4; subst.
-    eauto using SJ_CG.knows_neq, knows_def, Locals.local_def.
+    eauto using SJ_CG.knows_neq.
   Qed.
 
   Definition DomIncl (l:Locals.local_memory datum) (vs:list tid) :=
@@ -346,16 +341,16 @@ Section SR.
   Proof.
     intros.
     rename H5 into Hdom.
-    inversion H0; subst; clear H0.
-    apply maps_to_inv_eq in H8; subst.
+    expand H0.
+    simpl_map.
     rename prev into nx.
-    inversion H1; subst; clear H1.
+    expand H1.
     simpl in *.
-    inversion H8; subst; clear H8.
+    expand H8.
     rename es0 into es.
-    inversion H13; subst; clear H13.
-    inversion H3; subst; clear H3.
-    inversion H2; subst; clear H2;
+    expand H13.
+    expand H3.
+    expand H2;
     simpl in *.
     rename n0 into an.
     apply maps_to_inv in H3.
@@ -364,10 +359,9 @@ Section SR.
       rename l0 into ly.
       apply Locals.maps_to_to_in in H5.
       apply Hdom in H5.
-      apply node_absurd_fresh with (vs:=vs) in H5; auto; contradiction.
+      simpl_map.
     }
-    inversion H4; subst.
-    eauto using SJ_CG.knows_neq, knows_def, Locals.local_def.
+    eauto using SJ_CG.knows_neq, knows_def.
   Qed.
 
   Definition LastWriteCanJoin (g:access_history datum) cg sj :=
@@ -392,24 +386,20 @@ Section SR.
     rename H5 into Hdom.
     rename H6 into Hwrite.
     rename H7 into Hsj'.
-    inversion H1; subst; clear H1.
+    expand H1.
     destruct cg' as (vs', es').
     simpl in *.
     subst.
-    inversion H0; subst; rename H0 into Hcg.
-    apply maps_to_inv_eq in H16; subst.
-    inversion H3; subst; clear H3.
+    expand H0.
+    expand H3.
+    simpl_map.
     simpl in *.
-    inversion H2; subst; clear H2.
-    rename n0 into an.
+    expand H15.
+    expand H13.
+    expand H2.
     simpl in *.
     apply maps_to_inv in H3.
-    inversion H13; subst; clear H13.
-    inversion H15; subst; clear H15.
-    rename l0 into ln.
-    rename l1 into ly.
-    inversion H5; subst; clear H5.
-    rename l0 into la'.
+    expand H6.
     rewrite MN_Facts.add_mapsto_iff in *.
     destruct H3 as [(?,?)|(?,mt)]; subst. {
       subst.
@@ -418,16 +408,15 @@ Section SR.
           subst.
           eauto using SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons.
         }
-        inversion H4.
-        eauto using knows_def, Locals.local_def, SJ_CG.knows_copy.
+        simpl in *.
+        eapply sj_knows_copy; eauto.
       }
       contradiction N; trivial.
     }
     destruct H0 as [(?,?)|(?,mt')]. {
       subst.
-      apply maps_to_absurd_fresh in mt; contradiction.
+      simpl_map.
     }
-    inversion H4; subst.
     eauto using SJ_CG.knows_neq, knows_def, Locals.local_def.
   Qed.
 
@@ -475,8 +464,7 @@ Section SR.
       subst.
       apply MN_Extra.mapsto_to_in in H1.
       apply Hdom in H1.
-      apply node_absurd_fresh with (vs:=vs) in H1; auto.
-      contradiction.
+      simpl_map.
     }
     eauto 6 using SJ_CG.knows_neq, knows_def, Locals.local_def.
   Qed.
@@ -562,10 +550,10 @@ Section SR.
     intros.
     unfold DomIncl.
     intros.
-    destruct e as (x, []); simpl in *.
-    - expand H0.
-      expand H1.
-      expand H7.
+    destruct e as (x, []); simpl in *; CG.simpl_red.
+    - expand H1.
+      simpl in *.
+      expand H6.
       simpl.
       expand H3.
       simpl_map.
@@ -577,48 +565,39 @@ Section SR.
         auto using node_eq.
       }
       eauto using node_cons, maps_to_to_node.
-    - expand H0.
-      expand H1.
-      expand H12.
+    - expand H1.
+      expand H11.
       simpl in *.
-      expand H7. (* C (prev, curr) :: es = C (n0, n') :: es0 *)
-      simpl_map.
-      simpl in *.
+      expand H6. (* C (prev, curr) :: es = C (n0, n') :: es0 *)
       rewrite MN_Facts.add_in_iff in *.
       destruct H2. {
         subst.
         auto using node_eq.
       }
       eauto using node_cons, maps_to_to_node.
-    - expand H0.
-      expand H1.
-      expand H12.
+    - expand H1.
+      expand H11.
       simpl in *.
-      expand H7.
-      simpl_map.
-      simpl in *.
+      expand H6.
       eauto using node_cons, maps_to_to_node.
-    - expand H0; expand H1; expand H12.
-      simpl in *.
-      expand H7.
-      simpl_map.
+    - expand H1.
+      expand H11.
       simpl in *.
       expand H5.
+      expand H6.
       rewrite MN_Facts.add_in_iff in *.
       destruct H2. {
         subst.
         auto using node_eq.
       }
       eauto using node_cons, maps_to_to_node.
-    - expand H0; expand H7.
-      simpl_map.
-      expand H1; expand H13; expand H14.
+    - expand H1.
+      expand H7.
+      expand H12; expand H13.
       simpl in *.
       eauto using node_cons, maps_to_to_node.
-    - inversion H0; subst; clear H0.
-      inversion H6; subst; clear H6.
-      simpl_map.
-      expand H1; expand H7.
+    - expand H1.
+      expand H7.
       simpl in *.
       expand H12.
       rewrite MN_Facts.add_in_iff in *.
@@ -645,18 +624,15 @@ Section SR.
     SJ_CG.CanJoin n a sj'.
   Proof.
     intros.
-    expand H0.
+    CG.simpl_red.
     expand H1.
-    expand H2.
     expand H4.
+    expand H2.
     simpl in *.
-    simpl_map.
     rename n0 into nx.
     apply SJ_CG.can_join_cons.
     rename es0 into es.
-    apply max_write_continue in H3; auto.
-    apply H in H3.
-    assumption.
+    eauto using max_write_continue.
   Qed.
 
   Variable hb_irrefl:

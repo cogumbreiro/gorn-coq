@@ -273,7 +273,7 @@ Section Props.
   Qed.
 
   Lemma node_absurd_fresh:
-    forall (x:A) vs,
+    forall vs,
     ~ Node (fresh vs) vs.
   Proof.
     intros.
@@ -338,3 +338,28 @@ Section MoreProps.
   Qed.
 
 End MoreProps.
+
+  Ltac simpl_map := 
+  repeat match goal with
+  | [ H1: MapsTo ?x ?n ?v, H2: MapsTo ?y ?n ?v |- _ ] =>
+      let H' := fresh "H" in
+      assert (H': x = y) by eauto using maps_to_fun_1;
+      rewrite H' in *;
+      clear H' H2
+  | [ H1: MapsTo ?x ?n1 ?v, H2: MapsTo ?x ?n2 ?v |- _ ] =>
+      let H' := fresh "H" in
+      assert (H': n1 = n2) by eauto using maps_to_fun_2;
+      rewrite H' in *;
+      clear H' H2
+  | [ H: MapsTo _ (fresh ?vs) ?vs |- _ ] =>
+      apply maps_to_absurd_fresh in H;
+      contradiction
+  | [ H: Node (fresh ?vs) ?vs |- _ ] =>
+      apply node_absurd_fresh in H;
+      contradiction
+  | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H
+  | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H
+  | [ H1: MapsTo ?x _ (?y :: _), H2: ?x <> ?y |- _ ] => apply maps_to_neq in H1; auto
+  | [ H1: MapsTo ?x _ (?y :: _), H2: ?y <> ?x |- _ ] => apply maps_to_neq in H1; auto
+  | [ H: MapsTo ?x _ (?x :: _) |- _ ] => apply maps_to_inv_eq in H; rewrite H in *; clear H
+  end.
