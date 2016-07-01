@@ -131,3 +131,9 @@ Section NotIn.
   Qed.
 
 End NotIn.
+
+Lemma mid_eq_dec:
+  forall x y : mid, {x = y} + {x <> y}.
+Proof.
+  auto using mid_eq_rw, MID.eq_dec.
+Qed.
