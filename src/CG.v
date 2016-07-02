@@ -90,20 +90,7 @@ Section Edges.
   Proof.
     eauto using hb_edge_def, edge_def.
   Qed.
-(*
-  Inductive TaskEdge (cg:computation_graph) t : (tid * tid) -> Prop :=
-  | task_edge_def:
-    forall x y nx ny,
-    Edge cg t (nx, ny) ->
-    MapsTo x nx (fst cg) ->
-    MapsTo y ny (fst cg) ->
-    TaskEdge cg t (x, y).
 
-  Inductive Live cg x : Prop :=
-  | live_def:
-    (forall y t, ~ TaskEdge cg t (x, y)) ->
-    Live cg x.
-*)
   Inductive Reduces: computation_graph -> event -> computation_graph -> Prop :=
   | reduces_fork:
     forall vs es es' vs' y x nx ny,
@@ -122,7 +109,6 @@ Section Edges.
     Reduces (vs,es) (x, JOIN y) (vs', J (ny, nx) :: es')
   | reduces_continue:
     forall vs (es:list cg_edge) x prev curr,
-(*    Live (vs,es) x ->*)
     MapsTo x prev vs ->
     MapsTo x curr (x::vs) ->
     Reduces (vs,es) (x, CONTINUE) (x::vs, C (prev, curr) :: es).
@@ -169,7 +155,6 @@ Section Edges.
   | trace_of_fork:
     forall vs es a t x y nx,
     x <> y ->
-(*    Live (vs, es) x ->*)
     ~ List.In y vs ->
     TraceOf (vs, es) a t ->
     MapsTo x nx vs ->
@@ -178,7 +163,6 @@ Section Edges.
   | trace_of_join:
     forall vs es a t x y ny nx,
     x <> y ->
-(*    Live (vs, es) x ->*)
     TraceOf (vs, es) a t ->
     MapsTo x nx vs ->
     MapsTo y ny vs ->
@@ -186,7 +170,6 @@ Section Edges.
        a ((x, JOIN y)::t)
   | trace_of_continue:
     forall vs es a t x nx,
-(*    Live (vs, es) x ->*)
     TraceOf (vs, es) a t ->
     MapsTo x nx vs ->
     TraceOf (x::vs, C (nx, fresh vs) :: es) a ((x, CONTINUE)::t).
@@ -504,7 +487,7 @@ Section PropsEx.
   Proof.
     intros.
     unfold EdgeToIndex; intros a b; intros.
-    destruct e as (?,[]); simpl_red.
+    destruct e as (?,[]); simpl_red; simpl in *.
     - inversion H1; subst; clear H1.
       inversion H0; subst; clear H0.
       destruct H6 as [?|[?|?]]; subst.

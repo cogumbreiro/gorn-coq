@@ -386,20 +386,19 @@ Section SR.
     rename H5 into Hdom.
     rename H6 into Hwrite.
     rename H7 into Hsj'.
+    SJ_CG.simpl_red.
     expand H1.
-    destruct cg' as (vs', es').
     simpl in *.
-    subst.
-    expand H0.
-    expand H3.
-    simpl_map.
-    simpl in *.
-    expand H15.
-    expand H13.
+    expand H5.
+    expand H7.
     expand H2.
     simpl in *.
+    expand H14.
+    expand H12.
+    rename vs0 into vs.
+    rename es0 into es.
     apply maps_to_inv in H3.
-    expand H6.
+    expand H5.
     rewrite MN_Facts.add_mapsto_iff in *.
     destruct H3 as [(?,?)|(?,mt)]; subst. {
       subst.
@@ -433,38 +432,36 @@ Section SR.
   Proof.
     intros.
     rename H5 into Hdom.
+    SJ_CG.simpl_red.
     inversion H1; subst; clear H1.
-    inversion H0; subst; rename H0 into Hcg.
-    inversion H9; subst; clear H9.
     simpl in *.
-    inversion H8; subst; clear H8.
-    apply maps_to_inv_eq in H18; subst.
-    apply maps_to_inv_eq in H16; subst.
-    clear H15. (* MapsTo x nx vs *)
-    inversion H3; subst; clear H3 H15.
-    inversion H12; subst; clear H12.
-    inversion H13; subst; clear H13.
+    inversion H2; subst; clear H2; simpl in *.
+    expand H6.
+    clear nx; rename nx0 into nx; clear H9 H13. (* nx = nx *)
+    inversion H14; subst; clear H14.
+    inversion H15; subst; clear H15.
     rename l0 into lx.
-    inversion H2; subst; clear H2.
     simpl in *.
     apply maps_to_inv in H3.
     destruct H3 as [(?,?)|(?,mt)]. {
       subst.
-      apply Locals.maps_to_to_in in H11.
-      apply Hdom in H11.
-      apply node_lt in H11.
+      apply Locals.maps_to_to_in in H5.
+      apply Hdom in H5.
+      apply node_lt in H5.
       unfold NODE.lt, fresh in *.
       simpl in *.
       omega.
     }
-    inversion H11; subst; clear H11.
-    rename l0 into ln.
+    rename es0 into es.
     apply maps_to_inv in mt.
     destruct mt as [(?,?)|(?,mt)]. {
       subst.
-      apply MN_Extra.mapsto_to_in in H1.
-      apply Hdom in H1.
-      simpl_map.
+      apply Locals.maps_to_to_in in H5.
+      apply Hdom in H5.
+      apply node_lt in H5.
+      unfold NODE.lt, fresh in *.
+      simpl in *.
+      omega.
     }
     eauto 6 using SJ_CG.knows_neq, knows_def, Locals.local_def.
   Qed.
@@ -480,18 +477,13 @@ Section SR.
     SJ_CG.Knows (fst cg') sj' (a, b).
   Proof.
     intros.
-    expand H0;
-    expand H8;
-    expand H1;
-    expand H9.
-    simpl in *.
-    expand H3.
-    simpl_map.
-    rename nx0 into nx; rename ny0 into ny; rename es0 into es.
-    expand H16.
-    clear H13. (* fresh vs = fresh vs *)
+    SJ_CG.simpl_red.
+    expand H1.
+    expand H8.
     expand H2.
     simpl in *.
+    clear H6. (* fresh vs = fresh vs *)
+    expand H13.
     expand H5.
     rewrite MN_Facts.add_mapsto_iff in *.
     apply maps_to_inv in H3.
