@@ -343,7 +343,7 @@ End MoreProps.
   repeat match goal with
   | [ H1: MapsTo ?x ?n ?v, H2: MapsTo ?y ?n ?v |- _ ] =>
       let H' := fresh "H" in
-      assert (H': x = y) by eauto using maps_to_fun_1;
+      assert (H': y = x) by eauto using maps_to_fun_1;
       rewrite H' in *;
       clear H' H2
   | [ H1: MapsTo ?x ?n1 ?v, H2: MapsTo ?x ?n2 ?v |- _ ] =>
