@@ -423,6 +423,18 @@ Section MapsTo.
     apply maps_to_absurd_length in H4; contradiction.
   Qed.
 
+  Lemma index_of_inv_key:
+    forall (x:A) y l,
+    IndexOf y (length l) (x :: l) ->
+    y = x.
+  Proof.
+    intros.
+    inversion H; subst. {
+      trivial.
+    }
+    apply index_of_absurd_length in H2; contradiction.
+  Qed.
+
   Lemma maps_to_fun_1:
     forall (x:A) y n vs,
     MapsTo x n vs ->
