@@ -105,7 +105,7 @@ Section History.
       Access a ah.
 
     Inductive MaxWrite a (ah:access_history) cg : Prop :=
-    | greatest_write_def:
+    | max_write_def:
       forall l,
       MM.MapsTo h l ah ->
       IsWrite a ->
@@ -211,3 +211,10 @@ Section Props.
   Qed.
 *)
 End Props.
+
+
+  Ltac simpl_red :=
+  match goal with
+    | [ H1: Reduces _ _ (_, {| a_when := _; a_what := _|}) _ |- _ ] =>
+      inversion H1; subst; clear H1
+  end.
