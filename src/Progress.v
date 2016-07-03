@@ -1,5 +1,6 @@
 Set Implicit Arguments.
 
+Require Import SafeJoins.
 Require Import Lang.
 Require Import Tid.
 Require Import Cid.
@@ -800,3 +801,208 @@ Section Progress.
   Qed.
 
 End Progress.
+
+
+Section KnowledgeOf.
+  Definition KnowledgeOf s k :=
+    forall x y,
+    FGraph.Edge k (x, y) ->
+    MT.In x (s_tasks s) /\ MT.In y (s_tasks s).
+
+  Inductive Translate (k:list (tid*tid)) : effect -> list (tid*tid) -> Prop :=
+  | translate_fork:
+    forall k' x y,
+    SafeJoins.Reduces k {| SafeJoins.op_t := SafeJoins.FORK; SafeJoins.op_src:=x; SafeJoins.op_dst := y |} k' ->
+    Translate k (x, FUTURE y) k'
+  | translate_join:
+    forall k' x y,
+    SafeJoins.Reduces k {| SafeJoins.op_t := SafeJoins.JOIN; SafeJoins.op_src:=x; SafeJoins.op_dst := y |} k' ->
+    Translate k (x, FORCE y) k'
+  | translate_write:
+    forall x y,
+    Translate k (x, WRITE y) k
+  | translate_read:
+    forall x y,
+    Translate k (x, READ y) k
+  | translate_tau:
+    forall x,
+    Translate k (x, TAU) k.
+
+  Let set_program_in:
+    forall x ts t p,
+    MT.In x ts ->
+    MT.In x (tm_set_program t p ts).
+  Proof.
+    intros.
+    unfold tm_set_program, tm_update.
+    destruct (MT_Extra.find_rw t ts) as [(R,?)|(?,(R,?))]. {
+      rewrite R in *.
+      assumption.
+    }
+    rewrite R.
+    rewrite MT_Facts.add_in_iff.
+    auto.
+  Qed.
+
+  Let tm_put_var_in:
+    forall x ts h y w,
+    MT.In x ts ->
+    MT.In x (tm_put_var h y w ts).
+  Proof.
+    intros.
+    unfold tm_put_var, tm_update.
+    destruct (MT_Extra.find_rw h ts) as [(R,?)|(?,(R,?))]. {
+      rewrite R in *.
+      assumption.
+    }
+    rewrite R.
+    rewrite MT_Facts.add_in_iff.
+    auto.
+  Qed.
+
+  Let tasks_set_program_in:
+    forall x s t p,
+    MT.In x (s_tasks s) ->
+    MT.In x (s_tasks (s_set_program t p s)).
+  Proof.
+    intros.
+    destruct s as (ms, ts).
+    simpl in *.
+    auto.
+  Qed.
+
+  Let knowledge_of_set_program:
+    forall s t p k,
+    KnowledgeOf s k ->
+    KnowledgeOf (s_set_program t p s) k.
+  Proof.
+    intros.
+    unfold KnowledgeOf in *.
+    intros.
+    apply H in H0.
+    destruct H0.
+    auto.
+  Qed.
+
+  Let knowledge_of_global_put:
+    forall s k w h,
+    KnowledgeOf s k ->
+    KnowledgeOf (s_global_put h w s) k.
+  Proof.
+    intros.
+    unfold KnowledgeOf in *.
+    intros.
+    destruct s.
+    simpl in *.
+    auto.
+  Qed.
+
+  Let knowledge_of_local_put:
+    forall k w h s x,
+    KnowledgeOf s k ->
+    KnowledgeOf (s_local_put h x w s) k.
+  Proof.
+    unfold KnowledgeOf.
+    intros.
+    destruct s as (hs, ts).
+    simpl in *.
+    apply H in H0.
+    destruct H0.
+    auto.
+  Qed.
+
+  Let program_to_in:
+    forall s x p,
+    Program s x p ->
+    MT.In x (s_tasks s).
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    eauto using MT_Extra.mapsto_to_in.
+  Qed.
+
+  Let knowledge_of_fork:
+    forall s k x y k' p' l' p,
+    KnowledgeOf s k ->
+    SafeJoins.Reduces k
+       {| op_t := FORK; op_src := x; op_dst := y |} k' ->
+    MT.In x (s_tasks s) ->
+    KnowledgeOf
+      (s_set_program x p
+        (s_spawn y l' p' s)) k'.
+  Proof.
+    intros.
+    apply knowledge_of_set_program.
+    unfold KnowledgeOf; intros a b; intros.
+    destruct s as (ms, ts).
+    simpl.
+    repeat rewrite MT_Facts.add_in_iff.
+    inversion H0; subst; clear H0.
+    unfold FGraph.Edge in *.
+    apply fork_inv_in in H2.
+    destruct H2 as [(?,Hi)|[(?,?)|Hi]]; subst.
+    - apply H in Hi.
+      destruct Hi.
+      auto.
+    - auto.
+    - apply H in Hi.
+      destruct Hi.
+      auto.
+  Qed.
+
+  Let knowledge_of_join:
+    forall s k x y k' p,
+    KnowledgeOf s k ->
+    SafeJoins.Reduces k
+       {| op_t := JOIN; op_src := x; op_dst := y |} k' ->
+    KnowledgeOf (s_set_program x p s) k'.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    unfold KnowledgeOf.
+    intros a b; intros.
+    apply join_inv_in in H0.
+    destruct H0 as [(?,Hi)|Hi].
+    - subst.
+      apply H in H4.
+      apply H in Hi.
+      destruct H4, Hi.
+      auto.
+    - apply H in Hi.
+      destruct Hi.
+      auto.
+  Qed.
+
+  Lemma knowledge_of_i_reduces:
+    forall k k' t s i s' p o,
+    KnowledgeOf s k ->
+    Translate k (t, o) k' ->
+    IReduces (s, i) (t, o) s' ->
+    KnowledgeOf (s_set_program t p s') k'.
+  Proof.
+    intros.
+    inversion H1; subst; clear H1;
+    inversion H0; subst; clear H0; auto.
+  Qed.
+
+  Lemma knowledge_of_reduces:
+    forall s s' e CF k k',
+    KnowledgeOf s k ->
+    Reduces CF s e s' ->
+    Translate k e k' ->
+    KnowledgeOf s' k'.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    inversion H3; subst; clear H3.
+    - rename p0 into p.
+      rename s'0 into s'.
+      inversion H9; subst; clear H9; inversion H1; subst; auto.
+      + eauto.
+      + eauto.
+    - eapply knowledge_of_i_reduces; eauto.
+    - inversion H1; subst.
+      auto.
+    - inversion H1; subst; auto.
+  Qed.
+End KnowledgeOf.

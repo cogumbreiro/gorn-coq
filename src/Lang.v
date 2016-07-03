@@ -237,11 +237,11 @@ Section Lang.
     VReduces s t v w ->
     IReduces (s, Assign x (Value v)) (t,TAU) (s_local_put t x w s)
   | i_reduces_store:
-    forall s s' t w h v v',
+    forall s t w h v v',
     VReduces s t v (HeapLabel h) ->
     VReduces s t v' w ->
     MM.In h (s_heap s) ->
-    IReduces (s, Store v (Value v')) (t, WRITE h) (s_global_put h w s').
+    IReduces (s, Store v (Value v')) (t, WRITE h) (s_global_put h w s).
 
   Inductive PReduces: (state * program) -> effect -> (state * program) -> Prop :=
   | p_reduces_eval:
