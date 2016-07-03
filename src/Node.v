@@ -149,6 +149,8 @@ Section Props.
 
   Definition Node x (vs:list A) := Bijection.Index (node_id x) vs.
 
+  Definition NodeOf (x:A) (n:node) (vs:list A) := Bijection.IndexOf x (node_id n) vs.
+
   Lemma maps_to_fun_1:
     forall x y n (vs:list A),
     MapsTo x n vs ->
@@ -181,6 +183,16 @@ Section Props.
     destruct n as (n).
     simpl in *.
     eauto using Bijection.maps_to_inv_eq.
+  Qed.
+
+  Lemma node_of_inv_key:
+    forall (x:A) y vs,
+    NodeOf x (fresh vs) (y :: vs) ->
+    x = y.
+  Proof.
+    intros.
+    unfold NodeOf, fresh in *; simpl in *.
+    eauto using Bijection.index_of_inv_key.
   Qed.
 
   Lemma maps_to_neq:
@@ -328,6 +340,19 @@ Section MoreProps.
     forall {A} x (y:A) n vs,
     MapsTo x n (y :: vs) ->
     (x = y /\ n = fresh vs) \/ (x <> y /\ MapsTo x n vs).
+  Proof.
+    intros.
+    inversion H; subst.
+    - apply length_node_id_rw in H1.
+      subst.
+      intuition.
+    - intuition.
+  Qed.
+
+  Lemma node_of_inv:
+    forall {A} x (y:A) n vs,
+    NodeOf x n (y :: vs) ->
+    (x = y /\ n = fresh vs) \/ NodeOf x n vs.
   Proof.
     intros.
     inversion H; subst.
