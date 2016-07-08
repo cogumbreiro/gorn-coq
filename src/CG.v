@@ -315,6 +315,17 @@ Section Props.
       eauto using hb_edge_in.
   Qed.
 
+  Lemma hb_trans:
+    forall x y z,
+    HB x y ->
+    HB y z ->
+    HB x z.
+  Proof.
+    intros.
+    unfold HB in *.
+    eauto using reaches_trans.
+  Qed.
+
   Lemma node_lt_length_left:
     forall n1 n2,
     EdgeToIndex cg ->
@@ -677,6 +688,23 @@ Section DAG.
     unfold cg_edges in *.
     destruct e as (?,[]); simpl_red; simpl in *;
     apply List.Forall_cons; eauto.
+  Qed.
+
+  Lemma hb_irrefl:
+    forall x cg,
+    LtEdges (cg_edges cg) ->
+    ~ HB cg x x.
+  Proof.
+    intros.
+    apply cg_dag in H.
+    unfold DAG in *.
+    unfold not; intros.
+    destruct cg.
+    apply hb_fgraph_spec in H0.
+    unfold cg_edges in *.
+    simpl in *.
+    apply H in H0.
+    contradiction.
   Qed.
 
   Let sub_fresh_cons_lhs:
