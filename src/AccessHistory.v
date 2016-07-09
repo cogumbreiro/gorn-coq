@@ -602,14 +602,14 @@ Section Defs.
 
   Let write_safe_hb:
     forall a b l,
-    List.In b l ->
-    Write b ->
-    WriteSafe a l ->
-    HB b a.
+    List.In a l ->
+    Write a ->
+    WriteSafe b l ->
+    HB a b.
   Proof.
     intros.
     inversion H1; subst; clear H1.
-    assert (Hp: HBE b w) by eauto.
+    assert (Hp: HBE a w) by eauto.
     eauto.
   Qed.
 
@@ -618,7 +618,7 @@ Section Defs.
     List.In b l ->
     WriteSafe a l ->
     ReadSafe a l ->
-    HBE b a.
+    HB b a.
   Proof.
     intros.
     destruct (write_dec b); eauto.
