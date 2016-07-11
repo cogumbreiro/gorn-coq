@@ -362,6 +362,41 @@ Section MoreProps.
     - intuition.
   Qed.
 
+  Lemma node_to_node_of:
+    forall {A} n (vs:list A),
+    Node n vs ->
+    exists x, NodeOf x n vs.
+  Proof.
+    intros.
+    destruct H as (x, H).
+    eauto.
+  Qed.
+
+  Lemma node_of_to_node:
+    forall {A} x n (vs:list A),
+    NodeOf x n vs ->
+    Node n vs.
+  Proof.
+    intros.
+    unfold Node, NodeOf in *.
+    eauto using Bijection.index_def.
+  Qed.
+
+  Lemma node_inv:
+    forall {A} (x:A) n vs,
+    Node n (x :: vs) ->
+    n = fresh vs \/ Node n vs.
+  Proof.
+    intros.
+    apply node_to_node_of in H.
+    destruct H as (y, H).
+    apply node_of_inv in H.
+    destruct H as [(?,?)|?].
+    - subst.
+      intuition.
+    - eauto using node_of_to_node.
+  Qed.
+
 End MoreProps.
 
   Ltac simpl_map := 
