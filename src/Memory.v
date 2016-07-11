@@ -372,7 +372,7 @@ Section SR.
     forall m n x,
     LastWrite m n (d_task x) g cg ->
     SJ_CG.CanJoin n x sj.
-
+(*
   Let local_to_knows_read:
     forall cg sj sj' cg' m m' a b x k y k',
     LocalToKnows (snd m) cg sj ->
@@ -394,7 +394,7 @@ Section SR.
     expand H2.
     simpl in *.
     apply maps_to_inv in H3.
-    expand H5.
+    expand H11.
     rewrite MN_Facts.add_mapsto_iff in *.
     destruct H3 as [(?,?)|(?,mt)]; subst. {
       subst.
@@ -586,58 +586,6 @@ Section SR.
     forall cg x,
     ~ HB cg x x.
 
-  Let max_write_add_3:
-    forall {A} r (a:access A) r' x g cg,
-    MaxWrite r a (MM.add r' x g) cg ->
-    r <> r' ->
-    MaxWrite r a g cg.
-  Proof.
-    intros.
-    expand H.
-    apply MM.add_3 in H1; eauto using max_write_def.
-  Qed.
-
-  Let last_write_add_3:  
-    forall r n r' {A} (d:A) x g cg,
-    LastWrite r n d (MM.add r' x g) cg ->
-    r <> r' ->
-    LastWrite r n d g cg.
-  Proof.
-    intros.
-    expand H.
-    eauto using max_write_add_3, last_write_def.
-  Qed.
-
-  Let last_write_inv_add:
-    forall {A} r n n' (x y:A) g cg,
-    LastWrite r n' y
-       (MM.add r ({| a_when := n; a_what := ALLOC x |} :: nil) g) cg ->
-     n' = n /\ y = x.
-  Proof.
-    intros.
-    expand H.
-    expand H2.
-    rewrite MM_Facts.add_mapsto_iff in *.
-    destruct H as [(_,?)|(N,_)]. {
-      subst.
-      destruct H3. {
-        subst.
-        expand H4.
-        clear H5.
-        apply H3 in H0; clear H3.
-        destruct H0. {
-          clear H.
-          inversion H1; simpl in *; inversion H.
-          auto.
-        }
-        apply hb_irrefl in H.
-        contradiction.
-      }
-      inversion H.
-    }
-    contradiction N.
-    trivial.
-  Qed.
 
   Definition LastWriteKnows g cg sj :=
     forall m n a b,
@@ -658,6 +606,8 @@ Section SR.
     intros.
   Admitted.
 
+  (** MOVE OUT *)
+
   Lemma max_write_to_access:
     forall {A} r (a:access A) ah cg,
     MaxWrite r a ah cg ->
@@ -667,6 +617,8 @@ Section SR.
     inversion H.
     eauto using access_def.
   Qed.
+
+  (** MOVE OUT *)
 
   Lemma last_write_to_access:
     forall {A:Type} r (x:A) ah vs es n,
@@ -696,10 +648,32 @@ Section SR.
     subst; assumption.
   Qed.
 
-  Lemma last_write_to_node:
-    forall r n {A} (a:A) ah vs es,
-    LastWrite r n a ah (vs, es) ->
-    exists a, Access r a ah /\ a_when a = n.
+  Let last_write_knows_else:
+    forall g vs es sj t a tn b n r' k,
+    DomInclAccess g vs ->
+    SJ_CG.SJ (vs, es) k sj ->
+    LastWriteKnows g (vs, es) sj ->
+    NodeOf a n (t :: vs) ->
+    MapsTo t tn vs ->
+    LastWrite r' n (d_task b) g (t :: vs, C (tn, fresh vs) :: es) ->
+    SJ_CG.Knows (t :: vs) (SJ_CG.Copy tn :: sj) (a, b).
+  Proof.
+    intros.
+    apply max_write_continue in H4; auto.
+    apply node_of_inv in H2.
+    destruct H2 as [(?,?)|Hin]. {
+      subst.
+      apply last_write_to_node in H4; auto.
+      simpl_map.
+    }
+    assert (SJ_CG.Knows vs sj (a, b)) by eauto.
+    destruct (tid_eq_dec t a). {
+      subst.
+      inversion H0.
+      eauto using SJ_CG.knows_copy.
+    }
+    eauto using SJ_CG.knows_cons.
+  Qed.
 
   Let last_write_knows_alloc:
     forall a n t vs es sj d tn l b g r r' tl k,
@@ -711,38 +685,103 @@ Section SR.
     MN.MapsTo tn tl l ->
     ~ MN.In (fresh vs) l ->
     ~ MM.In r g ->
-    LastWrite r n (d_task b) 
-     (MM.add r' ({| a_when := fresh vs; a_what := ALLOC d |} :: nil) g) 
+    LastWrite r' n (d_task b) 
+     (MM.add r ({| a_when := fresh vs; a_what := ALLOC d |} :: nil) g) 
      (t :: vs, C (tn, fresh vs) :: es) ->
+    DomInclAccess g vs ->
     SJ_CG.SJ (vs,es) k sj ->
     SJ_CG.Knows (t :: vs) (SJ_CG.Copy tn :: sj) (a, b).
   Proof.
     intros.
-    rename H8 into Hsj.
-    destruct (mid_eq_dec r r'). {
-      subst.
-      apply last_write_inv_add in H7.
-      destruct H7.
+    rename H8 into Hdom.
+    rename H9 into Hsj.
+    apply last_write_inv_alloc in H7.
+    destruct H7 as [(?,(?,?))|(?,mt)]. {
       subst.
       apply node_of_inv_key in H0; subst.
       inversion Hsj.
       eauto using SJ_CG.knows_copy, knows_def.
     }
-    apply last_write_add_3 in H7; auto.
-    apply max_write_continue in H7; auto.
-    apply node_of_inv in H0.
-    destruct H0 as [(?,?)|Hin]. {
+    eauto.
+  Qed.
+
+  Let last_write_knows_write:
+    forall a n t n' b l sj vs es g d lr r r' k,
+    NodeOf a n (t :: vs) ->
+    Locals.MapsTo n' d l ->
+    Locals.MapsTo n' (d_mem r) l ->
+    MapsTo t n' vs ->
+    MM.MapsTo r lr g ->
+    LastWrite r' n (d_task b)
+       (MM.add r ({| a_when := fresh vs; a_what := WRITE d |} :: lr) g)
+       (t :: vs, C (n', fresh vs) :: es) ->
+
+    LastWriteKnows g (vs, es) sj ->
+    LocalToKnows l (vs, es) sj ->
+    DomInclAccess g vs ->
+    SJ_CG.SJ (vs, es) k sj ->
+
+    SJ_CG.Knows (t :: vs) (SJ_CG.Copy n' :: sj) (a, b).
+  Proof.
+    intros.
+    rename H5 into Hw.
+    rename H6 into Hl.
+    rename H7 into Hdom.
+    rename H8 into Hsj.
+    apply last_write_inv_write in H4; auto.
+    destruct H4 as [(?,(?,?))|mt]. {
       subst.
+      apply node_of_inv_key in H; subst.
       inversion Hsj.
       eauto using SJ_CG.knows_copy, knows_def.
     }
-      inversion Hsj.
-      eauto using SJ_CG.knows_cons, knows_def.
-
-      inversion Hsj.
-      eauto using SJ_CG.knows_copy.
-    auto using SJ_CG.knows_cons.
+    eauto.
   Qed.
+
+  Let last_write_knows_read:
+    forall r' r'l l a b x nx sj es vs g an r nw k lx d,
+    Locals.MapsTo nx (d_mem r') l ->
+    LastWrite r' nw d g (vs, es) ->
+    NodeOf a an (x :: vs) ->
+    DomInclAccess g vs ->
+    MN.MapsTo nx lx l ->
+    MM.MapsTo r' r'l g ->
+    SJ_CG.SJ (vs, es) k sj ->
+    LastWriteKnows g (vs, es) sj ->
+    LocalToKnows l (vs, es) sj ->
+    MapsTo x nx vs ->
+    LastWrite r an (d_task b)
+       (MM.add r' ({| a_when := fresh vs; a_what := READ datum |} :: r'l) g)
+       (x :: vs, C (nx, fresh vs) :: es) ->
+    SJ_CG.Knows (x :: vs) (SJ_CG.Copy nx :: sj) (a, b).
+  Proof.
+    intros.
+    apply last_write_inv_read in H9; eauto.
+  Qed.
+
+  Let last_write_knows_fork:
+    forall l a b x nx sj es vs g an r k lx y args,
+    DomInclAccess g vs ->
+    SJ_CG.SJ (vs, es) k sj ->
+    LastWriteKnows g (vs, es) sj ->
+    LocalToKnows l (vs, es) sj ->
+    MapsTo x nx vs ->
+    MN.MapsTo nx lx l ->
+    LastWrite r an (d_task b) g
+       (y :: x :: vs, F (nx, fresh (x :: vs)) :: C (nx, fresh vs) :: es) ->
+    NodeOf a an (y :: x :: vs) ->
+    x <> y ->
+    ~ In y vs ->
+    Forall (fun d : datum => Locals.MapsTo nx d l) args ->
+    ~ MN.In (fresh vs) l ->
+    ~ MN.In (fresh (x :: vs)) (MN.add (fresh vs) (d_task y :: lx) l) ->
+    SJ_CG.Knows (y :: x :: vs) (SJ_CG.Copy nx :: SJ_CG.Cons y nx :: sj) (a, b).
+  Proof.
+    intros.
+    apply node_of_inv in H6.
+    destruct H6 as [(?,?)|Hn]. {
+      subst.
+  Admitted.
 
   Lemma last_write_knows:
     forall m cg sj cg' m' sj' e k,
@@ -753,6 +792,7 @@ Section SR.
 
     SJ_CG.SJ cg k sj ->
     LocalToKnows (snd m) cg sj ->
+    DomInclAccess (fst m) (fst cg) ->
 
     LastWriteKnows (fst m') cg' sj'.
   Proof.
@@ -761,9 +801,23 @@ Section SR.
     destruct e as (?,[]); simpl in *; handle_all.
     - eapply last_write_knows_continue with (l:=l); eauto.
     - eapply last_write_knows_alloc; eauto.
-     rename m0 into r.
+    - eauto.
+    - eauto.
+    - eapply last_write_knows_fork; eauto.
+    - clear H9.
       rename es0 into es.
-      rename n0 into tn.
+      rename m0 into r.
+      rename t into x.
+      rename t0 into y.
+      rename ny0 into ny.
+      rename l0 into lx.
+      rename n into an.
+      clear nx.
+      rename nx0 into nx.
+      rename l into args.
+      rename l0 into l.
+      clear H16.
+      clear H8.
   Qed.
 
 
@@ -824,5 +878,4 @@ Section SR.
     - rename m0 into z.
   Qed.
 *)
-
 End SR.
