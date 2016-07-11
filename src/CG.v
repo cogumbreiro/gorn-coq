@@ -558,6 +558,70 @@ Section PropsEx.
     destruct e as (?,[]); simpl_red; eauto using reduction_result_fork, result_join, result_continue.
   Qed.
 
+  Let hb_inv_cons_c_0:
+    forall x vs es n' n,
+    ~ In (FGraph.Edge (map e_edge es)) (fresh vs) ->
+    HB (x :: vs, C (n, fresh vs) :: es) n' (fresh vs) ->
+    n = n' \/ HB (vs, es) n' n.
+  Proof.
+    intros.
+    rewrite hb_fgraph_spec in *.
+    simpl in *.
+    apply FGraph.reaches_inv_cons_2 in H0.
+    destruct H0 as [?|[?|?]]; auto.
+    contradiction H.
+    eauto using reaches_to_in_snd.
+  Qed.
+
+  Lemma f_edge_to_hb_edge:
+    forall es vs a b,
+    FGraph.Edge (map e_edge es) (a, b) ->
+    HB_Edge (vs, es) (a, b).
+  Proof.
+    intros.
+    rewrite hb_edge_spec.
+    unfold cg_edges.
+    auto.
+  Qed.
+
+  Lemma edge_to_index_fresh_not_in:
+    forall vs es,
+    EdgeToIndex (vs, es) ->
+    ~ In (FGraph.Edge (map e_edge es)) (fresh vs).
+  Proof.
+    unfold not; intros.
+    destruct H0 as ((v1,v2),(Hx,Hy)).
+    assert (He: HB_Edge (vs,es) (v1, v2)) by eauto using f_edge_to_hb_edge.
+    apply H in He.
+    destruct He as (Ha,Hb).
+    simpl in *.
+    destruct Hy; simpl in *; subst.
+    - apply node_absurd_fresh in Ha; contradiction.
+    - apply node_absurd_fresh in Hb; contradiction.
+  Qed.
+
+  Let hb_edge_cons:
+    forall vs vs' es e a b,
+    HB_Edge (vs, es) (a, b) ->
+    HB_Edge (vs', e :: es) (a, b).
+  Proof.
+    intros.
+    rewrite hb_edge_spec in *.
+    simpl in *.
+    intuition.
+  Qed.
+
+  Lemma hb_inv_cons_c:
+    forall x vs n n' es,
+    EdgeToIndex (vs, es) ->
+    HB (x :: vs, C (n, fresh vs) :: es) n' (fresh vs) ->
+    n' = n \/ HB (vs, es) n' n.
+  Proof.
+    intros.
+    apply hb_inv_cons_c_0 in H0; auto using edge_to_index_fresh_not_in.
+    intuition.
+  Qed.
+
 End PropsEx.
 
 
