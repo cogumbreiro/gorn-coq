@@ -25,8 +25,9 @@ Section Defs.
     An represents the kind of access the node in the CG responsible for the access
     and the target variable.
    *)
+  Inductive op_type := READ | WRITE | ALLOC.
 
-  Inductive op := READ | WRITE : A -> op | ALLOC : A -> op.
+  Definition op := (op_type * A) % type.
 
   Notation payload := (option A).
 
@@ -74,18 +75,18 @@ Section Defs.
     Read a ->
     P a.
 
-  Inductive LastStore a (l:list access) : Prop :=
-  | last_store_def:
+  Inductive LastWrite (a:access) (l:list access) : Prop :=
+  | last_write_def:
     Write a ->
     List.In a l->
     ForallWrites (fun b=>HBE b a) l ->
-    LastStore a l.
+    LastWrite a l.
 
   Inductive MapsTo r (x:A) ah : Prop :=
   | maps_to_def:
     forall a l,
     MM.MapsTo r l ah ->
-    LastStore a l ->
+    LastWrite a l ->
     a_what a = Some x ->
     MapsTo r x ah.
 
@@ -102,7 +103,7 @@ Section Defs.
   | write_safe_def:
     forall w,
     (* take the last-write *)
-    LastStore w l ->
+    LastWrite w l ->
     (* the access must succeed the last-write *)
     HB w a ->
     WriteSafe a l.
@@ -113,27 +114,29 @@ Section Defs.
 
   Inductive RaceFreeAdd: access_history -> (mid * E * op) -> access_history -> Prop :=
   | race_free_add_alloc:
-    forall g r y n,
+    forall g r d n,
     (* update the shared memory to record the read *)
     ~ MM.In r g ->
-    RaceFreeAdd g (r, n, ALLOC y) (MM.add r ((n, Some y)::nil) g)
+    RaceFreeAdd g (r, n, (ALLOC, d)) (MM.add r ((n, Some d)::nil) g)
 
   | race_free_read:
-    forall g l n r,
+    forall g l n r a d,
     (* update the shared memory to record the read *)
     MM.MapsTo r l g ->
     WriteSafe (n, None) l ->
-    RaceFreeAdd g (r, n, READ) (MM.add r ((n, None)::l) g)
+    LastWrite a l ->
+    a_what a = Some d ->
+    RaceFreeAdd g (r, n, (READ, d)) (MM.add r ((n, None)::l) g)
 
   | race_free_write:
-    forall g r y n l,
+    forall g r d n l,
     (* update the shared memory to record the read *)
     MM.MapsTo r l g ->
     (* make sure the write is safe with other writes in l *)
-    WriteSafe (n, Some y) l ->
+    WriteSafe (n, Some d) l ->
     (* the write must also be safe wrt all reads *)
-    ReadSafe (n, Some y) l ->
-    RaceFreeAdd g (r, n, WRITE y) (MM.add r ((n, Some y)::l) g).
+    ReadSafe (n, Some d) l ->
+    RaceFreeAdd g (r, n, (WRITE, d)) (MM.add r ((n, Some d)::l) g).
 
   Ltac expand H := inversion H; subst; clear H.
 
@@ -378,9 +381,9 @@ Section Defs.
   Qed.
 
 
-  Let last_store:
+  Let last_write:
     forall (a:access) b l,
-    LastStore b l ->
+    LastWrite b l ->
     Write a ->
     List.In a l ->
     HBE a b.
@@ -410,9 +413,9 @@ Section Defs.
     destruct H; assumption.
   Qed.
 
-  Let last_store_absurd_nil:
+  Let last_write_absurd_nil:
     forall (a:access),
-    ~ LastStore a nil.
+    ~ LastWrite a nil.
   Proof.
     unfold not; intros.
     inversion H.
@@ -430,10 +433,10 @@ Section Defs.
       inversion H.
   Qed.
 
-  Let in_last_store:
+  Let in_last_write:
     forall l a b,
     List.In a l ->
-    LastStore b l ->
+    LastWrite b l ->
     Read a \/ (Write a /\ HBE a b).
   Proof.
     intros.
@@ -484,11 +487,11 @@ Section Defs.
     auto.
   Qed.
 
-  Let last_store_inv_read:
+  Let last_write_inv_read:
     forall l a b,
     Read a ->
-    LastStore b (a :: l) ->
-    LastStore b l.
+    LastWrite b (a :: l) ->
+    LastWrite b l.
   Proof.
     induction l; intros. {
       inversion H0.
@@ -502,10 +505,10 @@ Section Defs.
       contradiction.
     }
     inversion H0; subst; clear H0. {
-      eauto using last_store_def, in_eq.
+      eauto using last_write_def, in_eq.
     }
     apply forall_writes_inv_cons in H3.
-    auto using last_store_def, in_cons.
+    auto using last_write_def, in_cons.
   Qed.
 
   Let hb_neq:
@@ -519,22 +522,22 @@ Section Defs.
     assumption.
   Qed.
 
-  Let last_store_hbe:
+  Let last_write_hbe:
     forall x y l,
-    LastStore x l ->
-    LastStore y l ->
+    LastWrite x l ->
+    LastWrite y l ->
     HBE x y.
   Proof.
     intros.
     inversion H0.
     inversion H.
-    apply last_store with (l:=l); auto.
+    apply last_write with (l:=l); auto.
   Qed.
 
-  Let last_store_trans:
+  Let last_write_trans:
     forall x y z l,
-    LastStore x l ->
-    LastStore y l ->
+    LastWrite x l ->
+    LastWrite y l ->
     HB x z ->
     HB y z.
   Proof.
@@ -549,7 +552,7 @@ Section Defs.
 
   Let write_safe:
     forall a b l,
-    LastStore a l ->
+    LastWrite a l ->
     WriteSafe b l ->
     HB a b.
   Proof.
@@ -558,11 +561,11 @@ Section Defs.
     eauto.
   Qed.
 
-  Let last_store_inv:
+  Let last_write_inv:
     forall a b l,
-    LastStore a (b :: l) ->
+    LastWrite a (b :: l) ->
     (b = a /\  ForallWrites (fun c => HBE c a) l) \/
-    (LastStore a l /\ (Write b -> HBE b a)).
+    (LastWrite a l /\ (Write b -> HBE b a)).
   Proof.
     intros.
     inversion H; subst; clear H.
@@ -573,18 +576,18 @@ Section Defs.
     right.
     apply forall_writes_inv in H2.
     destruct H2 as (Hf, Hi).
-    eauto using last_store_def.
+    eauto using last_write_def.
   Qed.
 
-  Let in_last_store_write:
+  Let in_last_write_write:
     forall l a b,
     List.In a l ->
     Write a ->
-    LastStore b l ->
+    LastWrite b l ->
     HBE a b.
   Proof.
     intros.
-    eapply in_last_store in H1; eauto.
+    eapply in_last_write in H1; eauto.
     destruct H1; try contradiction.
     destruct H1.
     assumption.
