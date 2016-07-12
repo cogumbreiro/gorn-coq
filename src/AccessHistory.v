@@ -670,4 +670,148 @@ Section Defs.
     eauto.
   Qed.
 
+  Lemma last_write_inv_cons_nil:
+    forall a b,
+    LastWrite a (b::nil) ->
+    a = b.
+  Proof.
+    intros.
+    inversion H.
+    destruct H1. {
+      auto.
+    }
+    inversion H1.
+  Qed.
+
+  Lemma last_write_inv_cons_read:
+    forall a n l,
+    LastWrite a ((n,None)::l) ->
+    LastWrite a l.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    destruct H1; subst. {
+      inversion H0.
+    }
+    assert (ForallWrites (fun b : access => HBE b a) l). {
+      unfold ForallWrites in *; eauto using in_cons.
+    }
+    eauto using last_write_def.
+  Qed.
+
+  Lemma write_eq:
+    forall n d,
+    Write (n, Some d).
+  Proof.
+    auto using has_data_def.
+  Qed.
+
+  Definition LastWriteFun ah :=
+    forall a b r h,
+    MM.MapsTo r h ah ->
+    LastWrite a h ->
+    LastWrite b h ->
+    a = b.
+
+  Let last_write_to_write:
+    forall a l,
+    LastWrite a l ->
+    Write a.
+  Proof.
+    intros.
+    inversion H; auto.
+  Qed.
+
+  Lemma last_write_to_some:
+    forall a l,
+    LastWrite a l ->
+    exists d, a_what a = Some d.
+  Proof.
+    intros.
+    apply last_write_to_write in H.
+    inversion H; eauto.
+  Qed.
+
 End Defs.
+
+
+Section Props.
+  Variable A:Type.
+  Variable E:Type.
+  Variable P: E -> E -> Prop.
+  Variable Q: E -> E -> Prop.
+
+  Variable lt_impl:
+    forall x y,
+    P x y -> Q x y.
+
+  Let forall_writes_impl:
+    forall a h,
+    ForallWrites (fun b => P (a_when b) (a_when (A:=A) a) \/ b = a) h ->
+    ForallWrites (fun b => Q (a_when b) (a_when a) \/ b = a) h.
+  Proof.
+    unfold ForallWrites.
+    intros.
+    apply H in H0; auto.
+    destruct H0; auto.
+  Qed.
+
+  Let last_write_impl:
+    forall w h,
+    LastWrite (A:=A) P w h ->
+    LastWrite Q w h.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    eauto using last_write_def.
+  Qed.
+
+  Let write_safe_impl:
+    forall a h,
+    WriteSafe (A:=A) P a h ->
+    WriteSafe Q a h.
+  Proof.
+    intros.
+    inversion H.
+    eauto using write_safe_def.
+  Qed.
+
+  Let read_safe_impl:
+    forall a h,
+    ReadSafe (A:=A) P a h ->
+    ReadSafe Q a h.
+  Proof.
+    intros.
+    unfold ReadSafe, ForallReads in *.
+    eauto.
+  Qed.
+
+  Let ordered_adds_impl:
+    forall h,
+    OrderedAdds (A:=A) P h ->
+    OrderedAdds Q h.
+  Proof.
+    intros.
+    induction H.
+    - auto using ordered_adds_nil.
+    - eauto using ordered_adds_read.
+    - eauto using ordered_adds_write.
+  Qed.
+
+  Lemma ordered_access_history_impl:
+    forall (ah: access_history A E),
+    OrderedAccessHistory P ah ->
+    OrderedAccessHistory Q ah.
+  Proof.
+    unfold OrderedAccessHistory; intros; eauto.
+  Qed.
+
+  Lemma last_write_fun_impl:
+    forall (ah: access_history A E),
+    LastWriteFun Q ah ->
+    LastWriteFun P ah.
+  Proof.
+    unfold LastWriteFun; intros; eauto.
+  Qed.
+
+End Props.
