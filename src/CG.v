@@ -622,6 +622,19 @@ Section PropsEx.
     intuition.
   Qed.
 
+  Lemma hb_impl:
+    forall e cg cg',
+    Reduces cg e cg' ->
+    forall x y,
+    HB cg x y ->
+    HB cg' x y.
+  Proof.
+    intros.
+    inversion H; subst; simpl_red;
+    rewrite hb_fgraph_spec in *; simpl in *;
+    eauto using FGraph.reaches_impl_cons.
+  Qed.
+
 End PropsEx.
 
 
