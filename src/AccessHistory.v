@@ -1371,6 +1371,43 @@ Section Props.
     eauto.
   Qed.
 
+  Let hb_inv_cons_c_0:
+    forall vs es x n ah' a b ah,
+    WellFormed (vs,es) ah ->
+    WellFormed (x :: vs,C (n, fresh vs) :: es) ah' ->
+    HB (x :: vs, C (n, fresh vs) :: es) (a_when (A:=Trace.datum) a) (a_when (A:=Trace.datum) b) ->
+    HB (vs, es) (a_when a) (a_when b) \/ a_when b = fresh vs.
+  Proof.
+    intros.
+    apply hb_inv_cons_c in H1; auto.
+    - apply wf_edge_to_node in H ; auto.
+    - apply wf_edge_to_node in H0; auto.
+    - apply wf_lt_edges in H0; auto.
+  Qed.
+
+  Lemma last_write_inv_c:
+    forall x n vs ah ah' h es a r,
+    WellFormed (vs,es) ah ->
+    WellFormed (x :: vs,C (n, fresh vs) :: es) ah' ->
+    MM.MapsTo r h ah ->
+    LastWrite (HB (x::vs, C (n, fresh vs) :: es)) a h ->
+    LastWrite (HB (vs, es)) a h.
+  Proof.
+    intros.
+    destruct H2.
+    apply last_write_def; eauto.
+    rename H4 into Hfw.
+    unfold ForallWrites in *; intros b Hin Hwb.
+    apply Hfw in Hin; auto.
+    destruct Hin as [Hin|?]; auto.
+    apply hb_inv_cons_c_0 with (ah:=ah) (ah':=ah') in Hin; auto.
+    destruct Hin as [?|R]; auto.
+    subst.
+    assert (Hn: Node (a_when a) vs) by eauto using well_formed_node.
+    rewrite R in *.
+    simpl_map.
+  Qed.
+
   Lemma drf_check_inv_read_last_write:
     forall x n vs ah ah' d es r,
     WellFormed (vs,es) ah ->
@@ -1385,19 +1422,11 @@ Section Props.
     rename H0 into Hwf'.
     simpl_drf_check.
     assert (Hlw := H5).
-    inversion H5; subst; clear H5.
     exists l; exists a.
-    (* -- *)
-    repeat split; eauto using last_write_to_write, last_write_to_in.
-    unfold ForallWrites in *.
-    intros b; intros.
-    assert (Node (a_when a) vs) by eauto using well_formed_node, last_write_to_in.
-    assert (Node (a_when b) vs) by eauto using well_formed_node.
-    apply H1 in H2; auto.
-    destruct H2; auto.
-    apply hb_inv_cons_c in H2; auto.
-    - apply wf_edge_to_node in Hwf ; auto.
-    - apply wf_lt_edges in Hwf'; auto.
+    split; auto.
+    split; eauto using last_write_inv_c, well_formed_node, last_write_to_in.
   Qed.
+
+
 End Props.
 End T.
