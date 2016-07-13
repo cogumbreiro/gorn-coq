@@ -475,12 +475,15 @@ Section SR.
   Lemma local_to_knows_reduces:
     forall cg k sj sj' g g' cg' l l' x o k',
     LocalToKnows l cg sj ->
+
+    T.TReduces cg (x,o) cg' ->
     SJ_CG.SJ cg k sj ->
     SJ_CG.SJ cg' k' sj' ->
-    CG.Reduces cg (event_to_cg (x,o)) cg' ->
+
     Reduces cg' l o l' ->
     DRF_Check cg' g o g' ->
-    SJ_CG.Reduces sj cg' sj' ->
+    SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
+
     DomIncl l (fst cg) ->
     LastWriteCanJoin g cg sj ->
     WellFormed cg g ->
@@ -492,18 +495,18 @@ Section SR.
     intros (a,b); intros.
     destruct o; simpl in *; eauto.
   Qed.
-(*
+
   Lemma dom_incl_reduces:
-    forall m m' cg cg' e,
-    DomIncl (snd m) (fst cg) ->
-    CG.Reduces cg (event_to_cg e) cg' ->
-    Reduces cg' m e m' ->
-    DomIncl (snd m') (fst cg').
+    forall l l' cg cg' x o,
+    DomIncl l (fst cg) ->
+    T.TReduces cg (x,o) cg' ->
+    Reduces cg' l o l' ->
+    DomIncl l' (fst cg').
   Proof.
     intros.
     unfold DomIncl.
     intros.
-    destruct e as (x, []); simpl in *; handle_all.
+    destruct o; simpl in *; handle_all.
     - rewrite MN_Facts.add_in_iff in *.
       destruct H2. {
         subst.
@@ -517,6 +520,11 @@ Section SR.
       }
       eauto using node_cons, maps_to_to_node.
     - simpl in *.
+      rewrite MN_Facts.add_in_iff in *.
+      destruct H2. {
+        subst.
+        auto using node_eq.
+      }
       eauto using node_cons, maps_to_to_node.
     - rewrite MN_Facts.add_in_iff in *.
       destruct H2. {
@@ -533,17 +541,45 @@ Section SR.
       eauto using node_cons, maps_to_to_node.
   Qed.
 
-  Variable max_write_continue:
-    forall {A:Type} x n n' vs es g (v:A) r,
-    MapsTo x n vs ->
-    LastWrite r n' v g (x :: vs, C (n, fresh vs) :: es) ->
-    LastWrite r n' v g (vs, es).
+  Let last_write_can_join_continue:
+    forall (ls:list datum) a x r y g vs es l sj n h,
+    WellFormed (y :: vs, C (n, fresh vs) :: es) g ->
+    WellFormed (vs, es) g ->
+    a_what a = Some (d_task x) ->
+    LastWriteCanJoin g (vs, es) sj ->
+    (LastWrite (y :: vs, C (n, fresh vs) :: es)) a h ->
+    MN.MapsTo n ls l ->
+    MM.MapsTo r h g ->
+    SJ_CG.CanJoin (a_when a) x (SJ_CG.Copy n :: sj).
+  Proof.
+    eauto using SJ_CG.can_join_cons, last_write_inv_c.
+  Qed.
 
+
+  Let last_write_can_join_reduces:
+    forall g cg cg' sj l o l' sj' g' y,
+    WellFormed cg g ->
+    WellFormed cg' g' ->
+    LastWriteCanJoin g cg sj ->
+    Reduces cg' l o l' ->
+    T.TReduces cg (y,o) cg' ->
+    DRF_Check cg' g o g' ->
+    SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
+    LastWriteCanJoin g' cg' sj'.
+  Proof.
+    intros.
+    unfold LastWriteCanJoin.
+    intros.
+    destruct o; simpl in *; handle_all; simpl_drf_check.
+    - 
+  Qed.
+
+(*
   Let last_write_can_join_continue:
     forall cg sj cg' sj' m m' x r n a,
     LastWriteCanJoin (fst m) cg sj ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces cg' m (x, CONTINUE) m' ->
+    Reduces cg' l CONTINUE l' ->
     SJ_CG.Reduces sj cg' sj' ->
     LastWrite r n (d_task a) (fst m') cg' ->
     SJ_CG.CanJoin n a sj'.
@@ -559,11 +595,6 @@ Section SR.
     rename es0 into es.
     eauto using max_write_continue.
   Qed.
-
-  Variable hb_irrefl:
-    forall cg x,
-    ~ HB cg x x.
-
 
   Let last_write_knows_continue:
     forall a n t nl vs es sj g b nt (l:Locals.local_memory datum) r,
