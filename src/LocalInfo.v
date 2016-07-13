@@ -354,7 +354,6 @@ Section SR.
     LastWriteCanJoin g cg sj ->
     SJ_CG.SJ cg' k' sj' ->
     DRF_Check cg' g (READ y d) g' ->
-    EdgeToIndex cg ->
     WellFormed cg g ->
     WellFormed cg' g' ->
     SJ_CG.Knows (fst cg') sj' (a, b).
@@ -364,9 +363,8 @@ Section SR.
     rename H6 into Hwrite.
     rename H7 into Hsj'.
     rename H8 into Hdrf.
-    rename H9 into Hei.
-    rename H10 into Hwf.
-    rename H11 into Hwf'.
+    rename H9 into Hwf.
+    rename H10 into Hwf'.
     handle_all.
     expand H2.
     simpl in *.
@@ -378,37 +376,9 @@ Section SR.
       destruct H0 as [(_,Hx)|(N,_)]; subst. {
         destruct H1 as [?|Hi]. {
           subst.
-          apply drf_check_inv_read in Hdrf.
-          simpl_drf_check.
-          expand Hdrf. {
-            simpl in *.
-            expand H0.
-            expand H1.
-            simpl_structs.
-            inversion H10; subst.
-            inversion H13.
-            expand H11.
-            simpl in *.
-            apply hb_inv_cons_c in H1; auto.
-            destruct H1. {
-              subst.
-              rename y into r.
-              rename l1 into h.
-              assert (SJ_CG.CanJoin (a_when w) x sj). {
-                unfold LastWriteCanJoin in Hwrite.
-                assert (Hx := Hwrite x a h r H3).
-              }
-(*              assert (a = w) by eauto; subst.*)
-              remember (a_when w) as nw.
-              rename l0 into lx.
-              rewrite <- H14 in *.
-              eapply sj_knows_copy; eauto using knows_def, Locals.local_def, SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons, SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons.
-              apply sj_knows_copy with (es:=es) (k:=k); auto.
-              eapply sj_knows_copy; eauto.
-            }
-            eauto using SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons.
-          }
-          (* absurd *)
+          apply drf_check_inv_read_last_write in Hdrf; auto.
+          destruct Hdrf as (h, (a, (mt, (Hw, (?,?))))).
+          eauto using SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons.
         }
         simpl in *.
         eapply sj_knows_copy; eauto.
@@ -421,7 +391,7 @@ Section SR.
     }
     eauto using SJ_CG.knows_neq, knows_def, Locals.local_def.
   Qed.
-*)
+
   Let local_to_knows_future:
     forall cg sj sj' cg' l l' a b x y k ds,
     LocalToKnows l cg sj ->
@@ -500,7 +470,7 @@ Section SR.
 
   Notation local_info := (Locals.local_memory datum).
 
-  Definition memory := (access_history * local_info) % type.
+  Definition memory := (cg_access_history * local_info) % type.
 
   Lemma local_to_knows_reduces:
     forall cg k sj sj' g g' cg' l l' x o k',
@@ -513,6 +483,8 @@ Section SR.
     SJ_CG.Reduces sj cg' sj' ->
     DomIncl l (fst cg) ->
     LastWriteCanJoin g cg sj ->
+    WellFormed cg g ->
+    WellFormed cg' g' ->
     LocalToKnows l' cg' sj'.
   Proof.
     intros.
@@ -520,7 +492,7 @@ Section SR.
     intros (a,b); intros.
     destruct o; simpl in *; eauto.
   Qed.
-
+(*
   Lemma dom_incl_reduces:
     forall m m' cg cg' e,
     DomIncl (snd m) (fst cg) ->
