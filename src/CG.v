@@ -834,3 +834,22 @@ Section DAG.
   Qed.
 
 End DAG.
+
+Module T.
+  Require Trace.
+
+  Definition op_to_cg (o:Trace.op) : op :=
+  match o with
+  | Trace.CONTINUE => CONTINUE
+  | Trace.ALLOC _ _ => CONTINUE
+  | Trace.WRITE _ _ => CONTINUE
+  | Trace.READ _ _ => CONTINUE
+  | Trace.FUTURE x _ => FORK x
+  | Trace.FORCE x _ => JOIN x
+  end.
+
+  Definition event_to_cg (e:Trace.event) :=
+  let (x,o) := e in (x, op_to_cg o).
+
+  Notation TReduces cg e cg' := (Reduces cg (event_to_cg e) cg').
+End T.

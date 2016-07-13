@@ -15,4 +15,5 @@ src/Memory.v
 src/SafeJoins.v
 src/SJ_CG.v
 src/AccessHistory.v
+src/Trace.v
 

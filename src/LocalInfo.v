@@ -9,6 +9,9 @@ Require Import AccessHistory.
 Require Import Node.
 Require Import CG.
 Require SJ_CG.
+Require Import Trace.
+
+Import AccessHistory.T.
 
 Module Locals.
 Section Defs.
@@ -71,38 +74,13 @@ End Defs.
 End Locals.
 
 Section Defs.
+  Require Import Trace.
 
   Import Locals.
 
-  Inductive datum :=
-  | d_task : tid -> datum
-  | d_mem : mid -> datum
-  | d_any : datum.
-
-(*
-  Definition global_memory := access_history datum.
-
-  Definition memory := (global_memory * (local_memory datum)) % type.
-
-  Definition m_global (m:memory) := fst m.
-
-  Definition m_local (m:memory) := snd m.
-*)
-
-  Inductive op :=
-  | CONTINUE: op
-  | ALLOC: mid -> datum -> op
-  | READ: mid -> datum -> op
-  | WRITE: mid -> datum -> op
-  | FUTURE: tid -> list datum -> op
-  | FORCE: tid -> datum -> op.
-
-  Definition event := (tid * op) % type.
-
-
   Variable cg : computation_graph.
 
-  Inductive Reduces : local_memory datum -> op -> local_memory datum -> Prop :=
+  Inductive Reduces : local_memory datum -> Trace.op -> local_memory datum -> Prop :=
 
   | reduces_alloc:
     forall l n n' d l' r es,
@@ -170,41 +148,11 @@ Section Defs.
 
 End Defs.
 
-  Require AccessHistory.
-
-  Notation access_history := (AccessHistory.access_history datum node).
-  Notation access_history_op := (AccessHistory.op datum).
-
-  Inductive DRF_Reduces (cg:computation_graph) (ah:access_history) : (mid * access_history_op) -> access_history -> Prop :=
-  | drf_reduces:
-    forall n n' es o ah' r,
-    snd cg = C (n, n') :: es ->
-    AccessHistory.RaceFreeAdd (HB cg) ah (r, n', o) ah' ->
-    DRF_Reduces cg ah (r, o) ah'.
-
-  Definition op_to_ah (o:op) : option (mid*access_history_op) :=
-  match o with
-  | ALLOC r d => Some (r, (AccessHistory.ALLOC, d))
-  | READ r d => Some (r, (AccessHistory.READ, d))
-  | WRITE r d => Some (r, (AccessHistory.WRITE, d))
-  | _ => None
-  end.
-
-  Inductive DRF_Check (cg:computation_graph) (ah:access_history) : op -> access_history -> Prop :=
-  | drf_check_some:
-    forall o o' ah',
-    op_to_ah o = Some o' ->
-    DRF_Reduces cg ah o' ah' ->
-    DRF_Check cg ah o ah'
-  | drf_check_none:
-    forall o,
-    op_to_ah o = None ->
-    DRF_Check cg ah o ah.
-
   Ltac simpl_structs :=
   repeat simpl in *; match goal with
   | [ H2: _ :: _ = _ :: _ |- _ ] => inversion H2; subst; clear H2
   | [ H2:(_,_) = (_,_) |- _ ] => inversion H2; subst; clear H2
+  | [ H2: Some _ = Some _ |- _ ] => inversion H2; subst; clear H2
   end.
 
   Ltac simpl_red :=
@@ -259,23 +207,15 @@ Section SR.
     MN.In n l ->
     Node n vs.
 
-  Let LastWrite cg := (@LastWrite datum node (HB cg)).
+  Notation LastWrite cg := (@LastWrite datum node (HB cg)).
 
-  Definition LastWriteCanJoin (g:access_history) cg sj :=
+  Definition LastWriteCanJoin (g:cg_access_history) cg sj :=
     forall x a h r,
     MM.MapsTo r h g ->
     LastWrite cg a h ->
     a_what a = Some (d_task x) ->
     SJ_CG.CanJoin (a_when a) x sj.
-(*
-  Definition LastWriteKnows (g:access_history) cg sj :=
-    forall m n a b,
-    MM.MapsTo r h g ->
-    LastWrite cg a h ->
-    a_what = d_task x ->
-    NodeOf a n (fst cg) ->
-    SJ_CG.Knows (fst cg) sj (a, b).
-*)
+
   Ltac expand H := inversion H; subst; clear H.
 
   Let knows_eq:
@@ -414,6 +354,9 @@ Section SR.
     LastWriteCanJoin g cg sj ->
     SJ_CG.SJ cg' k' sj' ->
     DRF_Check cg' g (READ y d) g' ->
+    EdgeToIndex cg ->
+    WellFormed cg g ->
+    WellFormed cg' g' ->
     SJ_CG.Knows (fst cg') sj' (a, b).
   Proof.
     intros.
@@ -421,6 +364,9 @@ Section SR.
     rename H6 into Hwrite.
     rename H7 into Hsj'.
     rename H8 into Hdrf.
+    rename H9 into Hei.
+    rename H10 into Hwf.
+    rename H11 into Hwf'.
     handle_all.
     expand H2.
     simpl in *.
@@ -432,14 +378,34 @@ Section SR.
       destruct H0 as [(_,Hx)|(N,_)]; subst. {
         destruct H1 as [?|Hi]. {
           subst.
+          apply drf_check_inv_read in Hdrf.
+          simpl_drf_check.
           expand Hdrf. {
             simpl in *.
             expand H0.
             expand H1.
             simpl_structs.
-            expand H10.
+            inversion H10; subst.
+            inversion H13.
             expand H11.
             simpl in *.
+            apply hb_inv_cons_c in H1; auto.
+            destruct H1. {
+              subst.
+              rename y into r.
+              rename l1 into h.
+              assert (SJ_CG.CanJoin (a_when w) x sj). {
+                unfold LastWriteCanJoin in Hwrite.
+                assert (Hx := Hwrite x a h r H3).
+              }
+(*              assert (a = w) by eauto; subst.*)
+              remember (a_when w) as nw.
+              rename l0 into lx.
+              rewrite <- H14 in *.
+              eapply sj_knows_copy; eauto using knows_def, Locals.local_def, SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons, SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons.
+              apply sj_knows_copy with (es:=es) (k:=k); auto.
+              eapply sj_knows_copy; eauto.
+            }
             eauto using SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons.
           }
           (* absurd *)

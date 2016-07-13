@@ -38,7 +38,7 @@ Section Defs.
 
   Notation HB a b := (Lt (a_when a) (a_when b)).
   Notation MHP a b := (~ HB a b /\ ~ HB b a).
-  Notation HBE a b := (HB a b \/ a = b).
+  Notation HBE a b := (HB a b \/ a_when a = a_when b).
 
   Inductive HasData : payload -> Prop :=
   | has_data_def:
@@ -150,15 +150,31 @@ Section Defs.
     forall x,
     ~ Lt x x.
 
+  Lemma racy_access_irrefl_when:
+    forall (a b:access),
+    a_when a = a_when b ->
+    ~ RacyAccess a b.
+  Proof.
+    unfold not; intros.
+    inversion H0.
+    contradiction.
+  Qed.
+
   Lemma racy_access_irrefl:
     forall (a:access),
     ~ RacyAccess a a.
   Proof.
-    unfold not; intros.
-    inversion H.
-    subst.
-    contradiction H0.
-    trivial.
+    intros.
+    assert (a_when a = a_when a) by trivial; eauto using racy_access_irrefl_when.
+  Qed.
+
+  Lemma race_free_access_refl_when:
+    forall (a b:access),
+    a_when a = a_when b ->
+    RaceFreeAccess a b.
+  Proof.
+    unfold RaceFreeAccess.
+    auto using racy_access_irrefl_when.
   Qed.
 
   Lemma race_free_access_refl:
@@ -203,7 +219,7 @@ Section Defs.
     destruct H.
     - auto using race_free_access_hb.
     - subst.
-      auto using race_free_access_refl.
+      auto using race_free_access_refl_when.
   Qed.
 
   Let mhp_symm:
@@ -534,6 +550,17 @@ Section Defs.
     apply last_write with (l:=l); auto.
   Qed.
 
+  Let hb_eq_when_left:
+    forall x y z,
+    HB x z ->
+    a_when y = a_when x ->
+    HB y z.
+  Proof.
+    intros.
+    rewrite H0.
+    assumption.
+  Qed.
+
   Let last_write_trans:
     forall x y z l,
     LastWrite x l ->
@@ -546,8 +573,8 @@ Section Defs.
     destruct Hx. {
       eauto.
     }
-    subst.
-    assumption.
+    subst.  
+    eauto.
   Qed.
 
   Let write_safe:
@@ -713,25 +740,36 @@ Section Defs.
     LastWrite b h ->
     a = b.
 
-  Let last_write_to_write:
-    forall a l,
-    LastWrite a l ->
-    Write a.
-  Proof.
-    intros.
-    inversion H; auto.
-  Qed.
+  Definition AccessFun ah :=
+    forall a b r h,
+    MM.MapsTo r h ah ->
+    List.In a h ->
+    List.In b h ->
+    a_when a = a_when b ->
+    a = b.
 
-  Lemma last_write_to_some:
-    forall a l,
-    LastWrite a l ->
-    exists d, a_what a = Some d.
-  Proof.
-    intros.
-    apply last_write_to_write in H.
-    inversion H; eauto.
-  Qed.
+  Definition LastWriteDef ah :=
+    forall r h,
+    MM.MapsTo r h ah ->
+    exists a, LastWrite a h.
 
+  Lemma access_to_last_write_fun:
+    forall ah,
+    AccessFun ah ->
+    LastWriteFun ah.
+  Proof.
+    unfold AccessFun, LastWriteFun.
+    intros.
+    inversion H1; subst; clear H1.
+    inversion H2; subst; clear H2.
+    unfold ForallWrites in *.
+    assert (Ha : HBE b a) by auto.
+    assert (Hb : HBE a b) by auto.
+    destruct Ha as [Ha|?], Hb as [Hb|?]; eauto.
+    assert (N: HB a a) by eauto.
+    apply lt_irrefl in N.
+    contradiction.
+  Qed.
 End Defs.
 
 
@@ -746,9 +784,9 @@ Section Props.
     P x y -> Q x y.
 
   Let forall_writes_impl:
-    forall a h,
-    ForallWrites (fun b => P (a_when b) (a_when (A:=A) a) \/ b = a) h ->
-    ForallWrites (fun b => Q (a_when b) (a_when a) \/ b = a) h.
+    forall (a:access A E) (h:list (access A E)),
+    ForallWrites (fun b => P (a_when b) (a_when a) \/ a_when b = a_when a) h ->
+    ForallWrites (fun b => Q (a_when b) (a_when a) \/ a_when b = a_when a) h.
   Proof.
     unfold ForallWrites.
     intros.
@@ -806,12 +844,359 @@ Section Props.
     unfold OrderedAccessHistory; intros; eauto.
   Qed.
 
-  Lemma last_write_fun_impl:
-    forall (ah: access_history A E),
-    LastWriteFun Q ah ->
-    LastWriteFun P ah.
+End Props.
+
+Module T.
+  Require Import Tid.
+  Require Trace.
+  Require Import Node.
+  Require CG.
+
+  Notation cg_access_history := (access_history Trace.datum node).
+  Notation cg_access_history_op := (op Trace.datum).
+
+  Require Import CG.
+  Import CG.T.
+
+  Section Defs.
+
+  Inductive DRF_Reduces (cg:CG.computation_graph) (ah:cg_access_history) : (mid * cg_access_history_op) -> cg_access_history -> Prop :=
+  | drf_reduces:
+    forall n n' es o ah' r,
+    snd cg = CG.C (n, n') :: es ->
+    RaceFreeAdd (CG.HB cg) ah (r, n', o) ah' ->
+    DRF_Reduces cg ah (r, o) ah'.
+
+  Definition op_to_ah (o:Trace.op) : option (mid*cg_access_history_op) :=
+  match o with
+  | Trace.ALLOC r d => Some (r, (ALLOC, d))
+  | Trace.READ r d => Some (r, (READ, d))
+  | Trace.WRITE r d => Some (r, (WRITE, d))
+  | _ => None
+  end.
+
+  Inductive DRF_Check (cg:CG.computation_graph) (ah:cg_access_history) : Trace.op -> cg_access_history -> Prop :=
+  | drf_check_some:
+    forall o o' ah',
+    op_to_ah o = Some o' ->
+    DRF_Reduces cg ah o' ah' ->
+    DRF_Check cg ah o ah'
+  | drf_check_none:
+    forall o,
+    op_to_ah o = None ->
+    DRF_Check cg ah o ah.
+
+  Definition NodeDef (vs:list tid) (g:cg_access_history) :=
+    forall a r h,
+    MM.MapsTo r h g ->
+    List.In a h ->
+    Node (a_when a) vs.
+
+  Lemma drf_check_inv_alloc:
+    forall a vs n es ah m d ah',
+    DRF_Check (a :: vs, CG.C (n, fresh vs) :: es) ah (Trace.ALLOC m d) ah' ->
+    RaceFreeAdd (CG.HB (a :: vs, CG.C (n, fresh vs) :: es)) ah
+       (m, fresh vs, (ALLOC, d)) ah'.
   Proof.
-    unfold LastWriteFun; intros; eauto.
+    intros.
+    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
+    inversion H1; subst; clear H1.
+    inversion H2; subst; clear H2.
+    assumption.
   Qed.
 
+  Lemma drf_check_inv_read:
+    forall a n vs es ah m d ah',
+    DRF_Check (a :: vs, CG.C (n, fresh vs) :: es) ah (Trace.READ m d) ah' ->
+    RaceFreeAdd (CG.HB (a :: vs, CG.C (n, fresh vs) :: es)) ah
+       (m, fresh vs, (READ, d)) ah'.
+  Proof.
+    intros.
+    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
+    inversion H1; subst; clear H1.
+    simpl in *.
+    inversion H2; subst.
+    auto.
+  Qed.
+
+  Lemma drf_check_inv_continue:
+    forall cg ah ah',
+    DRF_Check cg ah Trace.CONTINUE ah' ->
+    ah' = ah.
+  Proof.
+    intros.
+    inversion H; subst; clear H; simpl in *; inversion H0.
+    trivial.
+  Qed.
+
+  Lemma drf_check_inv_future:
+   forall cg ah ah' t l,
+    DRF_Check cg ah (Trace.FUTURE t l) ah' ->
+    ah' = ah.
+  Proof.
+    intros.
+    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
+    trivial.
+  Qed.
+
+  Lemma drf_check_inv_force:
+   forall cg ah ah' t l,
+    DRF_Check cg ah (Trace.FORCE t l) ah' ->
+    ah' = ah.
+  Proof.
+    intros.
+    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
+    trivial.
+  Qed.
+
+  Lemma drf_check_inv_write:
+    forall ah ah' d r a n vs es,
+    DRF_Check (a :: vs, CG.C (n, fresh vs) :: es) ah (Trace.WRITE r d) ah' ->
+    RaceFreeAdd (CG.HB (a :: vs, CG.C (n, fresh vs) :: es)) ah
+       (r, fresh vs, (WRITE, d)) ah'.
+  Proof.
+    intros.
+    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
+    inversion H1; subst; clear H1.
+    simpl in *; inversion H2; subst.
+    auto.
+  Qed.
+End Defs.
+
+  Ltac simpl_drf_check :=
+  match goal with
+  | [ H1: DRF_Check (_::_,_::_) _ (Trace.ALLOC _ _) _ |- _ ] =>
+    apply drf_check_inv_alloc in H1; inversion H1; subst; clear H1
+  | [ H1: DRF_Check _ _ Trace.CONTINUE _ |- _ ] =>
+    apply drf_check_inv_continue in H1; subst
+  | [ H1: DRF_Check (_::_,_::_) _ (Trace.READ _ _) _ |- _ ] =>
+    apply drf_check_inv_read in H1; inversion H1; subst; clear H1
+  | [ H1: DRF_Check (_::_,_::_) _ (Trace.WRITE _ _) _ |- _ ] =>
+    apply drf_check_inv_write in H1; inversion H1; subst; clear H1
+  | [ H1: DRF_Check _ _ (Trace.FUTURE _ _) _ |- _ ] =>
+    apply drf_check_inv_future in H1; subst
+  | [ H1: DRF_Check _ _ (Trace.FORCE _ _) _ |- _ ] =>
+    apply drf_check_inv_force in H1; subst
+  end.
+
+Section Props.
+
+  Let ordered_access_history_cg:
+    forall cg e cg' (ah:cg_access_history),
+    OrderedAccessHistory (HB cg) ah ->
+    CG.Reduces cg e cg' ->
+    OrderedAccessHistory (HB cg') ah.
+  Proof.
+    intros.
+    apply ordered_access_history_impl with (P:=CG.HB cg);
+    eauto using CG.hb_impl.
+  Qed.
+
+  Let ordered_access_history_drf_check:
+    forall cg a o cg' ah ah',
+    OrderedAccessHistory (HB cg) ah ->
+    TReduces cg (a,o) cg' ->
+    DRF_Check cg' ah o ah' ->
+    OrderedAccessHistory (HB cg') ah'.
+  Proof.
+    intros.
+    inversion H1; subst; clear H1.
+    - inversion H3; subst; clear H3.
+      eauto using ordered_access_history_cg, ordered_access_history_add.
+    - eauto using ordered_access_history_cg.
+  Qed.
+
+  Let access_fun_alloc:
+    forall (ah:cg_access_history) r (vs:list tid) d,
+    AccessFun ah ->
+    ~ MM.In r ah ->
+    AccessFun (MM.add r ((fresh vs, Some d) :: nil) ah).
+  Proof.
+    unfold AccessFun.
+    intros.
+    rewrite MM_Facts.add_mapsto_iff in *.
+    destruct H1 as [(?,?)|(?,mt)]. {
+      subst.
+      destruct H2, H3; subst; try inversion H2; try inversion H3; try inversion H1.
+      auto.
+    }
+    eauto.
+  Qed.
+
+  Let access_fun_add:
+    forall ah r vs h p,
+    AccessFun ah ->
+    NodeDef vs ah ->
+    MM.MapsTo r h ah ->
+    AccessFun (MM.add r ((fresh vs, p) :: h) ah).
+  Proof.
+    unfold AccessFun.
+    intros.
+    rewrite MM_Facts.add_mapsto_iff in *.
+    destruct H2 as [(?,?)|(?,mt)]. {
+      subst.
+      destruct H3, H4; subst;
+      try inversion H3;
+      try inversion H4;
+      simpl in *; subst; eauto.
+      - assert (Node (fresh vs) vs) by (rewrite H5; eauto).
+        simpl_map.
+      - assert (Node (fresh vs) vs) by (rewrite <- H5; eauto).
+        simpl_map.
+    }
+    eauto.
+  Qed.
+
+  Let access_fun_cg_reduces:
+    forall cg ah a o cg' ah',
+    NodeDef (fst cg) ah ->
+    AccessFun ah ->
+    TReduces cg (a,o) cg' ->
+    DRF_Check cg' ah o ah' ->
+    AccessFun ah'.
+  Proof.
+    intros.
+    destruct o; simpl in *; CG.simpl_red; simpl_drf_check; eauto.
+  Qed.
+
+  Let node_def_cons:
+    forall vs a ah,
+    NodeDef vs ah ->
+    NodeDef (a :: vs) ah.
+  Proof.
+    intros.
+    unfold NodeDef in *.
+    eauto using node_cons.
+  Qed.
+
+  Let node_def_alloc:
+    forall vs a ah d r,
+    NodeDef vs ah ->
+    NodeDef (a :: vs) (MM.add r ((fresh vs, d) :: nil) ah).
+  Proof.
+    intros.
+    unfold NodeDef in *.
+    intros b q; intros.
+    rewrite MM_Facts.add_mapsto_iff in *.
+    destruct H0 as [(?,?)|(?,mt)]. {
+      subst.
+      destruct H1 as [?|N]. {
+        subst.
+        simpl.
+        auto using node_eq.
+      }
+      inversion N.
+    }
+    eauto using node_cons.
+  Qed.
+
+  Let node_def_add:
+    forall vs a ah d r h,
+    NodeDef vs ah ->
+    MM.MapsTo r h ah ->
+    NodeDef (a :: vs) (MM.add r ((fresh vs, d) :: h) ah).
+  Proof.
+    intros.
+    unfold NodeDef in *.
+    intros b q; intros.
+    rewrite MM_Facts.add_mapsto_iff in *.
+    destruct H1 as [(?,?)|(?,mt)]. {
+      subst.
+      destruct H2 as [?|N]. {
+        subst.
+        simpl.
+        auto using node_eq.
+      }
+      eauto using node_cons.
+    }
+    eauto using node_cons.
+  Qed.
+
+  Let node_def_cg_reduces:
+    forall cg ah a o cg' ah',
+    NodeDef (fst cg) ah ->
+    TReduces cg (a,o) cg' ->
+    DRF_Check cg' ah o ah' ->
+    NodeDef (fst cg') ah'.
+  Proof.
+    intros.
+    destruct o; simpl in *; CG.simpl_red; simpl_drf_check; simpl in *; eauto.
+  Qed.
+
+  Structure WellFormed cg ah := {
+    wf_lt_edges: LtEdges (cg_edges cg);
+    wf_node_def: NodeDef (fst cg) ah;
+    wf_access_fun: AccessFun ah;
+    wf_last_write_fun: LastWriteFun (HB cg) ah;
+    wf_ordered_access: OrderedAccessHistory (HB cg) ah
+  }.
+
+  Lemma well_formed_reduces:
+    forall cg ah ah' a o cg',
+    WellFormed cg ah ->
+    TReduces cg (a,o) cg' ->
+    DRF_Check cg' ah o ah' ->
+    WellFormed cg' ah'.
+  Proof.
+    intros.
+    apply Build_WellFormed;
+    eauto using wf_lt_edges, wf_node_def, wf_access_fun, wf_last_write_fun,
+          lt_edges_reduces, wf_ordered_access.
+    apply access_to_last_write_fun; eauto using hb_trans, hb_irrefl, lt_edges_reduces, wf_lt_edges.
+    eapply access_fun_cg_reduces; eauto using wf_node_def, wf_access_fun.
+  Qed.
+
+  Lemma well_formed_race_free:
+    forall a b r h cg ah,
+    WellFormed cg ah ->
+    MM.MapsTo r h ah ->
+    List.In a h ->
+    List.In b h ->
+    RaceFreeAccess (HB cg) a b.
+  Proof.
+    intros.
+    assert (RaceFreeHistory (HB cg) ah) by 
+    eauto using ordered_access_history_to_race_free_history, wf_ordered_access, hb_trans.
+    eauto.
+  Qed.
+
+  Lemma well_formed_last_write_fun:
+    forall cg ah h r a b,
+    WellFormed cg ah ->
+    MM.MapsTo r h ah ->
+    LastWrite (HB cg) a h ->
+    LastWrite (HB cg) b h ->
+    a = b.
+  Proof.
+    intros.
+    assert (Hx := wf_last_write_fun H).
+    eauto.
+  Qed.
+
+  Lemma well_formed_node:
+    forall cg ah h r a,
+    WellFormed cg ah ->
+    MM.MapsTo r h ah ->
+    List.In a h ->
+    Node (a_when a) (fst cg).
+  Proof.
+    intros.
+    assert (NodeDef (fst cg) ah) by eauto using wf_node_def.
+    eauto.
+  Qed.
+
+  Lemma well_formed_access_fun:
+    forall cg ah h r a b,
+    WellFormed cg ah ->
+    MM.MapsTo r h ah ->
+    List.In a h ->
+    List.In b h ->
+    a_when a = a_when b ->
+    a = b.
+  Proof.
+    intros.
+    assert (AccessFun ah) by eauto using wf_access_fun.
+    eauto.
+  Qed.
 End Props.
+End T.
