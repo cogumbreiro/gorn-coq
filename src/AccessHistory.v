@@ -115,17 +115,18 @@ Section Defs.
   Inductive RaceFreeAdd: access_history -> (mid * E * op) -> access_history -> Prop :=
   | race_free_add_alloc:
     forall g r d n,
-    (* update the shared memory to record the read *)
     ~ MM.In r g ->
+    (* update the shared memory to record the allocation *)
     RaceFreeAdd g (r, n, (ALLOC, d)) (MM.add r ((n, Some d)::nil) g)
 
   | race_free_read:
     forall g l n r a d,
-    (* update the shared memory to record the read *)
     MM.MapsTo r l g ->
-    WriteSafe (n, None) l ->
+    (* same as [WriteSafe] *)
     LastWrite a l ->
+    HB a (n, None) ->
     a_what a = Some d ->
+    (* update the shared memory to record the read *)
     RaceFreeAdd g (r, n, (READ, d)) (MM.add r ((n, None)::l) g)
 
   | race_free_write:
@@ -369,7 +370,7 @@ Section Defs.
   Proof.
     intros.
     unfold RaceFreeHistory; intros.
-    inversion H0; subst; clear H0; eauto.
+    inversion H0; subst; clear H0; eauto using write_safe_def.
   Qed.
 
   Let last_to_write:
@@ -802,6 +803,24 @@ Section Defs.
     apply lt_irrefl in N.
     contradiction.
   Qed.
+
+  Lemma last_write_to_write:
+    forall a h,
+    LastWrite a h ->
+    Write a.
+  Proof.
+    intros.
+    inversion H; auto.
+  Qed.
+
+  Lemma last_write_to_in:
+    forall a h,
+    LastWrite a h ->
+    List.In a h.
+  Proof.
+    intros; inversion H; auto.
+  Qed.
+
 End Defs.
 
 
@@ -1365,27 +1384,20 @@ Section Props.
     rename H into Hwf.
     rename H0 into Hwf'.
     simpl_drf_check.
-    assert (Hlw := H7).
-    inversion H7; subst; clear H7.
+    assert (Hlw := H5).
+    inversion H5; subst; clear H5.
     exists l; exists a.
     (* -- *)
-    repeat split; auto.
+    repeat split; eauto using last_write_to_write, last_write_to_in.
     unfold ForallWrites in *.
     intros b; intros.
-    assert (Node (a_when a) vs) by eauto using well_formed_node.
+    assert (Node (a_when a) vs) by eauto using well_formed_node, last_write_to_in.
     assert (Node (a_when b) vs) by eauto using well_formed_node.
     apply H1 in H2; auto.
     destruct H2; auto.
     apply hb_inv_cons_c in H2; auto.
     - apply wf_edge_to_node in Hwf ; auto.
     - apply wf_lt_edges in Hwf'; auto.
-    - inversion H5.
-      simpl in *.
-      assert (w = a). {
-        eapply well_formed_last_write_fun; eauto using MM.add_1, last_write_cons_read.
-      }
-      subst.
-      assumption.
   Qed.
 End Props.
 End T.
