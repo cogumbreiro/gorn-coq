@@ -1264,6 +1264,7 @@ Section Props.
 
   Structure WellFormed cg ah := {
     wf_lt_edges: LtEdges (cg_edges cg);
+    wf_edge_to_node: EdgeToNode cg;
     wf_node_def: NodeDef (fst cg) ah;
     wf_access_fun: AccessFun ah;
     wf_last_write_fun: LastWriteFun (HB cg) ah;
@@ -1281,7 +1282,8 @@ Section Props.
     intros.
     apply Build_WellFormed;
     eauto using wf_lt_edges, wf_node_def, wf_access_fun, wf_last_write_fun,
-          lt_edges_reduces, wf_ordered_access, wf_last_write_def.
+          lt_edges_reduces, wf_ordered_access, wf_last_write_def,
+          wf_edge_to_node, reduces_edge_to_node.
     apply access_to_last_write_fun; eauto using hb_trans, hb_irrefl, lt_edges_reduces, wf_lt_edges.
     eapply access_fun_cg_reduces; eauto using wf_node_def, wf_access_fun.
   Qed.
@@ -1314,14 +1316,14 @@ Section Props.
   Qed.
 
   Lemma well_formed_node:
-    forall cg ah h r a,
-    WellFormed cg ah ->
+    forall vs es ah h r a,
+    WellFormed (vs,es) ah ->
     MM.MapsTo r h ah ->
     List.In a h ->
-    Node (a_when a) (fst cg).
+    Node (a_when a) vs.
   Proof.
     intros.
-    assert (NodeDef (fst cg) ah) by eauto using wf_node_def.
+    assert (NodeDef (fst (vs,es)) ah) by eauto using wf_node_def.
     eauto.
   Qed.
 
@@ -1350,21 +1352,40 @@ Section Props.
     eauto.
   Qed.
 
-  Lemma drf_check_read:
+  Lemma drf_check_inv_read_last_write:
     forall x n vs ah ah' d es r,
     WellFormed (vs,es) ah ->
-    WellFormed (x :: vs,C (n, fresh vs) :: es) ah ->
+    WellFormed (x :: vs,C (n, fresh vs) :: es) ah' ->
     DRF_Check (x :: vs, C (n, fresh vs) :: es) ah (Trace.READ r d) ah' ->
     exists h a,
-    MM.MapsTo r h ah /\ LastWrite (HB (vs, es)) a h /\ a_what a = Some d.
+    MM.MapsTo r h ah /\ LastWrite (HB (vs, es)) a h /\ a_what a = Some d
+    /\ HB (x :: vs,C (n, fresh vs) :: es) (a_when a) (fresh vs).
   Proof.
     intros.
+    rename H into Hwf.
+    rename H0 into Hwf'.
     simpl_drf_check.
-    assert (Hw: exists c, LastWrite (HB (vs,es)) c l) by eauto using well_formed_access_def.
-    destruct Hw as (c, Hw).
-    assert (Hx: LastWrite (HB (x :: vs, C (n, fresh vs) :: es)) c l) by eauto.
-    assert (c = a) by eauto using well_formed_last_write_fun; subst.
-    eauto.
+    assert (Hlw := H7).
+    inversion H7; subst; clear H7.
+    exists l; exists a.
+    (* -- *)
+    repeat split; auto.
+    unfold ForallWrites in *.
+    intros b; intros.
+    assert (Node (a_when a) vs) by eauto using well_formed_node.
+    assert (Node (a_when b) vs) by eauto using well_formed_node.
+    apply H1 in H2; auto.
+    destruct H2; auto.
+    apply hb_inv_cons_c in H2; auto.
+    - apply wf_edge_to_node in Hwf ; auto.
+    - apply wf_lt_edges in Hwf'; auto.
+    - inversion H5.
+      simpl in *.
+      assert (w = a). {
+        eapply well_formed_last_write_fun; eauto using MM.add_1, last_write_cons_read.
+      }
+      subst.
+      assumption.
   Qed.
 End Props.
 End T.
