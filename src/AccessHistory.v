@@ -396,7 +396,6 @@ Section Defs.
     auto using in_cons.
   Qed.
 
-
   Let last_write:
     forall (a:access) b l,
     LastWrite b l ->
@@ -726,6 +725,39 @@ Section Defs.
     eauto using last_write_def.
   Qed.
 
+  Lemma last_write_cons_read:
+    forall a n l,
+    LastWrite a l ->
+    LastWrite a ((n,None)::l).
+  Proof.
+    intros.
+    inversion H; subst.
+    apply last_write_def; auto using in_cons.
+    unfold ForallWrites in *.
+    intros.
+    destruct H3. {
+      subst.
+      inversion H4.
+    }
+    auto.
+  Qed.
+
+  Lemma last_write_cons_write:
+    forall e d h,
+    WriteSafe (e, Some d) h ->
+    LastWrite (e, Some d) ((e, Some d) :: h).
+  Proof.
+    intros.
+    apply last_write_def; auto using in_eq.
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    unfold ForallWrites in *; intros.
+    destruct H0. {
+      subst; auto.
+    }
+    eauto.
+  Qed.
+
   Lemma write_eq:
     forall n d,
     Write (n, Some d).
@@ -794,7 +826,7 @@ Section Props.
     destruct H0; auto.
   Qed.
 
-  Let last_write_impl:
+  Lemma last_write_impl:
     forall w h,
     LastWrite (A:=A) P w h ->
     LastWrite Q w h.
@@ -811,7 +843,7 @@ Section Props.
   Proof.
     intros.
     inversion H.
-    eauto using write_safe_def.
+    eauto using write_safe_def, last_write_impl.
   Qed.
 
   Let read_safe_impl:
@@ -842,6 +874,17 @@ Section Props.
     OrderedAccessHistory Q ah.
   Proof.
     unfold OrderedAccessHistory; intros; eauto.
+  Qed.
+
+  Lemma last_write_def_impl:
+    forall (ah: access_history A E),
+    LastWriteDef P ah ->
+    LastWriteDef Q ah.
+  Proof.
+    unfold LastWriteDef; intros.
+    apply H in H0.
+    destruct H0 as (a, Hx).
+    eauto using last_write_impl.
   Qed.
 
 End Props.
@@ -1123,12 +1166,109 @@ Section Props.
     destruct o; simpl in *; CG.simpl_red; simpl_drf_check; simpl in *; eauto.
   Qed.
 
+  Let last_write_def_cons_node_edge:
+    forall vs es x e ah,
+    LastWriteDef (A:=Trace.datum) (HB (vs, es)) ah ->
+    LastWriteDef (HB (x :: vs, e :: es)) ah.
+  Proof.
+    eauto using last_write_def_impl, hb_impl_cons_node_edge.
+  Qed.
+
+  Let last_write_def_cons_edge:
+    forall vs es e ah,
+    LastWriteDef (A:=Trace.datum) (HB (vs, es)) ah ->
+    LastWriteDef (HB (vs, e :: es)) ah.
+  Proof.
+    eauto using last_write_def_impl, hb_impl_cons_edge.
+  Qed.
+
+  Let last_write_cons_node_edge:
+    forall vs es a h n x,
+    LastWrite (A:=Trace.datum) (HB (vs, es)) a h ->
+    LastWrite (HB (x :: vs, C (n, fresh vs) :: es)) a h.
+  Proof.
+    eauto using last_write_impl, hb_impl_cons_node_edge.
+  Qed.
+
+  Let last_write_def_alloc:
+    forall vs es x n r ah (d:Trace.datum),
+    LastWriteDef (HB (vs, es)) ah ->
+    LastWriteDef (HB (x :: vs, C (n, fresh vs) :: es))
+      (MM.add r ((fresh vs, Some d) :: nil) ah).
+  Proof.
+    unfold LastWriteDef; intros.
+    rewrite MM_Facts.add_mapsto_iff in *.
+    destruct H0 as [(?,?)|(?,mt)]. {
+      subst.
+      exists (fresh vs, Some d).
+      apply last_write_def; eauto using write_eq, in_eq.
+      unfold ForallWrites; intros.
+      destruct H0. {
+        subst; auto.
+      }
+      contradiction.
+    }
+    apply H in mt.
+    destruct mt as (a,?).
+    eauto.
+  Qed.
+
+  Let last_write_def_read:
+    forall r h ah vs es x n a (d:Trace.datum),
+    LastWriteDef (A:=Trace.datum) (HB (vs, es)) ah ->
+    MM.MapsTo r h ah ->
+    LastWrite (HB (x :: vs, C (n, fresh vs) :: es)) a h ->
+    LastWriteDef (HB (x :: vs, C (n, fresh vs) :: es))
+      (MM.add r ((fresh vs, None) :: h) ah).
+  Proof.
+    unfold LastWriteDef; intros.
+    rewrite MM_Facts.add_mapsto_iff in *.
+    destruct H2 as [(?,?)|(?,mt)]. {
+      subst.
+      eauto using last_write_cons_read.
+    }
+    apply H in mt.
+    destruct mt as (a',?).
+    eauto.
+  Qed.
+
+  Let last_write_def_write:
+    forall vs es ah x (d:Trace.datum) h r n,
+    LastWriteDef (HB (vs, es)) ah ->
+    MM.MapsTo r h ah ->
+    WriteSafe (HB (x :: vs, C (n, fresh vs) :: es)) (fresh vs, Some d) h ->
+    LastWriteDef (HB (x :: vs, C (n, fresh vs) :: es))
+      (MM.add r ((fresh vs, Some d) :: h) ah).
+  Proof.
+    unfold LastWriteDef; intros.
+    rewrite MM_Facts.add_mapsto_iff in *.
+    destruct H2 as [(?,?)|(?,mt)]. {
+      subst.
+      eauto using last_write_cons_write, hb_trans.
+    }
+    apply H in mt.
+    destruct mt.
+    eauto.
+  Qed.
+
+  Let last_write_def_check:
+    forall ah ah' a o cg cg',
+    LastWriteDef (HB cg) ah ->
+    TReduces cg (a,o) cg' ->
+    DRF_Check cg' ah o ah' ->
+    LastWriteDef (HB cg') ah'.
+  Proof.
+    intros.
+    destruct o; simpl in *; CG.simpl_red; simpl_drf_check; simpl in *; eauto.
+  Qed.
+
   Structure WellFormed cg ah := {
     wf_lt_edges: LtEdges (cg_edges cg);
     wf_node_def: NodeDef (fst cg) ah;
     wf_access_fun: AccessFun ah;
     wf_last_write_fun: LastWriteFun (HB cg) ah;
-    wf_ordered_access: OrderedAccessHistory (HB cg) ah
+    wf_ordered_access: OrderedAccessHistory (HB cg) ah;
+    wf_last_write_def: LastWriteDef (HB cg) ah
   }.
 
   Lemma well_formed_reduces:
@@ -1141,7 +1281,7 @@ Section Props.
     intros.
     apply Build_WellFormed;
     eauto using wf_lt_edges, wf_node_def, wf_access_fun, wf_last_write_fun,
-          lt_edges_reduces, wf_ordered_access.
+          lt_edges_reduces, wf_ordered_access, wf_last_write_def.
     apply access_to_last_write_fun; eauto using hb_trans, hb_irrefl, lt_edges_reduces, wf_lt_edges.
     eapply access_fun_cg_reduces; eauto using wf_node_def, wf_access_fun.
   Qed.
@@ -1196,6 +1336,34 @@ Section Props.
   Proof.
     intros.
     assert (AccessFun ah) by eauto using wf_access_fun.
+    eauto.
+  Qed.
+
+  Lemma well_formed_access_def:
+    forall cg ah h r,
+    WellFormed cg ah ->
+    MM.MapsTo r h ah ->
+    exists a, LastWrite (A:=Trace.datum) (HB cg) a h.
+  Proof.
+    intros.
+    assert (LastWriteDef (HB cg) ah) by eauto using wf_last_write_def.
+    eauto.
+  Qed.
+
+  Lemma drf_check_read:
+    forall x n vs ah ah' d es r,
+    WellFormed (vs,es) ah ->
+    WellFormed (x :: vs,C (n, fresh vs) :: es) ah ->
+    DRF_Check (x :: vs, C (n, fresh vs) :: es) ah (Trace.READ r d) ah' ->
+    exists h a,
+    MM.MapsTo r h ah /\ LastWrite (HB (vs, es)) a h /\ a_what a = Some d.
+  Proof.
+    intros.
+    simpl_drf_check.
+    assert (Hw: exists c, LastWrite (HB (vs,es)) c l) by eauto using well_formed_access_def.
+    destruct Hw as (c, Hw).
+    assert (Hx: LastWrite (HB (x :: vs, C (n, fresh vs) :: es)) c l) by eauto.
+    assert (c = a) by eauto using well_formed_last_write_fun; subst.
     eauto.
   Qed.
 End Props.
