@@ -876,7 +876,7 @@ Section Incl.
 
   Let in_length_absurd:
     forall vs es n,
-    EdgeToIndex (vs, es) ->
+    EdgeToNode (vs, es) ->
     ~ List.In (fresh vs, n) (map e_edge es).
   Proof.
     intros.
@@ -898,7 +898,7 @@ Section Incl.
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
     FreeInGraph (fst cg) sj ->
-    EdgeToIndex cg ->
+    EdgeToNode cg ->
     CanJoin n2 x sj'.
   Proof.
     intros.
@@ -954,7 +954,7 @@ Section Incl.
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
     FreeInGraph (fst cg) sj ->
-    EdgeToIndex cg ->
+    EdgeToNode cg ->
     CanJoin n2 x sj'.
   Proof.
     intros.
@@ -1007,7 +1007,7 @@ Section Incl.
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
     FreeInGraph (fst cg) sj ->
-    EdgeToIndex cg ->
+    EdgeToNode cg ->
     CanJoin n2 x sj'.
   Proof.
     intros.
@@ -1035,7 +1035,7 @@ Section Incl.
     Reduces sj cg' sj' ->
     length (fst cg) = length sj ->
     FreeInGraph (fst cg) sj ->
-    EdgeToIndex cg ->
+    EdgeToNode cg ->
     Incl cg' sj'.
   Proof.
     intros.
@@ -1159,7 +1159,7 @@ Section SJ.
     KnowsToEdge (fst cg) sj k ->
     EdgeToKnows (fst cg) sj k ->
     Incl cg sj ->
-    EdgeToIndex cg ->
+    EdgeToNode cg ->
     SJ cg k sj.
 
   (** Main theorem of SJ *)
@@ -1174,7 +1174,7 @@ Section SJ.
   Proof.
     intros.
     inversion H.
-    apply sj_def; eauto 2 using reduces_edge_to_index, length_reduces,
+    apply sj_def; eauto 2 using reduces_edge_to_node, length_reduces,
     free_in_graph_reduces, knows_to_edge_reduces, edge_to_knows_reduces, incl_reduces.
   Qed.
 
@@ -1183,7 +1183,7 @@ Section SJ.
     SJ (make_cg a) nil (Nil :: nil).
   Proof.
     intros.
-    apply sj_def; auto using make_edge_to_index; unfold make_cg; simpl; auto
+    apply sj_def; auto using make_edge_to_node; unfold make_cg; simpl; auto
     using free_in_graph_nil, knows_to_edge_nil, incl_nil, edge_to_knows_nil.
   Qed.
 
