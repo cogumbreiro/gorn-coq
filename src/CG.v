@@ -622,6 +622,26 @@ Section PropsEx.
     intuition.
   Qed.
 
+  Lemma hb_impl_cons_node_edge:
+    forall vs es x y z e,
+    HB (vs,es) x y ->
+    HB (z::vs, e::es) x y.
+  Proof.
+    intros.
+    rewrite hb_fgraph_spec in *; simpl in *;
+    eauto using FGraph.reaches_impl_cons.
+  Qed.
+
+  Lemma hb_impl_cons_edge:
+    forall vs es x y e,
+    HB (vs,es) x y ->
+    HB (vs, e::es) x y.
+  Proof.
+    intros.
+    rewrite hb_fgraph_spec in *; simpl in *;
+    eauto using FGraph.reaches_impl_cons.
+  Qed.
+
   Lemma hb_impl:
     forall e cg cg',
     Reduces cg e cg' ->
@@ -631,8 +651,7 @@ Section PropsEx.
   Proof.
     intros.
     inversion H; subst; simpl_red;
-    rewrite hb_fgraph_spec in *; simpl in *;
-    eauto using FGraph.reaches_impl_cons.
+    eauto using hb_impl_cons_node_edge, hb_impl_cons_edge.
   Qed.
 
 End PropsEx.
