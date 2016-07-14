@@ -351,6 +351,19 @@ End Props.
     eauto using knows_def, maps_to_cons, can_join_cons.
   Qed.
 
+  Lemma knows_eq:
+    forall a vs b n sj,
+    length vs = length sj ->
+    Knows (a :: vs) (Cons b n :: sj) (a, b).
+  Proof.
+    intros.
+    apply knows_def with (nx:=fresh vs).
+    - auto using maps_to_eq.
+    - apply maps_to_length_rw in H.
+      rewrite H.
+      apply can_join_eq.
+  Qed.
+
   Lemma knows_copy:
     forall vs sj x y z n,
     length vs = length sj ->
