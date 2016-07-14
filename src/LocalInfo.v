@@ -139,12 +139,12 @@ Section Defs.
     Locals.Reduces l (n', COPY datum n) l' ->
     Reduces l CONTINUE l'.
 
-  Inductive Knows (l:local_memory datum) : tid * tid -> Prop :=
+  Inductive LocalKnows (l:local_memory datum) : tid * tid -> Prop :=
   | knows_def:
     forall n x y,
-    Node.MapsTo x n (fst cg) ->
+    TaskOf n x (fst cg) ->
     Locals.MapsTo n (d_task y) l ->
-    Knows l (x, y).
+    LocalKnows l (x, y).
 
 End Defs.
 
@@ -199,7 +199,7 @@ Section SR.
 
   Definition LocalToKnows (l:Locals.local_memory datum) cg sj :=
     forall p,
-    Knows cg l p ->
+    LocalKnows cg l p ->
     SJ_CG.Knows (fst cg) sj p.
 
   Definition DomIncl (l:Locals.local_memory datum) (vs:list tid) :=
@@ -207,12 +207,10 @@ Section SR.
     MN.In n l ->
     Node n vs.
 
-  Notation LastWrite cg := (@LastWrite datum node (HB cg)).
-
   Definition LastWriteCanJoin (g:cg_access_history) cg sj :=
     forall x a h r,
     MM.MapsTo r h g ->
-    LastWrite cg a h ->
+    LastWrite (HB cg) a h ->
     a_what a = Some (d_task x) ->
     SJ_CG.CanJoin (a_when a) x sj.
 
@@ -223,9 +221,9 @@ Section SR.
     MN.MapsTo n l ls ->
     In (d_task y) l ->
     MapsTo x n vs ->
-    Knows (vs, es) ls (x, y).
+    LocalKnows (vs, es) ls (x, y).
   Proof.
-    eauto using knows_def, Locals.local_def.
+    eauto using knows_def, Locals.local_def, maps_to_to_task_of.
   Qed.
 
   Let sj_knows_copy:
@@ -240,7 +238,7 @@ Section SR.
     simpl in *.
     eauto using SJ_CG.knows_copy.
   Qed.
-
+(*
   Let local_to_knows_continue_0:
     forall ls vs es x n l a an b sj k,
     LocalToKnows ls (vs, es) sj ->
@@ -267,9 +265,28 @@ Section SR.
     rewrite MN_Facts.add_mapsto_iff in *.
     destruct H6 as [(?,?)|(?,mt')]. {
       subst.
-      simpl_map.
+      simpl_node.
     }
     eauto using SJ_CG.knows_neq. 
+  Qed.
+*)
+  Let sj_knows_copy_0:
+    forall vs sj l es a b x n la na,
+    length vs = length sj ->
+    LocalToKnows l (vs, es) sj ->
+    MapsTo x n vs ->
+    TaskOf na a vs ->
+    MN.MapsTo na la l ->
+    In (d_task b) la ->
+    SJ_CG.Knows (x :: vs) (SJ_CG.Copy n :: sj) (a, b).
+  Proof.
+    intros.
+    assert (SJ_CG.Knows vs sj (a,b)) by eauto using Locals.local_def, knows_def.
+    destruct (tid_eq_dec x a). {
+      subst.
+      eapply SJ_CG.knows_copy; eauto.
+    }
+    apply SJ_CG.knows_neq; auto.
   Qed.
 
   Let local_to_knows_continue:
@@ -277,17 +294,35 @@ Section SR.
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
     Reduces cg' l CONTINUE l' ->
-    Knows cg' l' (a, b) ->
+    LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj cg' sj' ->
     SJ_CG.SJ cg k sj ->
     DomIncl l (fst cg) ->
+    length (fst cg) = length sj ->
     SJ_CG.Knows (fst cg') sj' (a, b).
   Proof.
     intros.
     SJ_CG.simpl_red.
     simpl_red; Locals.simpl_red; simpl in *.
     expand H2; simpl in *. (* Knows *)
-    eauto using SJ_CG.knows_neq, knows_def.
+    apply task_of_inv in H3.
+    destruct H3 as [(?,?)|?]. {
+      subst.
+      inversion H9; subst.
+      rewrite MN_Facts.add_mapsto_iff in *.
+      destruct H0 as [(_,?)|(N,_)]. {
+        subst.
+        eapply SJ_CG.knows_copy; eauto.
+      }
+      contradiction N; trivial.
+    }
+    expand H9.
+    rewrite MN_Facts.add_mapsto_iff in *.
+    destruct H1 as [(?,?)|(?,?)]. {
+      subst.
+      simpl_node.
+    }
+    eauto.
   Qed.
 
   Let local_to_knows_alloc:
@@ -295,19 +330,21 @@ Section SR.
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
     Reduces cg' l (ALLOC y d) l' ->
-    Knows cg' l' (a, b) ->
+    LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj cg' sj' ->
     SJ_CG.SJ cg k sj ->
+    length (fst cg) = length sj ->
     SJ_CG.Knows (fst cg') sj' (a, b).
   Proof.
     intros.
+    rename H5 into Heq.
     handle_all.
     expand H2.
     simpl in *.
     expand H5.
-    apply maps_to_inv in H3.
+    apply task_of_inv in H3.
     rewrite MN_Facts.add_mapsto_iff in *.
-    destruct H3 as [(?,?)|(?,mt)]. {
+    destruct H3 as [(?,?)|mt]. {
       subst.
       destruct H0 as [(_,?)|(N,_)]. {
         subst.
@@ -318,9 +355,9 @@ Section SR.
     }
     destruct H0 as [(?,?)|(?,mt')]. {
       subst.
-      simpl_map.
+      simpl_node.
     }
-    eauto using SJ_CG.knows_neq.
+    eauto.
   Qed.
 
   Let local_to_knows_write:
@@ -328,10 +365,11 @@ Section SR.
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
     Reduces cg' l (WRITE y d) l' ->
-    Knows cg' l' (a, b) ->
+    LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj cg' sj' ->
     SJ_CG.SJ cg k sj ->
     DomIncl l (fst cg) ->
+    length (fst cg) = length sj ->
     SJ_CG.Knows (fst cg') sj' (a, b).
   Proof.
     intros.
@@ -339,7 +377,22 @@ Section SR.
     handle_all.
     expand H2.
     simpl in *.
-    eauto using SJ_CG.knows_neq, knows_def.
+    expand H11.
+    apply task_of_inv in H5.
+    rewrite MN_Facts.add_mapsto_iff in *.
+    destruct H5 as [(?,?)|?]. {
+      subst.
+      destruct H0 as [(_,?)|(N,_)]. {
+        subst.
+        eauto.
+      }
+      contradiction N; auto.
+    }
+    destruct H0 as [(?,?)|(?,?)]. {
+      subst.
+      simpl_node.
+    }
+    eauto.
   Qed.
 
   Let local_to_knows_read:
@@ -347,7 +400,7 @@ Section SR.
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
     Reduces cg' l (READ y d) l' ->
-    Knows cg' l' (a, b) ->
+    LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj cg' sj' ->
     SJ_CG.SJ cg k sj ->
     DomIncl l (fst cg) ->
@@ -356,6 +409,7 @@ Section SR.
     DRF_Check cg' g (READ y d) g' ->
     WellFormed cg g ->
     WellFormed cg' g' ->
+    length (fst cg) = length sj ->
     SJ_CG.Knows (fst cg') sj' (a, b).
   Proof.
     intros.
@@ -365,13 +419,14 @@ Section SR.
     rename H8 into Hdrf.
     rename H9 into Hwf.
     rename H10 into Hwf'.
+    rename H11 into Heq.
     handle_all.
     expand H2.
     simpl in *.
-    apply maps_to_inv in H3.
+    apply task_of_inv in H3.
     expand H5.
     rewrite MN_Facts.add_mapsto_iff in *.
-    destruct H3 as [(?,?)|(?,mt)]; subst. {
+    destruct H3 as [(?,?)|?]; subst. {
       subst.
       destruct H0 as [(_,Hx)|(N,_)]; subst. {
         destruct H1 as [?|Hi]. {
@@ -387,9 +442,9 @@ Section SR.
     }
     destruct H0 as [(?,?)|(?,mt')]. {
       subst.
-      simpl_map.
+      simpl_node.
     }
-    eauto using SJ_CG.knows_neq, knows_def, Locals.local_def.
+    eauto.
   Qed.
 
   Let local_to_knows_future:
@@ -397,18 +452,20 @@ Section SR.
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.FORK y) cg' ->
     Reduces cg' l (FUTURE y ds) l' ->
-    Knows cg' l' (a, b) ->
+    LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj cg' sj' ->
     SJ_CG.SJ cg k sj ->
     DomIncl l (fst cg) ->
+    length (fst cg) = length sj ->
     SJ_CG.Knows (fst cg') sj' (a, b).
   Proof.
     intros.
     rename H5 into Hdom.
+    rename H6 into Heq.
     handle_all.
     expand H2; simpl in *.
-    apply maps_to_inv in H3.
-    destruct H3 as [(?,?)|(?,mt)]. {
+    apply task_of_inv in H3.
+    destruct H3 as [(?,?)|mt]. {
       subst.
       apply Locals.maps_to_to_in in H10.
       apply Hdom in H10.
@@ -417,8 +474,8 @@ Section SR.
       simpl in *.
       omega.
     }
-    apply maps_to_inv in mt.
-    destruct mt as [(?,?)|(?,mt)]. {
+    apply task_of_inv in mt.
+    destruct mt as [(?,?)|mt]. {
       subst.
       apply Locals.maps_to_to_in in H10.
       apply Hdom in H10.
@@ -427,7 +484,22 @@ Section SR.
       simpl in *.
       omega.
     }
-    eauto 6 using SJ_CG.knows_neq, knows_def, Locals.local_def.
+    assert (SJ_CG.Knows vs sj (a,b)) by eauto using Locals.local_def, knows_def.
+    destruct (tid_eq_dec y a). {
+      subst.
+      contradiction H8.
+      eauto using task_of_to_in.
+    }
+    apply SJ_CG.knows_neq; auto.
+    destruct (tid_eq_dec x a). {
+      subst.
+      destruct (tid_eq_dec y b). {
+        subst.
+        eapply SJ_CG.knows_eq; auto.
+      }
+      eapply SJ_CG.knows_cons_neq; auto.
+    }
+    apply SJ_CG.knows_neq; auto.
   Qed.
 
   Let local_to_knows_force:
@@ -435,9 +507,10 @@ Section SR.
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.JOIN y) cg' ->
     Reduces cg' l (FORCE y d) l' ->
-    Knows cg' l' (a, b) ->
+    LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj cg' sj' ->
     SJ_CG.SJ cg k sj ->
+    length (fst cg) = length sj ->
     SJ_CG.Knows (fst cg') sj' (a, b).
   Proof.
     intros.
@@ -445,26 +518,40 @@ Section SR.
     expand H2.
     simpl in *.
     expand H5.
+    rename es0 into es.
+    rename ny0 into ny.
     rewrite MN_Facts.add_mapsto_iff in *.
-    apply maps_to_inv in H3.
-    destruct H3 as [(?,?)|(?,mt)]. {
+    apply task_of_inv in H3.
+    destruct H3 as [(?,?)|mt]. {
       subst.
       destruct H0 as [(_,?)|(N,_)]. {
         subst.
         destruct H1 as [|Hi]. {
           subst.
           inversion H4; subst.
-          eauto using SJ_CG.knows_append_right, knows_def, Locals.local_def.
+          eauto using knows_def, Locals.local_def, maps_to_to_task_of, SJ_CG.knows_append_right.
         }
         inversion H4; subst.
-        eauto using SJ_CG.knows_append_left, knows_def, Locals.local_def.
+        eauto using SJ_CG.knows_append_left, knows_def, Locals.local_def, maps_to_to_task_of.
       }
       contradiction N; trivial.
     }
     destruct H0 as [(?,?)|(?, mt')]. {
       subst.
-      apply maps_to_absurd_fresh in mt; contradiction.
+      simpl_node.
     }
+    assert (SJ_CG.Knows vs sj (a,b)) by eauto using Locals.local_def, knows_def.
+    destruct (tid_eq_dec x a). {
+      subst.
+      apply SJ_CG.knows_append_left; auto.
+      destruct (tid_eq_dec y b). {
+        subst.
+        eapply SJ_CG.knows_eq; auto.
+      }
+      eapply SJ_CG.knows_cons_neq; auto.
+    }
+    apply SJ_CG.knows_neq; auto.
+    
     eauto 6 using SJ_CG.knows_neq, knows_def, Locals.local_def.
   Qed.
 
@@ -541,13 +628,72 @@ Section SR.
       eauto using node_cons, maps_to_to_node.
   Qed.
 
+  Definition LastWriteKnows (cg:computation_graph) (g:cg_access_history) l :=
+    forall x y a h r,
+    MM.MapsTo r h g ->
+    LastWrite (HB cg) a h ->
+    a_what a = Some (d_task y) ->
+    NodeOf x (a_when a) (fst cg) ->
+    LocalKnows cg l (x, y).
+
+  Let knows_cons:
+    a_what a = Some (d_task y)
+    MapsTo z n vs
+    LastWrite (HB (vs, es)) a h
+    MN.MapsTo n ls l
+    ~ MN.In (fresh vs) l
+    MM.MapsTo r h g
+    Locals.MapsTo n0 (d_task y) l
+    NodeOf z (a_when a) vs
+    MapsTo z n0 vs
+    LocalKnows (z :: vs, C (n, fresh vs) :: es) (MN.add (fresh vs) ls l) (z, y).
+
+
+  Let last_write_knows_continue:
+    forall (ls:list datum) a x r y g vs es l n h z,
+    LastWriteKnows (vs, es) g l ->
+    WellFormed (vs, es) g ->
+    WellFormed (z :: vs, C (n, fresh vs) :: es) g ->
+    a_what a = Some (d_task y) ->
+    NodeOf x (a_when a) (z :: vs) ->
+    MapsTo z n vs ->
+    LastWrite (HB (z :: vs, C (n, fresh vs) :: es)) a h ->
+    MN.MapsTo n ls l ->
+    ~ MN.In (fresh vs) l ->
+    MM.MapsTo r h g ->
+    LocalKnows (z :: vs, C (n, fresh vs) :: es) (MN.add (fresh vs) ls l) (x, y).
+  Proof.
+    intros.
+    apply node_of_inv in H3.
+    destruct H3 as [(?,?)|?]. {
+      destruct a; simpl in *.
+      subst.
+      eapply last_write_inv_c in H5; eauto.
+      apply last_write_to_in in H5.
+      eapply well_formed_node with (vs:=vs) (es:=es) in H5; eauto.
+      simpl in *.
+      simpl_map.
+    }
+    eapply last_write_inv_c in H5; eauto.
+    assert (Hk: LocalKnows (vs,es) l (x,y)) by eauto.
+    expand Hk.
+    simpl in *.
+    destruct (tid_eq_dec x z). {
+      subst.
+    }
+    apply knows_def with (n:=n0); simpl.
+    - 
+    eauto using knows_def.
+    eauto using SJ_CG.can_join_cons, last_write_inv_c, knows_def.
+  Qed.
+
   Let last_write_can_join_continue:
     forall (ls:list datum) a x r y g vs es l sj n h,
     WellFormed (y :: vs, C (n, fresh vs) :: es) g ->
     WellFormed (vs, es) g ->
     a_what a = Some (d_task x) ->
     LastWriteCanJoin g (vs, es) sj ->
-    (LastWrite (y :: vs, C (n, fresh vs) :: es)) a h ->
+    (LastWrite (HB (y :: vs, C (n, fresh vs) :: es))) a h ->
     MN.MapsTo n ls l ->
     MM.MapsTo r h g ->
     SJ_CG.CanJoin (a_when a) x (SJ_CG.Copy n :: sj).
@@ -555,47 +701,59 @@ Section SR.
     eauto using SJ_CG.can_join_cons, last_write_inv_c.
   Qed.
 
-
-  Let last_write_can_join_reduces:
-    forall g cg cg' sj l o l' sj' g' y,
-    WellFormed cg g ->
-    WellFormed cg' g' ->
-    LastWriteCanJoin g cg sj ->
-    Reduces cg' l o l' ->
-    T.TReduces cg (y,o) cg' ->
-    DRF_Check cg' g o g' ->
-    SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
-    LastWriteCanJoin g' cg' sj'.
+(*
+  Let last_write_can_join_alloc:
+    forall (ls:list datum) a x r y g vs es l sj n h d,
+    WellFormed (vs, es) g ->
+    WellFormed (y :: vs, C (n, fresh vs) :: es)
+       (MM.add r ((fresh vs, Some d) :: nil) g) ->
+    LastWriteCanJoin g (vs, es) sj ->
+    LocalToKnows l (vs,es) sj ->
+    a_what a = Some (d_task x) ->
+    Locals.MapsTo n d l ->
+    MapsTo y n vs ->
+    LastWrite (HB (y :: vs, C (n, fresh vs) :: es)) a h ->
+    MN.MapsTo n ls l ->
+    ~ MN.In (fresh vs) l ->
+    ~ MM.In r g ->
+    MM.MapsTo r h (MM.add r ((fresh vs, Some d) :: nil) g) ->
+    SJ_CG.CanJoin (a_when a) x (SJ_CG.Copy n :: sj).
   Proof.
     intros.
-    unfold LastWriteCanJoin.
+    rename H1 into Lwcj.
+    rename H2 into Hlk.
+    rename H into Hwf.
+    rename H0 into Hwf'.
+    rewrite MM_Facts.add_mapsto_iff in *.
+    destruct H10 as [(_,?)|(N,_)]. {
+      subst.
+      apply last_write_inv_cons_nil in H6; subst.
+      simpl_structs.
+      assert (Knows (vs,es) l (y, x)) by eauto using knows_def.
+      eauto using SJ_CG.knows_copy, knows_def.
+      
+    }
+  Qed.
+*)
+  Let last_write_can_join_reduces:
+    forall g cg cg' sj l o l' sj' g' z,
+    WellFormed cg g ->
+    WellFormed cg' g' ->
+    LastWriteKnows cg g l ->
+    Reduces cg' l o l' ->
+    T.TReduces cg (z,o) cg' ->
+    DRF_Check cg' g o g' ->
+    SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
+    LastWriteKnows cg' g' l'.
+  Proof.
     intros.
-    destruct o; simpl in *; handle_all; simpl_drf_check.
+    unfold LastWriteKnows.
+    intros.
+    destruct o; simpl in *; handle_all; simpl_drf_check; eauto.
     - 
   Qed.
 
 (*
-  Let last_write_can_join_continue:
-    forall cg sj cg' sj' m m' x r n a,
-    LastWriteCanJoin (fst m) cg sj ->
-    CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces cg' l CONTINUE l' ->
-    SJ_CG.Reduces sj cg' sj' ->
-    LastWrite r n (d_task a) (fst m') cg' ->
-    SJ_CG.CanJoin n a sj'.
-  Proof.
-    intros.
-    CG.simpl_red.
-    expand H1.
-    expand H4.
-    expand H2.
-    simpl in *.
-    rename n0 into nx.
-    apply SJ_CG.can_join_cons.
-    rename es0 into es.
-    eauto using max_write_continue.
-  Qed.
-
   Let last_write_knows_continue:
     forall a n t nl vs es sj g b nt (l:Locals.local_memory datum) r,
     NodeOf a n (t :: vs) ->
