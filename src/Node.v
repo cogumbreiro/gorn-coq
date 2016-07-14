@@ -284,6 +284,14 @@ Section Props.
     eauto using Bijection.maps_to_absurd_length.
   Qed.
 
+  Lemma node_of_absurd_fresh:
+    forall (x:A) vs,
+    ~ NodeOf x (fresh vs) vs.
+  Proof.
+    unfold fresh, NodeOf.
+    eauto using Bijection.index_of_absurd_length.
+  Qed.
+
   Lemma node_absurd_fresh:
     forall vs,
     ~ Node (fresh vs) vs.
@@ -302,6 +310,15 @@ Section Props.
     unfold MapsTo, Node.
     intros.
     eauto using Bijection.maps_to_to_index.
+  Qed.
+
+  Lemma maps_to_to_node_of:
+    forall (x:A) n vs,
+    MapsTo x n vs ->
+    NodeOf x n vs.
+  Proof.
+    unfold MapsTo, NodeOf.
+    eauto using Bijection.maps_to_to_index_of.
   Qed.
 
 End Props.
@@ -399,7 +416,7 @@ Section MoreProps.
 
 End MoreProps.
 
-  Ltac simpl_map := 
+  Ltac simpl_node := 
   repeat match goal with
   | [ H1: MapsTo ?x ?n ?v, H2: MapsTo ?y ?n ?v |- _ ] =>
       let H' := fresh "H" in
@@ -413,6 +430,9 @@ End MoreProps.
       clear H' H2
   | [ H: MapsTo _ (fresh ?vs) ?vs |- _ ] =>
       apply maps_to_absurd_fresh in H;
+      contradiction
+  | [ H: NodeOf _ (fresh ?vs) ?vs |- _ ] =>
+      apply node_of_absurd_fresh in H;
       contradiction
   | [ H: Node (fresh ?vs) ?vs |- _ ] =>
       apply node_absurd_fresh in H;

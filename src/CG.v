@@ -465,14 +465,14 @@ End HB.
   | [ H: Reduces _ (_, FORK _) _ |- _ ] =>
       inversion H; subst; clear H;
       match goal with
-      | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_map
+      | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_node
       end
   | [ H: Reduces _ (_, JOIN _) _ |- _ ] =>
       inversion H; subst; clear H;
       match goal with
-      | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_map
+      | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_node
       end
-  | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; Node.simpl_map
+  | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_node
   end.
 
 Section PropsEx.

@@ -1102,9 +1102,9 @@ Section Props.
       try inversion H4;
       simpl in *; subst; eauto.
       - assert (Node (fresh vs) vs) by (rewrite H5; eauto).
-        simpl_map.
+        simpl_node.
       - assert (Node (fresh vs) vs) by (rewrite <- H5; eauto).
-        simpl_map.
+        simpl_node.
     }
     eauto.
   Qed.
@@ -1405,7 +1405,7 @@ Section Props.
     subst.
     assert (Hn: Node (a_when a) vs) by eauto using well_formed_node.
     rewrite R in *.
-    simpl_map.
+    simpl_node.
   Qed.
 
   Lemma drf_check_inv_read_last_write:

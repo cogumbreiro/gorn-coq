@@ -179,7 +179,7 @@ End Props.
     | [ H1: CG.Reduces _ (_, CG.CONTINUE) _ |- _ ] => inversion H1; subst; clear H1
     end;
     inversion H; subst; clear H;
-    simpl_map
+    simpl_node
   | [ H : Reduces _ ?cg _, H0 : CG.Reduces _ (_, CG.CONTINUE) ?cg |- _ ] =>
     CG.simpl_red; inversion H; subst; clear H
   end.
@@ -332,7 +332,7 @@ End Props.
   Proof.
     intros.
     inversion_clear H2.
-    simpl_map.
+    simpl_node.
     apply knows_def with (nx:=fresh vs).
     - auto using maps_to_eq.
     - apply maps_to_length_rw in H3.
@@ -421,7 +421,7 @@ End Props.
     apply knows_def with (nx:=fresh (x::vs)); auto using maps_to_eq.
     inversion_clear H1.
     clear nx; rename nx0 into nx.
-    simpl_map.
+    simpl_node.
     assert (R: fresh (x :: vs) = fresh (Cons y nx :: sj))
     by (unfold fresh; simpl; auto); rewrite R.
     eauto using can_join_copy, can_join_cons.
@@ -1147,7 +1147,7 @@ Section SJ.
     - eauto using reduces_fork.
     - assert (Hk: Knows vs sj (x, y)) by eauto.
       inversion Hk; subst; clear Hk.
-      simpl_map.
+      simpl_node.
       eauto using reduces_join, maps_to_cons.
     - eauto using reduces_continue.
   Qed.

@@ -282,7 +282,7 @@ Section SR.
     rewrite MN_Facts.add_mapsto_iff in *.
     destruct H6 as [(?,?)|(?,mt')]. {
       subst.
-      simpl_map.
+      simpl_node.
     }
     eauto using SJ_CG.knows_neq. 
   Qed.
@@ -332,7 +332,7 @@ Section SR.
     }
     destruct H0 as [(?,?)|(?,mt')]. {
       subst.
-      simpl_map.
+      simpl_node.
     }
     eauto using SJ_CG.knows_neq.
   Qed.
@@ -363,7 +363,7 @@ Section SR.
       subst.
       apply Locals.maps_to_to_in in H5.
       apply Hdom in H5.
-      simpl_map.
+      simpl_node.
     }
     eauto using SJ_CG.knows_neq, knows_def.
   Qed.
