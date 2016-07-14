@@ -149,7 +149,7 @@ Section Props.
 
   Definition Node x (vs:list A) := Bijection.Index (node_id x) vs.
 
-  Definition NodeOf (x:A) (n:node) (vs:list A) := Bijection.IndexOf x (node_id n) vs.
+  Definition TaskOf (n:node) (x:A) (vs:list A) := Bijection.IndexOf x (node_id n) vs.
 
   Lemma maps_to_fun_1:
     forall x y n (vs:list A),
@@ -185,13 +185,13 @@ Section Props.
     eauto using Bijection.maps_to_inv_eq.
   Qed.
 
-  Lemma node_of_inv_key:
+  Lemma task_of_inv_key:
     forall (x:A) y vs,
-    NodeOf x (fresh vs) (y :: vs) ->
+    TaskOf (fresh vs) x (y :: vs) ->
     x = y.
   Proof.
     intros.
-    unfold NodeOf, fresh in *; simpl in *.
+    unfold TaskOf, fresh in *; simpl in *.
     eauto using Bijection.index_of_inv_key.
   Qed.
 
@@ -284,11 +284,11 @@ Section Props.
     eauto using Bijection.maps_to_absurd_length.
   Qed.
 
-  Lemma node_of_absurd_fresh:
+  Lemma task_of_absurd_fresh:
     forall (x:A) vs,
-    ~ NodeOf x (fresh vs) vs.
+    ~ TaskOf (fresh vs) x vs.
   Proof.
-    unfold fresh, NodeOf.
+    unfold fresh, TaskOf.
     eauto using Bijection.index_of_absurd_length.
   Qed.
 
@@ -312,12 +312,12 @@ Section Props.
     eauto using Bijection.maps_to_to_index.
   Qed.
 
-  Lemma maps_to_to_node_of:
+  Lemma maps_to_to_task_of:
     forall (x:A) n vs,
     MapsTo x n vs ->
-    NodeOf x n vs.
+    TaskOf n x vs.
   Proof.
-    unfold MapsTo, NodeOf.
+    unfold MapsTo, TaskOf.
     eauto using Bijection.maps_to_to_index_of.
   Qed.
 
@@ -366,10 +366,10 @@ Section MoreProps.
     - intuition.
   Qed.
 
-  Lemma node_of_inv:
+  Lemma task_of_inv:
     forall {A} x (y:A) n vs,
-    NodeOf x n (y :: vs) ->
-    (x = y /\ n = fresh vs) \/ NodeOf x n vs.
+    TaskOf n x (y :: vs) ->
+    (x = y /\ n = fresh vs) \/ TaskOf n x vs.
   Proof.
     intros.
     inversion H; subst.
@@ -379,24 +379,32 @@ Section MoreProps.
     - intuition.
   Qed.
 
-  Lemma node_to_node_of:
+  Lemma node_to_task_of:
     forall {A} n (vs:list A),
     Node n vs ->
-    exists x, NodeOf x n vs.
+    exists x, TaskOf n x vs.
   Proof.
     intros.
     destruct H as (x, H).
     eauto.
   Qed.
 
-  Lemma node_of_to_node:
+  Lemma task_of_to_node:
     forall {A} x n (vs:list A),
-    NodeOf x n vs ->
+    TaskOf n x vs ->
     Node n vs.
   Proof.
     intros.
-    unfold Node, NodeOf in *.
+    unfold Node, TaskOf in *.
     eauto using Bijection.index_def.
+  Qed.
+
+  Lemma task_of_to_in:
+    forall {A} x n (vs:list A),
+    TaskOf n x vs ->
+    List.In x vs.
+  Proof.
+    unfold TaskOf; eauto using Bijection.index_of_to_in.
   Qed.
 
   Lemma node_inv:
@@ -405,13 +413,13 @@ Section MoreProps.
     n = fresh vs \/ Node n vs.
   Proof.
     intros.
-    apply node_to_node_of in H.
+    apply node_to_task_of in H.
     destruct H as (y, H).
-    apply node_of_inv in H.
+    apply task_of_inv in H.
     destruct H as [(?,?)|?].
     - subst.
       intuition.
-    - eauto using node_of_to_node.
+    - eauto using task_of_to_node.
   Qed.
 
 End MoreProps.
@@ -431,8 +439,8 @@ End MoreProps.
   | [ H: MapsTo _ (fresh ?vs) ?vs |- _ ] =>
       apply maps_to_absurd_fresh in H;
       contradiction
-  | [ H: NodeOf _ (fresh ?vs) ?vs |- _ ] =>
-      apply node_of_absurd_fresh in H;
+  | [ H: TaskOf (fresh ?vs) _ ?vs |- _ ] =>
+      apply task_of_absurd_fresh in H;
       contradiction
   | [ H: Node (fresh ?vs) ?vs |- _ ] =>
       apply node_absurd_fresh in H;
