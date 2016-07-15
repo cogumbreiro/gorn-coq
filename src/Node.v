@@ -407,6 +407,14 @@ Section MoreProps.
     unfold TaskOf; eauto using Bijection.index_of_to_in.
   Qed.
 
+  Lemma task_of_cons:
+    forall {A} x y n (vs:list A),
+    TaskOf n x vs ->
+    TaskOf n x (y::vs).
+  Proof.
+    unfold TaskOf; eauto using Bijection.index_of_cons.
+  Qed.
+
   Lemma node_inv:
     forall {A} (x:A) n vs,
     Node n (x :: vs) ->
