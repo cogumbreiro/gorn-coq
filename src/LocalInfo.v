@@ -659,11 +659,11 @@ Section SR.
   Qed.
 
   Let task_of_simpl:
-    forall vs r es h z a n g l x,
+    forall vs r es h z a n g l x t,
     LastWriteKnows (vs, es) g l ->
     WellFormed (vs, es) g ->
-    WellFormed (z :: vs, C (n, fresh vs) :: es) g ->
-    LastWrite (HB (z :: vs, C (n, fresh vs) :: es)) a h ->
+    WellFormed (z :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) g ->
+    LastWrite (HB (z :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es)) a h ->
     MM.MapsTo r h g ->
     TaskOf (a_when a) x (z :: vs) ->
     TaskOf (a_when a) x vs.
@@ -812,30 +812,53 @@ Section SR.
     eauto using last_write_inv_c, wf_continue.
   Qed.
 
+  Let last_write_knows_c:
+    forall x n vs g es l,
+    WellFormed (vs, es) g ->
+    MapsTo x n vs ->
+    LastWriteKnows (vs, es) g l ->
+    LastWriteKnows (x :: vs, C (n, fresh vs) :: es) g l.
+  Proof.
+    intros.
+    unfold  LastWriteKnows.
+    intros t1 t2; intros.
+    simpl in *.
+    eapply task_of_simpl in H5;
+    eauto using last_write_inv_c, wf_continue.
+  Qed.
+
   Let last_write_knows_future:
-    forall a y z h t vs x es nx0 l' ls g,
+    forall a y r z h t vs x es nz l ls g y0 lz,
     a_what a = Some (d_task y) ->
     z <> t ->
     ~ In t vs ->
     TaskOf (a_when a) x (t :: z :: vs) ->
-    Forall (fun d => Locals.MapsTo nx0 d l') ls ->
+    Forall (fun d => Locals.MapsTo nz d l) ls ->
     WellFormed (vs, es) g ->
-    LastWriteKnows (vs, es) g l' ->
-    MapsTo z nx0 vs
+    LastWriteKnows (vs, es) g l ->
+    MapsTo z nz vs ->
     LastWrite
        (HB
-          (t :: z :: vs, F (nx0, fresh (z :: vs)) :: C (nx0, fresh vs) :: es))
+          (t :: z :: vs, F (nz, fresh (z :: vs)) :: C (nz, fresh vs) :: es))
        a h ->
-    MN.MapsTo nx0 l l' ->
-    ~ MN.In (fresh vs) l' ->
-    ~ MN.In (fresh (z :: vs)) (MN.add (fresh vs) (d_task y0 :: l) l') ->
-    MM.MapsTo r h g
+    MN.MapsTo nz lz l ->
+    ~ MN.In (fresh vs) l ->
+    ~ MN.In (fresh (z :: vs)) (MN.add (fresh vs) (d_task y0 :: lz) l) ->
+    MM.MapsTo r h g ->
     WellFormed
-       (t :: z :: vs, F (nx0, fresh (z :: vs)) :: C (nx0, fresh vs) :: es) g ->
+       (t :: z :: vs, F (nz, fresh (z :: vs)) :: C (nz, fresh vs) :: es) g ->
     LocalKnows
-       (t :: z :: vs, F (nx0, fresh (z :: vs)) :: C (nx0, fresh vs) :: es) l'
+       (t :: z :: vs, F (nz, fresh (z :: vs)) :: C (nz, fresh vs) :: es) l
        (x, y).
-
+  Proof.
+    intros.
+    eapply task_of_simpl in H2;
+    eauto using last_write_inv_c, wf_continue.
+    eapply task_of_simpl in H2;
+    eauto using last_write_inv_c, wf_continue.
+    eapply last_write_inv_c in H7; eauto using wf_continue.
+    eapply last_write_inv_c in H7; eauto using wf_continue.
+  Qed.
 
   Let last_write_knows_reduces:
     forall g cg cg' sj l o l' sj' g' z,
@@ -855,6 +878,10 @@ Section SR.
     - rename es0 into es.
       rename l0 into ls.
       clear H18 H14.
+      rename l into lz.
+      rename l' into l.
+      rename nx0 into nz.
+      
   Qed.
 
 (*
