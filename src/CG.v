@@ -903,7 +903,18 @@ Section DAG.
       eauto using NODE.lt_trans.
   Qed.
 
+  Let walk2_to_hb:
+    forall vs es a b w x n t,
+    Walk2 (FGraph.Edge ((n, fresh vs) :: map e_edge es)) a b w ->
+    HB (x :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) a b.
+  Proof.
+    intros.
+    apply fgraph_to_hb.
+    simpl.
+    eauto using reaches_def.
+  Qed.
 
+(*
   Let walk2_to_hb:
     forall vs es a b w x n,
     Walk2 (FGraph.Edge ((n, fresh vs) :: map e_edge es)) a b w ->
@@ -914,10 +925,66 @@ Section DAG.
     simpl.
     eauto using reaches_def.
   Qed.
-
+*)
   Notation in_edge_dec := (in_dec (Pair.pair_eq_dec node_eq_dec)).
 
+  Lemma hb_inv_cons_c:
+    forall a b vs x n es t,
+    EdgeToNode (vs, es) ->
+    EdgeToNode (x::vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) ->
+    LtEdges (cg_edges (x::vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es)) ->
+    HB (x :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) a b ->
+    HB (vs, es) a b \/ b = fresh vs.
+  Proof.
+    intros.
+    rewrite hb_fgraph_spec in *.
+    simpl in *.
+    destruct H2 as (w, Hw).
+    (* -- *)
+    destruct (in_edge_dec (n, fresh vs) w). {
+      apply in_split in i.
+      destruct i as (w1, (w2, R)); subst.
+      destruct w1. {
+        simpl in *.
+        destruct w2. {
+          apply walk2_inv_eq_snd in Hw.
+          subst.
+          auto.
+        }
+        apply walk2_inv in Hw.
+        destruct Hw as (c, (R, (He, Hw))).
+        inversion R; subst; clear R.
+        apply walk2_to_hb with (x:=x) (t:=t) in Hw; auto.
+        assert (Hb: Node b (x::vs)) by eauto using edge_to_node_hb_snd.
+        apply node_inv in Hb.
+        destruct Hb as [?|Hb]; auto.
+        apply node_lt in Hb.
+        apply hb_to_lt in Hw; auto.
+        unfold NODE.lt in *; simpl in *; omega.
+      }
+      apply walk2_split_app in Hw.
+      destruct Hw as (_,Hw).
+      destruct w2. {
+        apply walk2_inv_eq_snd in Hw.
+        subst.
+        auto.
+      }
+      apply walk2_inv in Hw.
+      destruct Hw as (c, (R, (He, Hw))).
+      inversion R; subst; clear R.
+      apply walk2_to_hb with (x:=x) (t:=t) in Hw; auto.
+      assert (Hb: Node b (x::vs)) by eauto using edge_to_node_hb_snd.
+      apply node_inv in Hb.
+      destruct Hb as [?|Hb]; auto.
+      apply node_lt in Hb.
+      apply hb_to_lt in Hw; auto.
+      unfold NODE.lt in *; simpl in *; omega.
+    }
+    left; 
+    eauto using FGraph.walk2_inv_not_in_walk, reaches_def.
+  Qed.
 
+(*
   Lemma hb_inv_cons_c:
     forall a b vs x n es,
     EdgeToNode (vs, es) ->
@@ -973,7 +1040,7 @@ Section DAG.
     left; 
     eauto using FGraph.walk2_inv_not_in_walk, reaches_def.
   Qed.
-
+*)
 End DAG.
 
 Module T.
