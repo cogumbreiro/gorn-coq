@@ -1413,10 +1413,10 @@ Section Props.
   Qed.
 
   Let hb_inv_cons_c_0:
-    forall vs es x n ah' a b ah,
+    forall vs es x n ah' a b ah t,
     WellFormed (vs,es) ah ->
-    WellFormed (x :: vs,C (n, fresh vs) :: es) ah' ->
-    HB (x :: vs, C (n, fresh vs) :: es) (a_when (A:=Trace.datum) a) (a_when (A:=Trace.datum) b) ->
+    WellFormed (x :: vs,{| e_t := t; e_edge := (n,fresh vs) |} :: es) ah' ->
+    HB (x :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) (a_when (A:=Trace.datum) a) (a_when (A:=Trace.datum) b) ->
     HB (vs, es) (a_when a) (a_when b) \/ a_when b = fresh vs.
   Proof.
     intros.
@@ -1427,11 +1427,11 @@ Section Props.
   Qed.
 
   Lemma last_write_inv_c:
-    forall x n vs ah ah' h es a r,
+    forall x n vs ah ah' h es a r t,
     WellFormed (vs,es) ah ->
-    WellFormed (x :: vs,C (n, fresh vs) :: es) ah' ->
+    WellFormed (x :: vs,{| e_t := t; e_edge := (n,fresh vs) |} :: es) ah' ->
     MM.MapsTo r h ah ->
-    LastWrite (HB (x::vs, C (n, fresh vs) :: es)) a h ->
+    LastWrite (HB (x::vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es)) a h ->
     LastWrite (HB (vs, es)) a h.
   Proof.
     intros.
