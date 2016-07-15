@@ -430,6 +430,20 @@ Section MoreProps.
     - eauto using task_of_to_node.
   Qed.
 
+  Lemma task_of_inv_eq:
+    forall {A} x (y:A) vs,
+    TaskOf (fresh vs) x (y :: vs) ->
+    x = y.
+  Proof.
+    unfold TaskOf, fresh; eauto using Bijection.index_of_inv_key.
+  Qed.
+
+  Lemma task_of_eq:
+    forall {A} (x:A) vs,
+    TaskOf (fresh vs) x (x :: vs).
+  Proof.
+    unfold TaskOf, fresh; eauto using Bijection.index_of_eq.
+  Qed.
 End MoreProps.
 
   Ltac simpl_node := 
@@ -453,7 +467,7 @@ End MoreProps.
   | [ H: Node (fresh ?vs) ?vs |- _ ] =>
       apply node_absurd_fresh in H;
       contradiction
-  | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H
+  | [ H: TaskOf (fresh ?vs) ?x (?y :: ?vs) |- _ ] => apply task_of_inv_eq in H; subst
   | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H
   | [ H1: MapsTo ?x _ (?y :: _), H2: ?x <> ?y |- _ ] => apply maps_to_neq in H1; auto
   | [ H1: MapsTo ?x _ (?y :: _), H2: ?y <> ?x |- _ ] => apply maps_to_neq in H1; auto
