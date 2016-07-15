@@ -1201,7 +1201,7 @@ Section Props.
     eauto using last_write_def_impl, hb_impl_cons_edge.
   Qed.
 
-  Let last_write_cons_node_edge:
+  Lemma last_write_cons_node_edge:
     forall vs es a h n x,
     LastWrite (A:=Trace.datum) (HB (vs, es)) a h ->
     LastWrite (HB (x :: vs, C (n, fresh vs) :: es)) a h.
@@ -1229,7 +1229,7 @@ Section Props.
     }
     apply H in mt.
     destruct mt as (a,?).
-    eauto.
+    eauto using last_write_cons_node_edge.
   Qed.
 
   Let last_write_def_read:
@@ -1248,7 +1248,7 @@ Section Props.
     }
     apply H in mt.
     destruct mt as (a',?).
-    eauto.
+    eauto using last_write_cons_node_edge.
   Qed.
 
   Let last_write_def_write:
@@ -1267,7 +1267,7 @@ Section Props.
     }
     apply H in mt.
     destruct mt.
-    eauto.
+    eauto using last_write_cons_node_edge.
   Qed.
 
   Let last_write_def_check:
@@ -1369,6 +1369,22 @@ Section Props.
     intros.
     assert (LastWriteDef (HB cg) ah) by eauto using wf_last_write_def.
     eauto.
+  Qed.
+
+  Lemma well_formed_continue:
+    forall x n vs es g,
+    MapsTo x n vs ->
+    WellFormed (vs, es) g ->
+    WellFormed (x :: vs, C (n, fresh vs) :: es) g.
+  Proof.
+    intros.
+    assert (TReduces (vs,es) (x, Trace.CONTINUE) (x::vs,C (n,fresh vs)::es)). {
+      apply reduces_continue; auto using maps_to_eq.
+    }
+    assert (DRF_Check (x::vs,C (n,fresh vs)::es) g Trace.CONTINUE g). {
+      auto using drf_check_none.
+    }
+    eauto using well_formed_reduces.
   Qed.
 
   Let hb_inv_cons_c_0:
