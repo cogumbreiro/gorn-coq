@@ -726,6 +726,38 @@ Section Defs.
     eauto using last_write_def.
   Qed.
 
+  Lemma write_eq:
+    forall n d,
+    Write (n, Some d).
+  Proof.
+    auto using has_data_def.
+  Qed.
+
+  Lemma last_write_inv_cons_write:
+    forall a n l d,
+    WriteSafe (n,Some d) l ->
+    LastWrite a ((n,Some d)::l) ->
+    n = a_when a.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    destruct H2. {
+      subst.
+      auto.
+    }
+    apply forall_writes_inv in H3.
+    destruct H3 as (_,Hi).
+    assert (Hx : Write (n, Some d)) by auto using write_eq.
+    apply Hi in Hx.
+    destruct Hx. {
+      assert (HB a (n, Some d)) by eauto using write_safe_hb.
+      assert (HB a a) by eauto.
+      apply lt_irrefl in H4.
+      contradiction.
+    }
+    auto.
+  Qed.
+
   Lemma last_write_cons_read:
     forall a n l,
     LastWrite a l ->
@@ -757,13 +789,6 @@ Section Defs.
       subst; auto.
     }
     eauto.
-  Qed.
-
-  Lemma write_eq:
-    forall n d,
-    Write (n, Some d).
-  Proof.
-    auto using has_data_def.
   Qed.
 
   Definition LastWriteFun ah :=
@@ -1282,16 +1307,16 @@ Section Props.
   Qed.
 
   Structure WellFormed cg ah := {
-    wf_lt_edges: LtEdges (cg_edges cg);
-    wf_edge_to_node: EdgeToNode cg;
-    wf_node_def: NodeDef (fst cg) ah;
-    wf_access_fun: AccessFun ah;
-    wf_last_write_fun: LastWriteFun (HB cg) ah;
-    wf_ordered_access: OrderedAccessHistory (HB cg) ah;
-    wf_last_write_def: LastWriteDef (HB cg) ah
+    wf_lt_edges_prop: LtEdges (cg_edges cg);
+    wf_edge_to_node_prop: EdgeToNode cg;
+    wf_node_def_prop: NodeDef (fst cg) ah;
+    wf_access_fun_prop: AccessFun ah;
+    wf_last_write_fun_prop: LastWriteFun (HB cg) ah;
+    wf_ordered_access_history_prop: OrderedAccessHistory (HB cg) ah;
+    wf_last_write_def_prop: LastWriteDef (HB cg) ah
   }.
 
-  Lemma well_formed_reduces:
+  Lemma wf_reduces:
     forall cg ah ah' a o cg',
     WellFormed cg ah ->
     TReduces cg (a,o) cg' ->
@@ -1300,14 +1325,14 @@ Section Props.
   Proof.
     intros.
     apply Build_WellFormed;
-    eauto using wf_lt_edges, wf_node_def, wf_access_fun, wf_last_write_fun,
-          lt_edges_reduces, wf_ordered_access, wf_last_write_def,
-          wf_edge_to_node, reduces_edge_to_node.
-    apply access_to_last_write_fun; eauto using hb_trans, hb_irrefl, lt_edges_reduces, wf_lt_edges.
-    eapply access_fun_cg_reduces; eauto using wf_node_def, wf_access_fun.
+    eauto using wf_lt_edges_prop, wf_node_def_prop, wf_access_fun_prop, wf_last_write_fun_prop,
+          lt_edges_reduces, wf_ordered_access_history_prop, wf_last_write_def_prop,
+          wf_edge_to_node_prop, reduces_edge_to_node.
+    apply access_to_last_write_fun; eauto using hb_trans, hb_irrefl, lt_edges_reduces, wf_lt_edges_prop.
+    eapply access_fun_cg_reduces; eauto using wf_node_def_prop, wf_access_fun_prop.
   Qed.
 
-  Lemma well_formed_race_free:
+  Lemma wf_race_free_access:
     forall a b r h cg ah,
     WellFormed cg ah ->
     MM.MapsTo r h ah ->
@@ -1317,11 +1342,11 @@ Section Props.
   Proof.
     intros.
     assert (RaceFreeHistory (HB cg) ah) by 
-    eauto using ordered_access_history_to_race_free_history, wf_ordered_access, hb_trans.
+    eauto using ordered_access_history_to_race_free_history, wf_ordered_access_history_prop, hb_trans.
     eauto.
   Qed.
 
-  Lemma well_formed_last_write_fun:
+  Lemma wf_last_write_fun:
     forall cg ah h r a b,
     WellFormed cg ah ->
     MM.MapsTo r h ah ->
@@ -1330,11 +1355,11 @@ Section Props.
     a = b.
   Proof.
     intros.
-    assert (Hx := wf_last_write_fun H).
+    assert (Hx := wf_last_write_fun_prop H).
     eauto.
   Qed.
 
-  Lemma well_formed_node:
+  Lemma wf_node:
     forall vs es ah h r a,
     WellFormed (vs,es) ah ->
     MM.MapsTo r h ah ->
@@ -1342,11 +1367,11 @@ Section Props.
     Node (a_when a) vs.
   Proof.
     intros.
-    assert (NodeDef (fst (vs,es)) ah) by eauto using wf_node_def.
+    assert (NodeDef (fst (vs,es)) ah) by eauto using wf_node_def_prop.
     eauto.
   Qed.
 
-  Lemma well_formed_access_fun:
+  Lemma wf_access_fun:
     forall cg ah h r a b,
     WellFormed cg ah ->
     MM.MapsTo r h ah ->
@@ -1356,22 +1381,22 @@ Section Props.
     a = b.
   Proof.
     intros.
-    assert (AccessFun ah) by eauto using wf_access_fun.
+    assert (AccessFun ah) by eauto using wf_access_fun_prop.
     eauto.
   Qed.
 
-  Lemma well_formed_access_def:
+  Lemma wf_access_def:
     forall cg ah h r,
     WellFormed cg ah ->
     MM.MapsTo r h ah ->
     exists a, LastWrite (A:=Trace.datum) (HB cg) a h.
   Proof.
     intros.
-    assert (LastWriteDef (HB cg) ah) by eauto using wf_last_write_def.
+    assert (LastWriteDef (HB cg) ah) by eauto using wf_last_write_def_prop.
     eauto.
   Qed.
 
-  Lemma well_formed_continue:
+  Lemma wf_continue:
     forall x n vs es g,
     MapsTo x n vs ->
     WellFormed (vs, es) g ->
@@ -1384,7 +1409,7 @@ Section Props.
     assert (DRF_Check (x::vs,C (n,fresh vs)::es) g Trace.CONTINUE g). {
       auto using drf_check_none.
     }
-    eauto using well_formed_reduces.
+    eauto using wf_reduces.
   Qed.
 
   Let hb_inv_cons_c_0:
@@ -1396,9 +1421,9 @@ Section Props.
   Proof.
     intros.
     apply hb_inv_cons_c in H1; auto.
-    - apply wf_edge_to_node in H ; auto.
-    - apply wf_edge_to_node in H0; auto.
-    - apply wf_lt_edges in H0; auto.
+    - apply wf_edge_to_node_prop in H ; auto.
+    - apply wf_edge_to_node_prop in H0; auto.
+    - apply wf_lt_edges_prop in H0; auto.
   Qed.
 
   Lemma last_write_inv_c:
@@ -1419,7 +1444,7 @@ Section Props.
     apply hb_inv_cons_c_0 with (ah:=ah) (ah':=ah') in Hin; auto.
     destruct Hin as [?|R]; auto.
     subst.
-    assert (Hn: Node (a_when a) vs) by eauto using well_formed_node.
+    assert (Hn: Node (a_when a) vs) by eauto using wf_node.
     rewrite R in *.
     simpl_node.
   Qed.
@@ -1440,9 +1465,31 @@ Section Props.
     assert (Hlw := H5).
     exists l; exists a.
     split; auto.
-    split; eauto using last_write_inv_c, well_formed_node, last_write_to_in.
+    split; eauto using last_write_inv_c, wf_node, last_write_to_in.
   Qed.
 
+  Lemma wf_last_write_inv_cons_write:
+    forall cg ah cg' ah' r h a b,
+    WellFormed cg ah ->
+    WellFormed cg' ah' ->
+    MM.MapsTo r h ah ->
+    MM.MapsTo r (b::h) ah' ->
+    Write b ->
+    WriteSafe (HB cg') b h ->
+    LastWrite (HB cg') a (b :: h) ->
+    b = a.
+  Proof.
+    intros.
+    inversion H3; subst; clear H3.
+    destruct b; simpl in *.
+    subst.
+    assert (a_when (n, Some x) = a_when a). {
+      eapply last_write_inv_cons_write; eauto using hb_irrefl, wf_lt_edges_prop.
+      eauto using hb_trans.
+    }
+    apply wf_access_fun with (ah:=ah') (cg:=cg') (r:=r) (h:=(n,Some x)::h) in H3; auto using in_eq.
+    eapply last_write_to_in; eauto. 
+  Qed.
 
 End Props.
 End T.
