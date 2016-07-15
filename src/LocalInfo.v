@@ -676,7 +676,7 @@ Section SR.
       subst.
       eapply last_write_inv_c in H2; eauto.
       apply last_write_to_in in H2.
-      eapply well_formed_node with (vs:=vs) (es:=es) in H2; eauto.
+      eapply wf_node with (vs:=vs) (es:=es) in H2; eauto.
       simpl in *.
       simpl_node.
     }
@@ -735,10 +735,10 @@ Section SR.
       simpl_node.
     }
     eapply task_of_simpl in H3;
-    eauto using last_write_inv_c, well_formed_continue.
+    eauto using last_write_inv_c, wf_continue.
   Qed.
 
-  Let last_write_knows_write:
+  Let last_write_knows_read:
     forall a0 a y r m h x z vs es g l n d ls l1,
     a_what a = Some (d_task y) ->
     TaskOf (a_when a) x (z :: vs) ->
@@ -751,7 +751,6 @@ Section SR.
     ~ MN.In (fresh vs) l ->
     MM.MapsTo m l1 g ->
     LastWrite (HB (z :: vs, C (n, fresh vs) :: es)) a0 l1 ->
-    HB (z :: vs, C (n, fresh vs) :: es) (a_when a0) (fresh vs) ->
     a_what a0 = Some d ->
     MM.MapsTo r h (MM.add m ((fresh vs, None) :: l1) g) ->
     WellFormed (z :: vs, C (n, fresh vs) :: es)
@@ -760,18 +759,83 @@ Section SR.
   Proof.
     intros.
     rewrite MM_Facts.add_mapsto_iff in *.
-    destruct H12 as [(?,?)|(?,?)]. {
+    destruct H11 as [(?,?)|(?,?)]. {
       subst.
       apply last_write_inv_cons_read in H5.
       eapply last_write_inv_c in H5;eauto.
       eapply last_write_inv_c in H9;eauto.
-      assert (a0 = a) by eauto using well_formed_last_write_fun.
+      assert (a0 = a) by eauto using wf_last_write_fun.
       subst.
-      eapply task_of_simpl with (n:=n) in H0; eauto using well_formed_continue, last_write_cons_node_edge.
+      eapply task_of_simpl with (n:=n) in H0; eauto using wf_continue, last_write_cons_node_edge.
     }
     eapply task_of_simpl in H0;
-    eauto using last_write_inv_c, well_formed_continue.
+    eauto using last_write_inv_c, wf_continue.
   Qed.
+
+  Let last_Write_knows_write:
+    forall vs r es h g z n l1 m x y l ls d a,
+    WellFormed (vs, es) g ->
+    WellFormed (z :: vs, C (n, fresh vs) :: es)
+        (MM.add m ((fresh vs, Some d) :: l1) g) ->
+    LastWriteKnows (vs, es) g l ->
+ 
+    a_what a = Some (d_task y) ->
+    TaskOf (a_when a) x (z :: vs) ->
+    Locals.MapsTo n d l ->
+    Locals.MapsTo n (d_mem m) l ->
+    MapsTo z n vs ->
+    LastWrite (HB (z :: vs, C (n, fresh vs) :: es)) a h ->
+    MN.MapsTo n ls l ->
+    ~ MN.In (fresh vs) l ->
+    MM.MapsTo m l1 g ->
+    WriteSafe (HB (z :: vs, C (n, fresh vs) :: es)) (fresh vs, Some d) l1 ->
+    MM.MapsTo r h (MM.add m ((fresh vs, Some d) :: l1) g) ->
+    LocalKnows (z :: vs, C (n, fresh vs) :: es) (MN.add (fresh vs) ls l) (x, y).
+  Proof.
+    intros.
+    assert (Hx := H12).
+    rewrite MM_Facts.add_mapsto_iff in H12.
+    destruct H12 as [(?,?)|(?,?)]. {
+      subst.
+      assert ((fresh vs, Some d) = a). {
+        eapply wf_last_write_inv_cons_write with (ah:=g); eauto using write_eq.
+      }
+      subst; simpl in *; simpl_node; simpl_structs.
+      apply local_knows_def with (n:=fresh vs); simpl; auto using task_of_eq.
+      apply Locals.local_def with (l:=ls).
+      - auto using MN.add_1.
+      - inversion H4.
+        assert (l0 = ls) by eauto using MN_Facts.MapsTo_fun; subst.
+        assumption.
+    }
+    eapply task_of_simpl in H3;
+    eauto using last_write_inv_c, wf_continue.
+  Qed.
+
+  Let last_write_knows_future:
+    forall a y z h t vs x es nx0 l' ls g,
+    a_what a = Some (d_task y) ->
+    z <> t ->
+    ~ In t vs ->
+    TaskOf (a_when a) x (t :: z :: vs) ->
+    Forall (fun d => Locals.MapsTo nx0 d l') ls ->
+    WellFormed (vs, es) g ->
+    LastWriteKnows (vs, es) g l' ->
+    MapsTo z nx0 vs
+    LastWrite
+       (HB
+          (t :: z :: vs, F (nx0, fresh (z :: vs)) :: C (nx0, fresh vs) :: es))
+       a h ->
+    MN.MapsTo nx0 l l' ->
+    ~ MN.In (fresh vs) l' ->
+    ~ MN.In (fresh (z :: vs)) (MN.add (fresh vs) (d_task y0 :: l) l') ->
+    MM.MapsTo r h g
+    WellFormed
+       (t :: z :: vs, F (nx0, fresh (z :: vs)) :: C (nx0, fresh vs) :: es) g ->
+    LocalKnows
+       (t :: z :: vs, F (nx0, fresh (z :: vs)) :: C (nx0, fresh vs) :: es) l'
+       (x, y).
+
 
   Let last_write_knows_reduces:
     forall g cg cg' sj l o l' sj' g' z,
@@ -790,6 +854,7 @@ Section SR.
     destruct o; simpl in *; handle_all; simpl_drf_check; eauto.
     - rename es0 into es.
       rename l0 into ls.
+      clear H18 H14.
   Qed.
 
 (*
