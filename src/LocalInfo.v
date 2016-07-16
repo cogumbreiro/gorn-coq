@@ -214,6 +214,33 @@ Section SR.
     a_what a = Some (d_task x) ->
     SJ_CG.CanJoin (a_when a) x sj.
 
+  Definition LastWriteKnows (cg:computation_graph) (g:cg_access_history) l :=
+    forall x y a h r,
+    MM.MapsTo r h g ->
+    LastWrite (HB cg) a h ->
+    a_what a = Some (d_task y) ->
+    TaskOf (a_when a) x (fst cg) ->
+    LocalKnows cg l (x, y).
+(*
+  Let make_last_write_can_join:
+    forall l cg sj g,
+    WellFormed cg g ->
+    LocalToKnows l cg sj ->
+    LastWriteKnows cg g l ->
+    LastWriteCanJoin g cg sj.
+  Proof.
+    intros.
+    unfold LastWriteCanJoin.
+    intros.
+    assert (Hn: Node (a_when a) (fst cg)). {
+      destruct cg as (vs,es); simpl in *.
+      eapply wf_node ; eauto using last_write_to_in.
+    }
+    apply node_to_task_of in Hn.
+    d
+    eapply H0 in H3; eauto.
+  Qed.
+*)
   Ltac expand H := inversion H; subst; clear H.
 
   Let knows_eq:
@@ -623,14 +650,6 @@ Section SR.
       eauto using node_cons, maps_to_to_node.
   Qed.
 
-  Definition LastWriteKnows (cg:computation_graph) (g:cg_access_history) l :=
-    forall x y a h r,
-    MM.MapsTo r h g ->
-    LastWrite (HB cg) a h ->
-    a_what a = Some (d_task y) ->
-    TaskOf (a_when a) x (fst cg) ->
-    LocalKnows cg l (x, y).
-
   Let local_knows_cons:
     forall l ls n a b cg,
     LocalKnows cg l (a, b) ->
@@ -651,6 +670,16 @@ Section SR.
   Let local_knows_cons_c:
     forall l b x vs es a e,
     LocalKnows (vs, es) l (a, b) ->
+    LocalKnows (x :: vs, e :: es) l (a, b).
+  Proof.
+    intros.
+    expand H.
+    eauto using local_knows_def, task_of_cons.
+  Qed.
+
+  Let local_knows_cons_j:
+    forall l b x vs es a e,
+    LocalKnows (x :: vs, es) l (a, b) ->
     LocalKnows (x :: vs, e :: es) l (a, b).
   Proof.
     intros.
@@ -813,11 +842,11 @@ Section SR.
   Qed.
 
   Let last_write_knows_c:
-    forall x n vs g es l,
+    forall x n vs g es l t,
     WellFormed (vs, es) g ->
     MapsTo x n vs ->
     LastWriteKnows (vs, es) g l ->
-    LastWriteKnows (x :: vs, C (n, fresh vs) :: es) g l.
+    LastWriteKnows (x :: vs, {|e_t:=t; e_edge:= (n, fresh vs)|} :: es) g l.
   Proof.
     intros.
     unfold  LastWriteKnows.
@@ -828,12 +857,9 @@ Section SR.
   Qed.
 
   Let last_write_knows_future:
-    forall a y r z h t vs x es nz l ls g y0 lz,
+    forall a y r z h t vs x es nz l g y0 lz,
     a_what a = Some (d_task y) ->
-    z <> t ->
-    ~ In t vs ->
     TaskOf (a_when a) x (t :: z :: vs) ->
-    Forall (fun d => Locals.MapsTo nz d l) ls ->
     WellFormed (vs, es) g ->
     LastWriteKnows (vs, es) g l ->
     MapsTo z nz vs ->
@@ -852,12 +878,36 @@ Section SR.
        (x, y).
   Proof.
     intros.
-    eapply task_of_simpl in H2;
+    eapply task_of_simpl in H0;
     eauto using last_write_inv_c, wf_continue.
-    eapply task_of_simpl in H2;
+    eapply task_of_simpl in H0;
     eauto using last_write_inv_c, wf_continue.
-    eapply last_write_inv_c in H7; eauto using wf_continue.
-    eapply last_write_inv_c in H7; eauto using wf_continue.
+    eapply last_write_inv_c in H4; eauto using wf_continue.
+    eapply last_write_inv_c in H4; eauto using wf_continue.
+  Qed.
+
+  Let last_write_knows_join:
+    forall t x y r d h z ls vs l a ny0 nx es g,
+    a_what a = Some (d_task y) ->
+    TaskOf (a_when a) x (z :: vs) ->
+    Locals.MapsTo ny0 d l ->
+    WellFormed (vs, es) g ->
+    LastWriteKnows (vs, es) g l ->
+    MapsTo z nx vs ->
+    MapsTo t ny0 vs ->
+    LastWrite (HB (z :: vs, J (ny0, fresh vs) :: C (nx, fresh vs) :: es)) a h ->
+    MN.MapsTo nx ls l ->
+    ~ MN.In (fresh vs) l ->
+    MM.MapsTo r h g ->
+    WellFormed (z :: vs, J (ny0, fresh vs) :: C (nx, fresh vs) :: es) g ->
+    LocalKnows (z :: vs, J (ny0, fresh vs) :: C (nx, fresh vs) :: es)
+      (MN.add (fresh vs) (d :: ls) l) (x, y).
+  Proof.
+    intros.
+    eapply task_of_simpl in H0;
+    eauto using last_write_inv_j, wf_continue.
+    eapply last_write_inv_j in H6; eauto using wf_continue.
+    eapply last_write_inv_c in H6; eauto using wf_continue.
   Qed.
 
   Let last_write_knows_reduces:
@@ -875,300 +925,13 @@ Section SR.
     unfold LastWriteKnows.
     intros.
     destruct o; simpl in *; handle_all; simpl_drf_check; eauto.
-    - rename es0 into es.
-      rename l0 into ls.
-      clear H18 H14.
-      rename l into lz.
-      rename l' into l.
-      rename nx0 into nz.
-      
   Qed.
 
-(*
-  Let last_write_knows_continue:
-    forall a n t nl vs es sj g b nt (l:Locals.local_memory datum) r,
-    NodeOf a n (t :: vs) ->
-    LastWriteKnows g (vs, es) sj ->
-    MapsTo t nt vs ->
-    LastWrite r n (d_task b) g (t :: vs, C (nt, fresh vs) :: es) ->
-    MN.MapsTo nt nl l ->
-    ~ MN.In (fresh vs) l ->
-    SJ_CG.Knows (t :: vs) (SJ_CG.Copy nt :: sj) (a, b).
-  Proof.
-    intros.
-  Admitted.
-
-  (** MOVE OUT *)
-
-  Lemma max_write_to_access:
-    forall {A} r (a:access A) ah cg,
-    MaxWrite r a ah cg ->
-    Access r a ah.
-  Proof.
-    intros.
-    inversion H.
-    eauto using access_def.
-  Qed.
-
-  (** MOVE OUT *)
-
-  Lemma last_write_to_access:
-    forall {A:Type} r (x:A) ah vs es n,
-    LastWrite r n x ah (vs, es) ->
-    exists a, Access r a ah /\ a_when a = n /\ Write a x.
-  Proof.
-    intros.
-    inversion H.
-    eauto using max_write_to_access.
-  Qed.
-
-  Definition DomInclAccess {A} (ah:access_history A) (vs:list tid) :=
-    forall r a,
-    Access r a ah ->
-    Node (a_when a) vs.
-
-  Lemma last_write_to_node:
-    forall r n {A} (x:A) ah vs es,
-    DomInclAccess ah vs ->
-    LastWrite r n x ah (vs, es) ->
-    Node n vs.
-  Proof.
-    intros.
-    apply last_write_to_access in H0.
-    destruct H0 as (a, (?,(?,?))).
-    apply H in H0.
-    subst; assumption.
-  Qed.
-
-  Let last_write_knows_else:
-    forall g vs es sj t a tn b n r' k,
-    DomInclAccess g vs ->
-    SJ_CG.SJ (vs, es) k sj ->
-    LastWriteKnows g (vs, es) sj ->
-    NodeOf a n (t :: vs) ->
-    MapsTo t tn vs ->
-    LastWrite r' n (d_task b) g (t :: vs, C (tn, fresh vs) :: es) ->
-    SJ_CG.Knows (t :: vs) (SJ_CG.Copy tn :: sj) (a, b).
-  Proof.
-    intros.
-    apply max_write_continue in H4; auto.
-    apply node_of_inv in H2.
-    destruct H2 as [(?,?)|Hin]. {
-      subst.
-      apply last_write_to_node in H4; auto.
-      simpl_map.
-    }
-    assert (SJ_CG.Knows vs sj (a, b)) by eauto.
-    destruct (tid_eq_dec t a). {
-      subst.
-      inversion H0.
-      eauto using SJ_CG.knows_copy.
-    }
-    eauto using SJ_CG.knows_cons.
-  Qed.
-
-  Let last_write_knows_alloc:
-    forall a n t vs es sj d tn l b g r r' tl k,
-    LocalToKnows l (vs,es) sj ->
-    NodeOf a n (t :: vs) ->
-    Locals.MapsTo tn d l ->
-    LastWriteKnows g (vs, es) sj ->
-    MapsTo t tn vs ->
-    MN.MapsTo tn tl l ->
-    ~ MN.In (fresh vs) l ->
-    ~ MM.In r g ->
-    LastWrite r' n (d_task b) 
-     (MM.add r ({| a_when := fresh vs; a_what := ALLOC d |} :: nil) g) 
-     (t :: vs, C (tn, fresh vs) :: es) ->
-    DomInclAccess g vs ->
-    SJ_CG.SJ (vs,es) k sj ->
-    SJ_CG.Knows (t :: vs) (SJ_CG.Copy tn :: sj) (a, b).
-  Proof.
-    intros.
-    rename H8 into Hdom.
-    rename H9 into Hsj.
-    apply last_write_inv_alloc in H7.
-    destruct H7 as [(?,(?,?))|(?,mt)]. {
-      subst.
-      apply node_of_inv_key in H0; subst.
-      inversion Hsj.
-      eauto using SJ_CG.knows_copy, knows_def.
-    }
-    eauto.
-  Qed.
-
-  Let last_write_knows_write:
-    forall a n t n' b l sj vs es g d lr r r' k,
-    NodeOf a n (t :: vs) ->
-    Locals.MapsTo n' d l ->
-    Locals.MapsTo n' (d_mem r) l ->
-    MapsTo t n' vs ->
-    MM.MapsTo r lr g ->
-    LastWrite r' n (d_task b)
-       (MM.add r ({| a_when := fresh vs; a_what := WRITE d |} :: lr) g)
-       (t :: vs, C (n', fresh vs) :: es) ->
-
-    LastWriteKnows g (vs, es) sj ->
-    LocalToKnows l (vs, es) sj ->
-    DomInclAccess g vs ->
-    SJ_CG.SJ (vs, es) k sj ->
-
-    SJ_CG.Knows (t :: vs) (SJ_CG.Copy n' :: sj) (a, b).
-  Proof.
-    intros.
-    rename H5 into Hw.
-    rename H6 into Hl.
-    rename H7 into Hdom.
-    rename H8 into Hsj.
-    apply last_write_inv_write in H4; auto.
-    destruct H4 as [(?,(?,?))|mt]. {
-      subst.
-      apply node_of_inv_key in H; subst.
-      inversion Hsj.
-      eauto using SJ_CG.knows_copy, knows_def.
-    }
-    eauto.
-  Qed.
-
-  Let last_write_knows_read:
-    forall r' r'l l a b x nx sj es vs g an r nw k lx d,
-    Locals.MapsTo nx (d_mem r') l ->
-    LastWrite r' nw d g (vs, es) ->
-    NodeOf a an (x :: vs) ->
-    DomInclAccess g vs ->
-    MN.MapsTo nx lx l ->
-    MM.MapsTo r' r'l g ->
-    SJ_CG.SJ (vs, es) k sj ->
-    LastWriteKnows g (vs, es) sj ->
-    LocalToKnows l (vs, es) sj ->
-    MapsTo x nx vs ->
-    LastWrite r an (d_task b)
-       (MM.add r' ({| a_when := fresh vs; a_what := READ datum |} :: r'l) g)
-       (x :: vs, C (nx, fresh vs) :: es) ->
-    SJ_CG.Knows (x :: vs) (SJ_CG.Copy nx :: sj) (a, b).
-  Proof.
-    intros.
-    apply last_write_inv_read in H9; eauto.
-  Qed.
-
-  Let last_write_knows_fork:
-    forall l a b x nx sj es vs g an r k lx y args,
-    DomInclAccess g vs ->
-    SJ_CG.SJ (vs, es) k sj ->
-    LastWriteKnows g (vs, es) sj ->
-    LocalToKnows l (vs, es) sj ->
-    MapsTo x nx vs ->
-    MN.MapsTo nx lx l ->
-    LastWrite r an (d_task b) g
-       (y :: x :: vs, F (nx, fresh (x :: vs)) :: C (nx, fresh vs) :: es) ->
-    NodeOf a an (y :: x :: vs) ->
-    x <> y ->
-    ~ In y vs ->
-    Forall (fun d : datum => Locals.MapsTo nx d l) args ->
-    ~ MN.In (fresh vs) l ->
-    ~ MN.In (fresh (x :: vs)) (MN.add (fresh vs) (d_task y :: lx) l) ->
-    SJ_CG.Knows (y :: x :: vs) (SJ_CG.Copy nx :: SJ_CG.Cons y nx :: sj) (a, b).
-  Proof.
-    intros.
-    apply node_of_inv in H6.
-    destruct H6 as [(?,?)|Hn]. {
-      subst.
-  Admitted.
-
-  Lemma last_write_knows:
-    forall m cg sj cg' m' sj' e k,
-    LastWriteKnows (fst m) cg sj ->
-    CG.Reduces cg (event_to_cg e) cg' ->
-    Reduces cg' m e m' ->
-    SJ_CG.Reduces sj cg' sj' ->
-
-    SJ_CG.SJ cg k sj ->
-    LocalToKnows (snd m) cg sj ->
-    DomInclAccess (fst m) (fst cg) ->
-
-    LastWriteKnows (fst m') cg' sj'.
-  Proof.
-    intros.
-    unfold LastWriteKnows; intros.
-    destruct e as (?,[]); simpl in *; handle_all.
-    - eapply last_write_knows_continue with (l:=l); eauto.
-    - eapply last_write_knows_alloc; eauto.
-    - eauto.
-    - eauto.
-    - eapply last_write_knows_fork; eauto.
-    - clear H9.
-      rename es0 into es.
-      rename m0 into r.
-      rename t into x.
-      rename t0 into y.
-      rename ny0 into ny.
-      rename l0 into lx.
-      rename n into an.
-      clear nx.
-      rename nx0 into nx.
-      rename l into args.
-      rename l0 into l.
-      clear H16.
-      clear H8.
-  Qed.
-
-
-  Let last_write_can_join_alloc:
-    forall cg sj cg' sj' m m' x r n a d z k,
-    LastWriteCanJoin (fst m) cg sj ->
-    CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces cg' m (x, GLOBAL_ALLOC z d) m' ->
-    SJ_CG.Reduces sj cg' sj' ->
-    LastWrite r n (d_task a) (fst m') cg' ->
-    LocalToKnows (snd m) cg sj ->
-    SJ_CG.SJ cg k sj ->
-    SJ_CG.CanJoin n a sj'.
-  Proof.
-    intros.
-    rename H4 into Hk.
-    rename H5 into Hs.
-    handle_all.
-    rename n0 into nx.
-    rename l0 into lx.
-    rename es0 into es.
-    destruct (mid_eq_dec r z). {
-      subst.
-      apply last_write_inv_add in H3.
-      destruct H3; subst.
-      assert (R: fresh vs = fresh sj). {
-        inversion Hs.
-        auto using maps_to_length_rw.
-      }
-      rewrite R.
-      apply SJ_CG.can_join_copy.
-      assert (Hx : Knows (vs, es) l (x,a)). {
-       eauto using knows_def, Locals.local_def.
-      }
-      eauto.
-    }
-    apply max_write_continue in H3; auto.
-    apply H in H3.
-    apply SJ_CG.can_join_cons.
-    assumption.
-  Qed.
-
-  Lemma last_write_can_join:
-    forall m cg sj cg' m' sj' e,
-    LastWriteCanJoin (fst m) cg sj ->
-    CG.Reduces cg (event_to_cg e) cg' ->
-    Reduces cg' m e m' ->
-    SJ_CG.Reduces sj cg' sj' ->
-    LastWriteCanJoin (fst m') cg' sj'.
-  Proof.
-    intros.
-    unfold LastWriteCanJoin.
-    intros r n a; intros.
-    destruct e as (x, []); simpl in *.
-    - eauto.
-    - eauto.
-    - 
-    - rename m0 into z.
-  Qed.
-*)
+  Structure WellFormed cg sj g l := {
+    wf_ah_well_formed : AccessHistory.T.WellFormed cg g;
+    wf_last_write_knows_prop: LastWriteKnows cg g l;
+    wf_dom_incl_prop: DomIncl l (fst cg);
+    wf_local_to_knows_prop: LocalToKnows l cg sj
+  }.
 
 End SR.
