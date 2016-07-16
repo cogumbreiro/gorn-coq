@@ -870,6 +870,29 @@ Section Props.
     destruct H0; auto.
   Qed.
 
+  Variable lt_impl_ex:
+    forall h n (b:access A E),
+    List.In b h ->
+    P (a_when b) n ->
+    Q (a_when b) n.
+
+  Lemma last_write_impl_ex:
+    forall (a:access A E) h,
+    (forall b, List.In b h -> P (a_when b) (a_when a) -> Q (a_when b) (a_when a)) ->
+    LastWrite (A:=A) P a h ->
+    LastWrite Q a h.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    apply last_write_def; try assumption.
+    unfold ForallWrites in *.
+    intros.
+    apply H3 in H4; auto.
+    destruct H4.
+    - apply H in H4; auto.
+    - auto.
+  Qed.
+
   Lemma last_write_impl:
     forall w h,
     LastWrite (A:=A) P w h ->
@@ -930,7 +953,19 @@ Section Props.
     destruct H0 as (a, Hx).
     eauto using last_write_impl.
   Qed.
-
+(*
+  Lemma last_write_fun_impl_ex:
+    forall (ah: access_history A E),
+    (forall r h a b, MM.MapsTo r h ah -> List.In a h -> List.In b h -> P (a_when b) (a_when a) -> Q (a_when b) (a_when a)) ->
+    LastWriteFun Q ah ->
+    LastWriteFun P ah.
+  Proof.
+    unfold LastWriteFun; intros.
+    eapply last_write_impl_ex in H1.
+    apply last_write_impl_ex in H2.
+    eauto.
+  Qed.
+*)
 End Props.
 
 Module T.
@@ -1396,6 +1431,92 @@ Section Props.
     eauto.
   Qed.
 
+  Let wf_hb_inv_cons_c:
+    forall vs es g r h a b t x n,
+    WellFormed (vs, es) g ->
+    MM.MapsTo r h g ->
+    Node n vs ->
+    List.In a h ->
+    List.In b h ->
+    HB (x :: vs, {| e_t := t; e_edge := (n, fresh vs) |} :: es) (a_when a) (a_when b) ->
+    HB (vs, es) (a_when a) (a_when b).
+  Proof.
+    intros.
+    eapply wf_node in H2; eauto.
+    eapply wf_node in H3; eauto.
+    apply hb_inv_cons_c in H4.
+    - destruct H4; auto.
+      rewrite H4 in *.
+      simpl_node.
+    - apply wf_edge_to_node_prop in H.
+      auto using node_cons, node_eq, edge_to_node_cons_node, edge_to_node_cons_edge.
+    - apply wf_lt_edges_prop in H.
+      apply lt_edges_cons_edge.
+      + unfold cg_edges in *; auto.
+      + simpl.
+        auto using node_lt.
+  Qed.
+
+  Lemma wf_continue:
+    forall x n vs es g t,
+    MapsTo x n vs ->
+    WellFormed (vs, es) g ->
+    WellFormed (x :: vs, {|e_t:=t; e_edge:=(n, fresh vs)|} :: es) g.
+  Proof.
+    intros.
+    apply Build_WellFormed.
+    - apply lt_edges_cons_edge.
+      + apply wf_lt_edges_prop in H0.
+        unfold cg_edges in *.
+        auto.
+      + simpl.
+        eauto using maps_to_lt.
+    - apply edge_to_node_cons_edge.
+      + eauto using wf_edge_to_node_prop, edge_to_node_cons_node.
+      + eauto using maps_to_to_node, node_cons.
+      + auto using node_eq.
+    - simpl.
+      apply wf_node_def_prop in H0.
+      auto using node_def_cons.
+    - eauto using wf_access_fun_prop.
+    - assert (Hwf := H0).
+      apply wf_last_write_fun_prop in H0.
+      unfold LastWriteFun in *.
+      intros.
+      assert (forall c,
+        List.In c h ->
+        HB (x :: vs, {| e_t := t; e_edge := (n, fresh vs) |} :: es) (a_when c) (a_when a) ->
+        HB (vs, es) (a_when c) (a_when a)). {
+        intros.
+        apply last_write_to_in in H2.
+        eapply wf_hb_inv_cons_c with (n:=n) (x:=x) (t:=t); eauto using wf_node, maps_to_to_node.
+      }
+      assert (forall c,
+        List.In c h ->
+        HB (x :: vs, {| e_t := t; e_edge := (n, fresh vs) |} :: es) (a_when c) (a_when b) ->
+        HB (vs, es) (a_when c) (a_when b)). {
+        intros.
+        apply last_write_to_in in H3.
+        eapply wf_hb_inv_cons_c with (n:=n) (x:=x) (t:=t); eauto using wf_node, maps_to_to_node.
+      }
+      apply last_write_impl_ex with (Q:=HB (vs,es)) in H2; auto.
+      apply last_write_impl_ex with (Q:=HB (vs,es)) in H3; auto.
+      eauto.
+     - apply ordered_access_history_impl with (P:=HB(vs, es)).
+       + intros.
+         eauto using hb_impl_cons_node_edge.
+       + apply wf_ordered_access_history_prop in H0.
+         auto.
+     - unfold LastWriteDef.
+       intros.
+       assert (Hx := H0).
+       apply wf_last_write_def_prop in Hx.
+       apply Hx in H1.
+       destruct H1 as (a, Hw).
+       exists a.
+       eauto using last_write_impl, hb_impl_cons_node_edge.
+  Qed.
+(*
   Lemma wf_continue:
     forall x n vs es g,
     MapsTo x n vs ->
@@ -1411,19 +1532,17 @@ Section Props.
     }
     eauto using wf_reduces.
   Qed.
-
+*)
   Let hb_inv_cons_c_0:
-    forall vs es x n ah' a b ah t,
-    WellFormed (vs,es) ah ->
-    WellFormed (x :: vs,{| e_t := t; e_edge := (n,fresh vs) |} :: es) ah' ->
+    forall vs es x n ah a b t,
+    WellFormed (x :: vs,{| e_t := t; e_edge := (n,fresh vs) |} :: es) ah ->
     HB (x :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) (a_when (A:=Trace.datum) a) (a_when (A:=Trace.datum) b) ->
     HB (vs, es) (a_when a) (a_when b) \/ a_when b = fresh vs.
   Proof.
     intros.
-    apply hb_inv_cons_c in H1; auto.
+    apply hb_inv_cons_c in H0; auto.
     - apply wf_edge_to_node_prop in H ; auto.
-    - apply wf_edge_to_node_prop in H0; auto.
-    - apply wf_lt_edges_prop in H0; auto.
+    - apply wf_lt_edges_prop in H; auto.
   Qed.
 
   Lemma last_write_inv_c:
@@ -1431,22 +1550,54 @@ Section Props.
     WellFormed (vs,es) ah ->
     WellFormed (x :: vs,{| e_t := t; e_edge := (n,fresh vs) |} :: es) ah' ->
     MM.MapsTo r h ah ->
-    LastWrite (HB (x::vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es)) a h ->
+    LastWrite (A:=Trace.datum) (HB (x::vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es)) a h ->
     LastWrite (HB (vs, es)) a h.
   Proof.
     intros.
-    destruct H2.
+    destruct H2 as (X,Y,Hfw).
     apply last_write_def; eauto.
-    rename H4 into Hfw.
     unfold ForallWrites in *; intros b Hin Hwb.
     apply Hfw in Hin; auto.
     destruct Hin as [Hin|?]; auto.
-    apply hb_inv_cons_c_0 with (ah:=ah) (ah':=ah') in Hin; auto.
+    apply hb_inv_cons_c_0 with (ah:=ah') in Hin; repeat auto.
     destruct Hin as [?|R]; auto.
     subst.
     assert (Hn: Node (a_when a) vs) by eauto using wf_node.
     rewrite R in *.
     simpl_node.
+  Qed.
+
+  Lemma last_write_inv_j:
+    forall x n vs ah ah' h es a r t e,
+    WellFormed (vs,es) ah ->
+    WellFormed (x :: vs,{| e_t := t; e_edge := (n,fresh vs) |} :: e :: es) ah' ->
+    MM.MapsTo r h ah ->
+    LastWrite (A:=Trace.datum) (HB (x::vs, {| e_t := t; e_edge := (n,fresh vs) |} :: e :: es)) a h ->
+    LastWrite (HB (x::vs, e::es)) a h.
+  Proof.
+    intros.
+    destruct H2 as (X,Y,Hfw).
+    apply last_write_def; eauto.
+    unfold ForallWrites in *; intros b Hin Hwb.
+    apply Hfw in Hin; auto.
+    destruct Hin as [Hin|?]; auto.
+    apply hb_inv_cons_c in Hin.
+    - destruct Hin as [?|R].
+      + left; eauto using hb_impl_nodes.
+      + subst.
+        assert (Hn: Node (a_when a) vs) by eauto using wf_node.
+        rewrite R in *.
+        simpl_node.
+    - eauto using wf_edge_to_node_prop.
+    - eauto using wf_lt_edges_prop.
+  Qed.
+
+  Lemma last_write_impl_nodes:
+    forall vs vs' es a h,
+    LastWrite (A:=Trace.datum) (HB (vs, es)) a h ->
+    LastWrite (HB (vs', es)) a h.
+  Proof.
+    eauto using hb_impl_nodes, last_write_impl.
   Qed.
 
   Lemma drf_check_inv_read_last_write:
