@@ -92,7 +92,7 @@ Section Defs.
     Locals.Reduces l (n', CONS (d_mem r) n) l' ->
     Reduces l (ALLOC r d) l'
 
-  | reduces_g_read:
+  | reduces_read:
     forall l d n n' r l' es,
     snd cg = C (n, n') :: es ->
     (* the reference y is in the locals of task x *)
@@ -101,7 +101,7 @@ Section Defs.
     Locals.Reduces l (n', CONS d n) l' ->
     Reduces l (READ r d) l'
 
-  | reduces_g_write:
+  | reduces_write:
     forall l r d n n' es l',
     (* a global write is a continue in the CG *)
     snd cg = C (n, n') :: es ->
@@ -129,6 +129,8 @@ Section Defs.
     snd cg = J (ny,nx') :: C (nx,nx') :: es ->
     (* Datum d is in the locals of y *)
     Locals.MapsTo ny d l ->
+    (* Task y is in the local memory of nx *)
+    Locals.MapsTo nx (d_task y) l ->
     (* Add d to the locals of x *)
     Locals.Reduces l (nx', CONS d nx) l' ->
     Reduces l (FORCE y d) l'
@@ -221,30 +223,7 @@ Section SR.
     a_what a = Some (d_task y) ->
     TaskOf (a_when a) x (fst cg) ->
     LocalKnows cg l (x, y).
-(*
-  Let make_last_write_can_join:
-    forall l cg sj g,
-    WellFormed cg g ->
-    LocalToKnows l cg sj ->
-    LastWriteKnows cg g l ->
-    LastWriteCanJoin g cg sj.
-  Proof.
-    intros.
-    unfold LastWriteCanJoin.
-    intros.
-    destruct cg as (vs,es); simpl in *.
-    assert (Hn: Node (a_when a) vs). {
-      eapply wf_node ; eauto using last_write_to_in.
-    }
-    apply node_to_task_of in Hn.
-    destruct Hn as (y, Ht).
-    eapply H1 in Ht; eauto.
-    apply H0 in Ht.
-    inversion Ht; subst; clear  Ht.
-    simpl in *.
-    auto.
-  Qed.
-*)
+
   Ltac expand H := inversion H; subst; clear H.
 
   Let knows_eq:
@@ -269,39 +248,6 @@ Section SR.
     simpl in *.
     eauto using SJ_CG.knows_copy.
   Qed.
-(*
-  Let local_to_knows_continue_0:
-    forall ls vs es x n l a an b sj k,
-    LocalToKnows ls (vs, es) sj ->
-    MapsTo x n vs ->
-    MN.MapsTo n l ls ->
-    ~ MN.In (fresh vs) ls ->
-    MapsTo a an (x :: vs) ->
-    Locals.MapsTo an (d_task b) (MN.add (fresh vs) l ls) ->
-    SJ_CG.SJ (vs,es) k sj ->
-    SJ_CG.Knows (x :: vs) (SJ_CG.Copy n :: sj) (a, b).
-  Proof.
-    intros.
-    inversion H4; subst; clear H4.
-    rename l0 into al.
-    apply maps_to_inv in H3.
-    destruct H3 as [(?,?)|(?,mt)]; subst. {
-      rewrite MN_Facts.add_mapsto_iff in *.
-      destruct H6 as [(_,?)|(N,_)]. {
-        subst.
-        eauto using knows_eq, sj_knows_copy.
-      }
-      contradiction N; trivial.
-    }
-    rewrite MN_Facts.add_mapsto_iff in *.
-    destruct H6 as [(?,?)|(?,mt')]. {
-      subst.
-      simpl_node.
-    }
-    eauto using SJ_CG.knows_neq. 
-  Qed.
-*)
-
 
   Let sj_knows_copy_0:
     forall vs sj l es a b x n la na,
@@ -586,7 +532,7 @@ Section SR.
 
   Definition memory := (cg_access_history * local_info) % type.
 
-  Lemma local_to_knows_reduces:
+  Let local_to_knows_reduces:
     forall cg k sj sj' g g' cg' l l' x o k',
     LocalToKnows l cg sj ->
 
@@ -611,7 +557,7 @@ Section SR.
     destruct o; simpl in *; eauto.
   Qed.
 
-  Lemma dom_incl_reduces:
+  Let dom_incl_reduces:
     forall l l' cg cg' x o,
     DomIncl l (fst cg) ->
     T.TReduces cg (x,o) cg' ->
@@ -811,11 +757,72 @@ Section SR.
     - eapply last_write_inv_j in Hlw; eauto using wf_continue.
   Qed.
 
-  Structure WellFormed cg sj g l := {
+  Structure WellFormed cg k sj g l := {
     wf_ah_well_formed : AccessHistory.T.WellFormed cg g;
-    wf_last_write_knows_prop: LastWriteKnows cg g l;
+    wf_sj_well_formed: SJ_CG.SJ cg k sj;
     wf_dom_incl_prop: DomIncl l (fst cg);
-    wf_last_write_can_join_prop: LastWriteCanJoin g cg sj
+    wf_last_write_can_join_prop: LastWriteCanJoin g cg sj;
+    wf_local_to_knows_prop: LocalToKnows l cg sj
   }.
+
+  Lemma wf_reduces:
+    forall cg cg' sj sj' g g' l l' k x o,
+    WellFormed cg k sj g l ->
+    T.TReduces cg (x,o) cg' ->
+    Reduces cg' l o l' ->
+    DRF_Check cg' g o g' ->
+    SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
+    exists k', WellFormed cg' k' sj' g' l'.
+  Proof.
+    intros.
+    inversion H.
+    assert (Hx:=H3).
+    eapply SJ_CG.sj_reduces_alt in H3; eauto.
+    assert (Hwf: T.WellFormed cg' g') by eauto using wf_reduces.
+    destruct H3 as (k',Hsj).
+    exists k'.
+    inversion wf_sj_well_formed0.
+    apply Build_WellFormed; eauto.
+  Qed.
+
+  Lemma wf_sj_cg_reduces:
+    forall cg cg' sj g g' l l' k x o,
+    WellFormed cg k sj g l ->
+    T.TReduces cg (x,o) cg' ->
+    Reduces cg' l o l' ->
+    DRF_Check cg' g o g' ->
+    exists sj', 
+    SJ_CG.Reduces sj cg' sj'.
+  Proof.
+    intros.
+    destruct o; simpl in *; handle_all; simpl_drf_check;
+    eauto using SJ_CG.reduces_continue, SJ_CG.reduces_fork.
+    exists (SJ_CG.Append nx0 ny0::sj).
+    eapply SJ_CG.reduces_join;eauto using maps_to_cons.
+    assert (Hk: LocalKnows (vs,es0) l (x,t)). {
+      eapply local_knows_def; eauto using maps_to_to_task_of.
+    }
+    apply wf_local_to_knows_prop in H.
+    apply H in Hk.
+    inversion Hk.
+    subst.
+    simpl_node.
+    assumption.
+  Qed.
+
+  Lemma wf_reduces_alt:
+    forall cg cg' sj g g' l l' k x o,
+    WellFormed cg k sj g l ->
+    T.TReduces cg (x,o) cg' ->
+    Reduces cg' l o l' ->
+    DRF_Check cg' g o g' ->
+    exists sj' k', WellFormed cg' k' sj' g' l'.
+  Proof.
+    intros.
+    assert (Hsj: exists sj', SJ_CG.Reduces sj cg' sj') by
+    eauto using wf_sj_cg_reduces.
+    destruct Hsj as (sj', Hsj).
+    eauto using wf_reduces.
+  Qed.
 
 End SR.
