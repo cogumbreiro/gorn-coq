@@ -1191,6 +1191,57 @@ Section SJ.
     free_in_graph_reduces, knows_to_edge_reduces, edge_to_knows_reduces, incl_reduces.
   Qed.
 
+  Lemma cg_sj_reduces_to_sj_reduces:
+    forall sj cg k sj' cg' e,
+    SJ cg k sj ->
+    CG.Reduces cg e cg' ->
+    Reduces sj cg' sj' ->
+    exists k', Events.Reduces k e k'.
+  Proof.
+    intros.
+    destruct e as (x,[]).
+    - rename t into y.
+      exists (fork x y k).
+      simpl_red.
+      apply Events.reduces_fork.
+      apply SafeJoins.reduces_fork; auto.
+      unfold not; intros.
+      contradiction H5.
+      destruct H0 as ((v1,v2), (He,Hp)).
+      inversion H.
+      apply H3 in He.
+      simpl in *.
+      destruct Hp; subst; simpl in *.
+      + eauto using knows_to_in.
+      + apply knows_to_free in He.
+        auto.
+    - simpl_red.
+      exists (join x t k).
+      apply Events.reduces_join.
+      apply SafeJoins.reduces_join; auto.
+      inversion H; simpl in *.
+      apply H2.
+      eauto using knows_def.
+    - simpl_red.
+      eauto using Events.reduces_continue.
+  Qed.
+
+  Lemma sj_reduces_alt:
+    forall sj cg k sj' cg' e,
+    SJ cg k sj ->
+    CG.Reduces cg e cg' ->
+    Reduces sj cg' sj' ->
+    exists k', SJ cg' k' sj'.
+  Proof.
+    intros.
+    assert (Hx: exists k', Events.Reduces k e k'). {
+      eauto using cg_sj_reduces_to_sj_reduces.
+    }
+    destruct Hx as (k', Hx).
+    exists k'.
+    eauto using sj_reduces.
+  Qed.
+
   Lemma sj_make_cg:
     forall a,
     SJ (make_cg a) nil (Nil :: nil).
