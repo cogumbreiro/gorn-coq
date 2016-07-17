@@ -953,19 +953,7 @@ Section Props.
     destruct H0 as (a, Hx).
     eauto using last_write_impl.
   Qed.
-(*
-  Lemma last_write_fun_impl_ex:
-    forall (ah: access_history A E),
-    (forall r h a b, MM.MapsTo r h ah -> List.In a h -> List.In b h -> P (a_when b) (a_when a) -> Q (a_when b) (a_when a)) ->
-    LastWriteFun Q ah ->
-    LastWriteFun P ah.
-  Proof.
-    unfold LastWriteFun; intros.
-    eapply last_write_impl_ex in H1.
-    apply last_write_impl_ex in H2.
-    eauto.
-  Qed.
-*)
+
 End Props.
 
 Module T.
@@ -1516,23 +1504,7 @@ Section Props.
        exists a.
        eauto using last_write_impl, hb_impl_cons_node_edge.
   Qed.
-(*
-  Lemma wf_continue:
-    forall x n vs es g,
-    MapsTo x n vs ->
-    WellFormed (vs, es) g ->
-    WellFormed (x :: vs, C (n, fresh vs) :: es) g.
-  Proof.
-    intros.
-    assert (TReduces (vs,es) (x, Trace.CONTINUE) (x::vs,C (n,fresh vs)::es)). {
-      apply reduces_continue; auto using maps_to_eq.
-    }
-    assert (DRF_Check (x::vs,C (n,fresh vs)::es) g Trace.CONTINUE g). {
-      auto using drf_check_none.
-    }
-    eauto using wf_reduces.
-  Qed.
-*)
+
   Let hb_inv_cons_c_0:
     forall vs es x n ah a b t,
     WellFormed (x :: vs,{| e_t := t; e_edge := (n,fresh vs) |} :: es) ah ->
