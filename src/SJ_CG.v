@@ -25,11 +25,11 @@ Section Defs.
   Inductive Reduces: known_set -> CG.event -> known_set -> Prop :=
   | reduces_fork:
     forall k k' x y,
-    SafeJoins.Reduces k {| op_t := FORK; op_src := x; op_dst := y |} k' ->
+    SafeJoins.CheckOp k {| op_t := FORK; op_src := x; op_dst := y |} k' ->
     Reduces k (x, CG.FORK y) k'
   | reduces_join:
     forall k k' x y,
-    SafeJoins.Reduces k {| op_t := JOIN; op_src := x; op_dst := y |} k' ->
+    SafeJoins.CheckOp k {| op_t := JOIN; op_src := x; op_dst := y |} k' ->
     Reduces k (x, CG.JOIN y) k'
   | reduces_continue:
     forall k x,
@@ -51,7 +51,7 @@ End Defs.
   | [ H : Reduces _ (_, CG.JOIN _) _ |- _ ] =>
      inversion H; subst; clear H;
      match goal with
-     | [ H1 : SafeJoins.Reduces _ {| op_t := JOIN; op_src := _; op_dst := _ |} _ |- _ ] =>
+     | [ H1 : SafeJoins.CheckOp _ {| op_t := JOIN; op_src := _; op_dst := _ |} _ |- _ ] =>
        inversion H1; subst; clear H1
      end
   | [ H: Reduces _ (_, CONTINUE) _ |- _ ] =>
@@ -59,7 +59,7 @@ End Defs.
   | [ H : Reduces _ (_, CG.FORK _) _ |- _ ] =>
      inversion H; subst; clear H;
      match goal with
-     | [ H1 : SafeJoins.Reduces _ {| op_t := FORK; op_src := _; op_dst := _ |} _ |- _ ] =>
+     | [ H1 : SafeJoins.CheckOp _ {| op_t := FORK; op_src := _; op_dst := _ |} _ |- _ ] =>
        inversion H1; subst; clear H1
      end
   end.
@@ -1204,7 +1204,7 @@ Section SJ.
       exists (fork x y k).
       simpl_red.
       apply Events.reduces_fork.
-      apply SafeJoins.reduces_fork; auto.
+      apply SafeJoins.check_fork; auto.
       unfold not; intros.
       contradiction H5.
       destruct H0 as ((v1,v2), (He,Hp)).
@@ -1218,7 +1218,7 @@ Section SJ.
     - simpl_red.
       exists (join x t k).
       apply Events.reduces_join.
-      apply SafeJoins.reduces_join; auto.
+      apply SafeJoins.check_join; auto.
       inversion H; simpl in *.
       apply H2.
       eauto using knows_def.

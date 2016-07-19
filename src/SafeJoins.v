@@ -20,7 +20,7 @@ Section Defs.
     op_dst: tid
   }.
 
-  Definition trace := list op.    
+  Definition trace := list op.
 
   Notation known := (list (tid*tid)).
 
@@ -91,34 +91,34 @@ Section Defs.
     destruct (op_t o); auto using join_incl, fork_incl.
   Qed.
 
-  Inductive Check (k:known) : op -> Prop :=
+  Inductive CanCheckOp (k:known) : op -> Prop :=
+  | can_check_fork:
+    forall (x y:tid),
+    x <> y ->
+    ~ Graph.In (Edge k) y ->
+    CanCheckOp k {| op_t := FORK; op_src:= x; op_dst:= y|}
+  | can_check_join:
+    forall x y,
+    Edge k (x,y) ->
+    CanCheckOp k {| op_t := JOIN; op_src := x; op_dst:= y|}.
+
+  Inductive CheckOp k : op -> known -> Prop :=
   | check_fork:
     forall (x y:tid),
     x <> y ->
     ~ Graph.In (Edge k) y ->
-    Check k {| op_t := FORK; op_src:= x; op_dst:= y|}
+    CheckOp k {| op_t := FORK; op_src:= x; op_dst:= y|} (fork x y k)
   | check_join:
     forall x y,
     Edge k (x,y) ->
-    Check k {| op_t := JOIN; op_src := x; op_dst:= y|}.
-
-  Inductive Reduces k : op -> known -> Prop :=
-  | reduces_fork:
-    forall (x y:tid),
-    x <> y ->
-    ~ Graph.In (Edge k) y ->
-    Reduces k {| op_t := FORK; op_src:= x; op_dst:= y|} (fork x y k)
-  | reduces_join:
-    forall x y,
-    Edge k (x,y) ->
-    Reduces k {| op_t := JOIN; op_src := x; op_dst:= y|} (join x y k).
+    CheckOp k {| op_t := JOIN; op_src := x; op_dst:= y|} (join x y k).
 
   Inductive Safe : trace -> known -> Prop :=
   | safe_nil:
     Safe nil nil
   | safe_cons:
     forall o l k,
-    Check k o ->
+    CanCheckOp k o ->
     Safe l k ->
     Safe (o::l) (eval o k).
 
@@ -126,29 +126,29 @@ Section Defs.
   Lemma safe_reduces:
     forall o t k k',
     Safe t k ->
-    Reduces k o k' ->
+    CheckOp k o k' ->
     Safe (o::t) k'.
   Proof.
     intros.
     inversion H0; subst; clear H0.
     - assert (R: fork x y k = eval {| op_t := FORK; op_src := x; op_dst := y |} k) by auto.
       rewrite R.
-      eauto using check_fork, safe_cons.
+      eauto using can_check_fork, safe_cons.
     - assert (R: join x y k = eval {| op_t := JOIN; op_src := x; op_dst := y |} k) by auto.
       rewrite R.
-      eauto using check_join, safe_cons.
+      eauto using can_check_join, safe_cons.
   Qed.
 
   Lemma safe_inv:
     forall o t k,
     Safe (o::t) k ->
-    exists k', Safe t k' /\ Reduces k' o k.
+    exists k', Safe t k' /\ CheckOp k' o k.
   Proof.
     intros.
     inversion H; subst; clear H.
     unfold eval.
     inversion H2; subst; simpl in *; clear H2;
-    eauto using reduces_fork, reduces_join.
+    eauto using check_fork, check_join.
   Qed.
 
   Require Import Aniceto.Graphs.DAG.
@@ -598,7 +598,7 @@ Section Defs.
 
   Lemma eval_preserves_dag:
     forall k o,
-    Check k o ->
+    CanCheckOp k o ->
     DAG (Edge k) ->
     DAG (Edge (eval o k)).
   Proof.
@@ -713,13 +713,13 @@ End Defs.
 
 Section Examples.
 
-  Lemma reduces_fork_nil:
+  Lemma check_fork_nil:
     forall x y,
     x <> y ->
-    Reduces nil {| op_t := FORK; op_src := x; op_dst := y |} ((x, y) :: nil).
+    CheckOp nil {| op_t := FORK; op_src := x; op_dst := y |} ((x, y) :: nil).
   Proof.
     intros.
-    apply reduces_fork; auto.
+    apply check_fork; auto.
     intuition.
     inversion H0.
     destruct H1 as (N, _).
