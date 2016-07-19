@@ -8,10 +8,8 @@ src/Cid.v
 src/Lang.v
 src/Node.v
 src/CG.v
-src/Shadow.v
 src/Bijection.v
 src/Typesystem.v
-src/Memory.v
 src/SafeJoins.v
 src/SJ_CG.v
 src/AccessHistory.v
