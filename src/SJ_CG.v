@@ -894,20 +894,20 @@ Section Incl.
   Proof.
     intros.
     intuition.
-    assert (Hx:List.In (fresh vs, n) (cg_edges (vs, es))) by auto.
-    apply node_lt_length_left in Hx; auto.
+    assert (Hx:List.In (fresh vs, n) (cg_edges es)) by auto.
+    eapply node_lt_length_left in Hx; eauto.
     simpl in Hx.
     unfold NODE.lt in *.
     omega.
   Qed.
 
   Let incl_fork:
-    forall cg cg' sj sj' k k' x n1 n2 a b,
-    Incl cg sj ->
+    forall (cg:computation_graph) cg' sj sj' k k' x n1 n2 a b,
+    Incl (snd cg) sj ->
     Events.Reduces k (a, CG.FORK b) k' ->
     CG.Reduces cg (a, CG.FORK b) cg' ->
     Reduces sj cg' sj' ->
-    List.In (n1, n2) (cg_edges cg') ->
+    List.In (n1, n2) (cg_edges (snd cg')) ->
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
     FreeInGraph (fst cg) sj ->
@@ -949,8 +949,8 @@ Section Incl.
           apply in_length_absurd in H0; auto; contradiction.
       }
       simpl in *.
-      assert (Hx:List.In (fresh (Cons b prev :: sj), n2) (cg_edges (vs, es))) by auto.
-      apply node_lt_length_left in Hx; auto.
+      assert (Hx:List.In (fresh (Cons b prev :: sj), n2) (cg_edges es)) by auto.
+      eapply node_lt_length_left in Hx; eauto.
       simpl in Hx.
       unfold NODE.lt, fresh in *; simpl in *.
       inversion Heq.
@@ -959,11 +959,11 @@ Section Incl.
 
   Let incl_join:
     forall cg cg' sj sj' k k' x n1 n2 a b,
-    Incl cg sj ->
+    Incl (snd cg) sj ->
     Events.Reduces k (a, CG.JOIN b) k' ->
     CG.Reduces cg (a, CG.JOIN b) cg' ->
     Reduces sj cg' sj' ->
-    List.In (n1, n2) (cg_edges cg') ->
+    List.In (n1, n2) (cg_edges (snd cg')) ->
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
     FreeInGraph (fst cg) sj ->
@@ -1012,11 +1012,11 @@ Section Incl.
 
   Let incl_continue:
     forall cg cg' sj sj' k k' x n1 n2 a,
-    Incl cg sj ->
+    Incl (snd cg) sj ->
     Events.Reduces k (a, CG.CONTINUE) k' ->
     CG.Reduces cg (a, CG.CONTINUE) cg' ->
     Reduces sj cg' sj' ->
-    List.In (n1, n2) (cg_edges cg') ->
+    List.In (n1, n2) (cg_edges (snd cg')) ->
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
     FreeInGraph (fst cg) sj ->
@@ -1042,14 +1042,14 @@ Section Incl.
 
   Lemma incl_reduces:
     forall sj cg k sj' cg' k' e,
-    Incl cg sj ->
+    Incl (snd cg) sj ->
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
     Reduces sj cg' sj' ->
     length (fst cg) = length sj ->
     FreeInGraph (fst cg) sj ->
     EdgeToNode cg ->
-    Incl cg' sj'.
+    Incl (snd cg') sj'.
   Proof.
     intros.
     unfold Incl; intros.
@@ -1133,8 +1133,7 @@ Section Incl.
   Qed.
 
   Lemma incl_nil:
-    forall a,
-    Incl (a :: nil, nil) (Nil :: nil).
+    Incl nil (Nil :: nil).
   Proof.
     intros.
     unfold Incl.
@@ -1171,7 +1170,7 @@ Section SJ.
     FreeInGraph (fst cg) sj ->
     KnowsToEdge (fst cg) sj k ->
     EdgeToKnows (fst cg) sj k ->
-    Incl cg sj ->
+    Incl (snd cg) sj ->
     EdgeToNode cg ->
     SJ cg k sj.
 
@@ -1278,7 +1277,7 @@ Section SJ.
     forall cg k n1 n2 x sj,
     SJ cg k sj ->
     CanJoin n1 x sj ->
-    HB cg n1 n2 ->
+    HB (snd cg) n1 n2 ->
     CanJoin n2 x sj.
   Proof.
     intros.

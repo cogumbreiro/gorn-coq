@@ -219,7 +219,7 @@ Section SR.
   Definition LastWriteKnows (cg:computation_graph) (g:cg_access_history) l :=
     forall x y a h r,
     MM.MapsTo r h g ->
-    LastWrite (HB cg) a h ->
+    LastWrite (HB (snd cg)) a h ->
     a_what a = Some (d_task y) ->
     TaskOf (a_when a) x (fst cg) ->
     LocalKnows cg l (x, y).
@@ -383,9 +383,9 @@ Section SR.
     SJ_CG.Reduces sj cg' sj' ->
     SJ_CG.SJ cg k sj ->
     DomIncl l (fst cg) ->
-    LastWriteCanJoin g cg sj ->
+    LastWriteCanJoin g (snd cg) sj ->
     SJ_CG.SJ cg' k' sj' ->
-    DRF_Check cg' g (READ y d) g' ->
+    DRF_Check (snd cg') g (READ y d) g' ->
     WellFormed cg g ->
     WellFormed cg' g' ->
     length (fst cg) = length sj ->
@@ -410,7 +410,7 @@ Section SR.
       destruct H0 as [(_,Hx)|(N,_)]; subst. {
         destruct H1 as [?|Hi]. {
           subst.
-          apply drf_check_inv_read_last_write in Hdrf; auto.
+          apply drf_check_inv_read_last_write with (x:=x) in Hdrf; auto.
           destruct Hdrf as (h, (a, (mt, (Hw, (?,?))))).
           eauto using SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons.
         }
@@ -541,12 +541,12 @@ Section SR.
     SJ_CG.SJ cg' k' sj' ->
 
     Reduces cg' l o l' ->
-    DRF_Check cg' g o g' ->
+    DRF_Check (snd cg') g o g' ->
     SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
 
     length (fst cg) = length sj ->
     DomIncl l (fst cg) ->
-    LastWriteCanJoin g cg sj ->
+    LastWriteCanJoin g (snd cg) sj ->
     WellFormed cg g ->
     WellFormed cg' g' ->
     LocalToKnows l' cg' sj'.
@@ -644,7 +644,7 @@ Section SR.
     LastWriteKnows (vs, es) g l ->
     WellFormed (vs, es) g ->
     WellFormed (z :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) g ->
-    LastWrite (HB (z :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es)) a h ->
+    LastWrite (HB ({| e_t := t; e_edge := (n,fresh vs) |} :: es)) a h ->
     MM.MapsTo r h g ->
     TaskOf (a_when a) x (z :: vs) ->
     TaskOf (a_when a) x vs.
@@ -667,8 +667,8 @@ Section SR.
   Let last_write_can_join_continue:
     forall a x r g h vs es sj z c t n,
     WellFormed (vs, es) g ->
-    LastWriteCanJoin g (vs, es) sj ->
-    LastWrite (HB (z :: vs, {| e_t:=t; e_edge:=(n, fresh vs)|} :: es)) a h ->
+    LastWriteCanJoin g es sj ->
+    LastWrite (HB ({| e_t:=t; e_edge:=(n, fresh vs)|} :: es)) a h ->
     MM.MapsTo r h g ->
     a_what a = Some (d_task x) ->
     MapsTo z n vs ->
@@ -713,20 +713,20 @@ Section SR.
 
   Let last_write_can_join_reduces:
     forall g cg cg' sj l o l' sj' g' z,
-    LastWriteCanJoin g cg sj ->
+    LastWriteCanJoin g (snd cg) sj ->
 
     WellFormed cg g ->
     WellFormed cg' g' ->
 
     Reduces cg' l o l' ->
     T.TReduces cg (z,o) cg' ->
-    DRF_Check cg' g o g' ->
+    DRF_Check (snd cg') g o g' ->
     SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
 
     length (fst cg) = length sj ->
     LocalToKnows l cg sj ->
 
-    LastWriteCanJoin g' cg' sj'.
+    LastWriteCanJoin g' (snd cg') sj'.
   Proof.
     intros.
     unfold LastWriteCanJoin.
@@ -761,7 +761,7 @@ Section SR.
     wf_ah_well_formed : AccessHistory.T.WellFormed cg g;
     wf_sj_well_formed: SJ_CG.SJ cg k sj;
     wf_dom_incl_prop: DomIncl l (fst cg);
-    wf_last_write_can_join_prop: LastWriteCanJoin g cg sj;
+    wf_last_write_can_join_prop: LastWriteCanJoin g (snd cg) sj;
     wf_local_to_knows_prop: LocalToKnows l cg sj
   }.
 
@@ -770,7 +770,7 @@ Section SR.
     WellFormed cg k sj g l ->
     T.TReduces cg (x,o) cg' ->
     Reduces cg' l o l' ->
-    DRF_Check cg' g o g' ->
+    DRF_Check (snd cg') g o g' ->
     SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
     exists k', WellFormed cg' k' sj' g' l'.
   Proof.
@@ -790,7 +790,7 @@ Section SR.
     WellFormed cg k sj g l ->
     T.TReduces cg (x,o) cg' ->
     Reduces cg' l o l' ->
-    DRF_Check cg' g o g' ->
+    DRF_Check (snd cg') g o g' ->
     exists sj', 
     SJ_CG.Reduces sj cg' sj'.
   Proof.
@@ -815,7 +815,7 @@ Section SR.
     WellFormed cg k sj g l ->
     T.TReduces cg (x,o) cg' ->
     Reduces cg' l o l' ->
-    DRF_Check cg' g o g' ->
+    DRF_Check (snd cg') g o g' ->
     exists sj' k', WellFormed cg' k' sj' g' l'.
   Proof.
     intros.
