@@ -1,0 +1,11 @@
+/node_modules
+*.o
+*.cmx
+*.cmi
+*.cma
+*.cmo
+/sj.ml
+/sj.mli
+/sj.html
+/sj.js
+/sj.byte
