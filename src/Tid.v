@@ -57,7 +57,7 @@ Module TID <: UsualOrderedType.
     unfold Nat_as_OT.eq in *.
     subst.
     intuition.
-  Qed.
+  Defined.
 
   Lemma eq_dec : forall x y : t, {eq x y} + {~ eq x y}.
   Proof.
@@ -71,7 +71,7 @@ Module TID <: UsualOrderedType.
       intros.
       contradiction n1.
       inversion H; auto.
-  Qed.
+  Defined.
 End TID.
 
 
@@ -93,7 +93,7 @@ Lemma tid_eq_dec:
   forall x y : tid, {x = y} + {x <> y}.
 Proof.
   auto using tid_eq_rw, TID.eq_dec.
-Qed.
+Defined.
 
 Section NotIn.
   Variable elt:Type.

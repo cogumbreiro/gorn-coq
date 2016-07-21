@@ -102,6 +102,33 @@ Section Defs.
     Edge k (x,y) ->
     CanCheckOp k {| op_t := JOIN; op_src := x; op_dst:= y|}.
 
+  Lemma can_check_op_dec k o:
+    { CanCheckOp k o } + { ~ CanCheckOp k o }.
+  Proof.
+    destruct o as (t, x, y).
+    destruct t.
+    - destruct (in_edge_dec tid_eq_dec y k). {
+        right.
+        unfold not; intros Hx.
+        inversion Hx; subst; simpl in *; clear Hx.
+        contradiction.
+      }
+      destruct (tid_eq_dec x y). {
+        right.
+        unfold not; intros Hx.
+        inversion Hx; subst; simpl in *; clear Hx.
+        contradiction H1; trivial.
+      }
+      auto using can_check_fork.
+    - destruct (is_edge_dec tid_eq_dec k (x,y)). {
+        left; auto using can_check_join.
+      }
+      right.
+      unfold not; intros.
+      inversion H; subst.
+      contradiction.
+  Defined.
+
   Inductive CheckOp k : op -> known -> Prop :=
   | check_fork:
     forall (x y:tid),
@@ -122,6 +149,102 @@ Section Defs.
     Safe l k ->
     Safe (o::l) (eval o k).
 
+  Fixpoint is_safe t :=
+  match t with
+  | nil => Some nil
+  | o :: t =>
+    match is_safe t with
+    | Some k =>
+      if can_check_op_dec k o
+      then Some (eval o k)
+      else None
+    | _ => None
+    end
+  end.
+
+  Lemma can_check_op_to_check_op:
+    forall o k,
+    CanCheckOp k o ->
+    CheckOp k o (eval o k).
+  Proof.
+    intros.
+    inversion H; subst; clear H; subst; unfold eval; simpl in *;
+    auto using check_fork, check_join.
+  Qed.
+
+  Lemma check_op_to_can_check_op:
+    forall o k,
+    CheckOp k o (eval o k) ->
+    CanCheckOp k o.
+  Proof.
+    intros.
+    inversion H; subst; clear H; subst; unfold eval; simpl in *;
+    auto using can_check_fork, can_check_join.
+  Qed.
+
+  Lemma is_safe_some:
+    forall t k,
+    is_safe t = Some k ->
+    Safe t k.
+  Proof.
+    induction t; intros; simpl in *.
+    - inversion H; subst; auto using safe_nil.
+    - remember (is_safe t).
+      symmetry in Heqo.
+      destruct o. {
+        destruct (can_check_op_dec l a). {
+          inversion H; subst.
+          auto using safe_cons.
+        }
+        inversion H.
+      }
+      inversion H.
+  Qed.
+
+  Lemma safe_to_is_safe:
+    forall t k,
+    Safe t k ->
+    is_safe t = Some k.
+  Proof.
+    induction t; intros. {
+      inversion H.
+      subst.
+      auto.
+    }
+    inversion H;subst;clear H.
+    apply IHt in H4.
+    simpl.
+    rewrite H4.
+    destruct (can_check_op_dec k0 a). {
+      trivial.
+    }
+    contradiction.
+  Qed.
+
+  Lemma safe_fun:
+    forall t k k',
+    Safe t k ->
+    Safe t k' ->
+    k' = k.
+  Proof.
+    intros.
+    apply safe_to_is_safe in H.
+    apply safe_to_is_safe in H0.
+    rewrite H in H0.
+    inversion H0; trivial.
+  Qed.
+
+  Lemma is_safe_none:
+    forall t k,
+    is_safe t = None ->
+    ~ Safe t k.
+  Proof.
+    intros.
+    unfold not; intros.
+    apply safe_to_is_safe in H0.
+    rewrite H in H0.
+    inversion H0.
+  Qed.
 
   Lemma safe_reduces:
     forall o t k k',
@@ -713,7 +836,7 @@ End Defs.
 
 Section Examples.
 
-  Lemma check_fork_nil:
+  Let check_fork_nil:
     forall x y,
     x <> y ->
     CheckOp nil {| op_t := FORK; op_src := x; op_dst := y |} ((x, y) :: nil).
@@ -725,4 +848,46 @@ Section Examples.
     destruct H1 as (N, _).
     inversion N.
   Qed.
+
+  Let x := taskid 0.
+  Let y := taskid 1.
+  Let z := taskid 2.
+  Let e1 := {|op_t:=FORK;op_src:=x;op_dst:=y|}.
+  Let e2 := {|op_t:=FORK;op_src:=y;op_dst:=z|}.
+  Goal exists k, Safe (e2::e1::nil) k.
+  Proof.
+  assert (Safe (e1::nil) ((x,y)::nil)). {
+    assert (R: (x,y)::nil= eval e1 nil) by eauto.
+    rewrite R.
+    assert (x<>y). {
+      unfold not; intros.
+      subst.
+      inversion H.
+    }
+    apply safe_cons; eauto using check_fork_nil, safe_nil.
+    apply check_op_to_can_check_op.
+    unfold eval; simpl.
+    apply check_fork_nil; auto.
+  }
+  exists (fork y z ((x,y)::nil)).
+  assert (R: fork y z ((x, y) :: nil) = eval e2 ((x,y)::nil)) by auto.
+  rewrite R.
+  apply safe_cons; auto.
+  apply can_check_fork.
+  - unfold not; intros; subst.
+    inversion H0.
+  - unfold not; intros.
+    destruct H0 as (e, (Hi,He)).
+    destruct Hi.
+    + subst.
+      destruct He; simpl in *; inversion H0.
+    + inversion H0.
+  Qed.
+
+  Goal is_safe (e2::e1::nil) = Some ((y,z)::(x, y) :: nil).
+  Proof.
+  compute; auto.
+  Qed.
 End Examples.
+
+Extraction "ocaml/sj.ml" is_safe.
