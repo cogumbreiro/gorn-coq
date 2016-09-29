@@ -10,6 +10,7 @@ Require Import Node.
 Require Import CG.
 Require SJ_CG.
 Require Import Trace.
+Require Import Omega.
 
 Import AccessHistory.T.
 

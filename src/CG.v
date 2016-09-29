@@ -3,6 +3,7 @@ Require Import Coq.Relations.Relation_Definitions.
 Require Import Coq.Lists.ListSet.
 Require Import Aniceto.ListSet.
 Require Import Aniceto.Graphs.Graph.
+Require Import Omega.
 
 Require Import Tid.
 Require Import Mid.

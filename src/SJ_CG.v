@@ -1,6 +1,7 @@
 Require Import Coq.Lists.List.
 Require Import Aniceto.Graphs.Graph.
 Require Import Aniceto.Graphs.FGraph.
+Require Import Omega.
 
 Require Import CG.
 Require Import SafeJoins.

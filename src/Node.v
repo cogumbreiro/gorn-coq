@@ -5,6 +5,7 @@ Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FMapAVL.
 Require Import Coq.FSets.FSetAVL.
 Require Import Coq.Arith.Peano_dec.
+Require Import Omega.
 
 Require Import Aniceto.Map.
 

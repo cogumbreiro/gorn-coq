@@ -3,6 +3,7 @@ Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FMapAVL.
 Require Coq.FSets.FMapFacts.
 Require Import Coq.Arith.Peano_dec.
+Require Import Omega.
 
 Inductive var := varid : nat -> var.
 

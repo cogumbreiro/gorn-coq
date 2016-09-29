@@ -1,7 +1,7 @@
 Set Implicit Arguments.
 
 Require Import Coq.Lists.List.
-Require Omega.
+Require Import Omega.
 
 Section Defs.
   Variable A:Type.
