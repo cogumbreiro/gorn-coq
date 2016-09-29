@@ -29,6 +29,18 @@ Section Defs.
     IndexOf x n l ->
     IndexOf x n (y :: l).
 
+  (** [First] obtains index [n] of the first occurence of [x] in [l]. *)
+
+  Inductive First (x:A) : nat -> list A -> Prop :=
+  | first_eq:
+    forall l,
+    ~ List.In x l ->
+    First x (length l) (x::l)
+  | first_cons:
+    forall n l y,
+    First x n l ->
+    First x n (y::l).
+
   (** Checks if a number is an index of the given list,
       which is defined whenever there is an element [x] with an
       index of [n]. *)
@@ -480,4 +492,116 @@ Section MapsTo.
     intros.
     eauto using index_def, maps_to_to_index_of.
   Qed.
+
 End MapsTo.
+
+Section IndexOf.
+  Variable A:Type.
+
+  Lemma index_of_tr:
+    forall {A B} (a:list A) (b:list B) x n,
+    length a = length b ->
+    IndexOf x n a ->
+    exists y, IndexOf y n b.
+  Proof.
+    induction a; intros. {
+      inversion H0.
+    }
+    inversion H0; subst; clear H0. {
+      destruct b. {
+        simpl in H; inversion H.
+      }
+      simpl in *; inversion H.
+      rewrite H1.
+      eauto using index_of_eq.
+    }
+    destruct b. {
+      simpl in *.
+      inversion H.
+    }
+    simpl in *.
+    inversion H.
+    apply IHa with (b:=b0) in H3; auto.
+    destruct H3 as (y, Hy).
+    eauto using index_of_cons.
+  Qed.
+
+End IndexOf.
+
+Section First.
+  Variable A:Type.
+  Variable eq_dec: forall (x y:A), {x = y} + {x <> y}.
+
+  Let in_to_first:
+    forall vs (x:A),
+    List.In x vs ->
+    exists n, First x n vs.
+  Proof.
+    induction vs; intros. {
+      inversion H.
+    }
+    destruct H. {
+      subst.
+      destruct (in_dec eq_dec x vs). {
+        apply IHvs in i.
+        destruct i as (n, Hf).
+        eauto using first_cons.
+      }
+      eauto using first_eq.
+    }
+    apply IHvs in H.
+    destruct H as (n, Hf).
+    eauto using first_cons.
+  Qed.
+
+  Let first_to_in:
+    forall vs (x:A) n,
+    First x n vs ->
+    List.In x vs.
+  Proof.
+    induction vs; intros. {
+      inversion H.
+    }
+    inversion H; subst; clear H. {
+      auto using in_eq.
+    }
+    apply IHvs in H2.
+    auto using in_cons.
+  Qed.
+
+  Let first_to_index_of:
+    forall vs (x:A) n,
+    First x n vs ->
+    IndexOf x n vs.
+  Proof.
+    induction vs; intros. {
+      inversion H.
+    }
+    inversion H; subst; clear H. {
+      auto using index_of_eq.
+    }
+    apply IHvs in H2.
+    auto using index_of_cons.
+  Qed.
+
+  Lemma first_fun:
+    forall vs (x:A) n n',
+    First x n vs ->
+    First x n' vs ->
+    n = n'.
+  Proof.
+    induction vs; intros. {
+      inversion H.
+    }
+    inversion H; subst; clear H. {
+      inversion H0; subst; clear H0. {
+        trivial.
+      }
+      contradiction H3; eauto using first_to_in.
+    }
+    inversion H0; subst; clear H0. {
+      contradiction H2; eauto using first_to_in.
+    }
+    eauto.
+  Qed.
+End First.
