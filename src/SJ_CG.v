@@ -204,7 +204,7 @@ End Props.
     eauto using free_def, List.in_eq.
   Qed.
 
-  Let can_join_to_free:
+  Lemma can_join_to_free:
     forall sj x n ,
     CanJoin n x sj ->
     Free x sj.
@@ -467,7 +467,7 @@ End Props.
     induction sj; intros; inversion_clear H. {
       inversion H1.
     }
-    inversion_clear H1; eauto using free_cons, knows_def.
+    inversion_clear H1; eauto using free_cons, knows_def, can_join_to_free.
   Qed.
 
   Lemma knows_to_in:
@@ -1296,6 +1296,230 @@ Section SJ.
     auto using maps_to_length_rw.
   Qed.
 
+  Let can_join_to_node_0:
+    forall n x sj,
+    CanJoin n x sj ->
+    Node n sj.
+  Proof.
+    intros.
+    induction H; auto using node_cons, node_eq.
+  Qed.
 
+  Let can_join_to_node:
+    forall vs es sj x k n,
+    SJ (vs,es) k sj ->
+    CanJoin n x sj ->
+    Node n vs.
+  Proof.
+    intros.
+    apply can_join_to_node_0 in H0.
+    inversion H.
+    eauto using node_tr.
+  Qed.
+
+  Let can_join_to_in:
+    forall vs es k sj x n,
+    SJ (vs,es) k sj ->
+    CanJoin n x sj ->
+    List.In x vs.
+  Proof.
+    intros.
+    inversion H.
+    simpl in *.
+    eauto using can_join_to_free.
+  Qed.
+
+  Inductive HBKnows (cg:computation_graph) : (tid * tid) -> Prop :=
+  | hb_knows_def:
+    forall x y nx ny,
+    First x nx (fst cg) ->
+    First y ny (fst cg) ->
+    HB (snd cg) nx ny ->
+    HBKnows cg (x, y).
+
+  Definition KnowsEquiv sj cg :=
+  forall p, Knows (fst cg) sj p <-> HBKnows cg p.
+
+  Let can_join_cons_1:
+    forall vs es p y,
+    HBKnows (vs,es) p ->
+    HBKnows (y :: vs, es) p.
+  Proof.
+    intros ? ? (a,b); intros.
+    inversion H; subst.
+    simpl in *.
+    eauto using hb_knows_def, first_cons.
+  Qed.
+
+  Let can_join_cons_2:
+    forall p vs e es,
+    HBKnows (vs, es) p ->
+    HBKnows (vs, e:: es) p.
+  Proof.
+    intros (a,b); intros.
+    inversion H; subst.
+    simpl in *.
+    eauto using hb_knows_def, hb_impl_cons.
+  Qed.
+
+  Let fresh_absurd_eq:
+    forall {A} vs (x:A),
+     ~ fresh vs = fresh (x :: vs).
+  Proof.
+    induction vs; intros. {
+      unfold not; intros N.
+      inversion N.
+    }
+    unfold fresh in *.
+    simpl in *.
+    unfold not; intros N.
+    inversion N.
+    omega.
+  Qed.
+
+  Let can_join_pres_1:
+    forall sj cg sj' cg' e a b,
+    length (fst cg) = length sj ->
+    KnowsEquiv sj cg ->
+    CG.Reduces cg e cg' ->
+    Reduces sj cg' sj' ->
+    Knows (fst cg') sj' (a,b)->
+    HBKnows cg' (a, b).
+  Proof.
+    intros ? ? ? ? ? ? ?.
+    intros Heq; intros.
+    destruct e as (z,[]).
+    - rename t into y.
+      simpl_red; simpl in *.
+      rename prev into nz.
+      inversion H2; subst; clear H2.
+      rename nx0 into na.
+      inversion H4; subst; clear H4. {
+        inversion H7; subst; clear H7.
+        - (* cons *)
+          apply maps_to_inv in H3.
+          destruct H3 as [(?,?)|(?, Hmt)]. {
+            subst.
+            apply can_join_absurd_lt in H4; try contradiction.
+            unfold fresh, NODE.lt; simpl; auto with *.
+          }
+          apply maps_to_inv in Hmt.
+          destruct Hmt as [(?,?)|(?, Hmt)]. {
+            subst.
+            apply maps_to_length_rw in Heq.
+            rewrite Heq in *.
+            apply can_join_absurd_fresh in H4.
+            contradiction.
+          }
+          assert (Hk: Knows vs sj (a, b)) by eauto using knows_def.
+          apply H in Hk.
+          eauto.
+        - (* eq *)
+          assert (Hx:=Heq).
+          apply maps_to_length_rw in Heq.
+          rewrite <- Heq in *.
+          assert (Hi: List.In a (y :: z :: vs)). {
+            eauto using maps_to_to_in.
+          }
+          apply in_to_first in Hi; auto using tid_eq_dec.
+          destruct Hi as (na, Hfa).
+          assert (Hfy: First y (fresh (z::vs)) (y :: z :: vs)). {
+            apply first_eq.
+            unfold not; intros N.
+            destruct N. {
+              subst.
+              intuition.
+            }
+            contradiction.
+          }
+          apply hb_knows_def with (nx:=na) (ny:=fresh (z::vs)); simpl; auto.
+          apply maps_to_inv in H3.
+          destruct H3 as [(?,N)|(?,Hmt)]. {
+            subst.
+            apply fresh_absurd_eq in N.
+            contradiction.
+          }
+          simpl_node.
+          assert (Hf: exists nf, First z nf vs)
+          by eauto using maps_to_to_first, tid_eq_dec.
+          destruct Hf as (nf, Hf).
+          simpl_node.
+          apply Node.maps_to_inv_key in Hmt.
+          simpl_node.
+          assert (na <> fresh vs). {
+            unfold not; intros; subst.
+            assert (a <> y). {
+              unfold not; intros; subst.
+            }
+          }
+          + 
+      }
+  Qed.
+
+  Let can_join_hb_preservation:
+    forall sj cg sj' cg' e,
+    CanJoinSJ_CG sj cg ->
+    CG.Reduces cg e cg' ->
+    Reduces sj cg' sj' ->
+    CanJoinSJ_CG sj' cg'.
+  Proof.
+    intros.
+    unfold CanJoinSJ_CG.
+    intros.
+    split; intros. {
+    }
+    destruct e as (z,[]).
+    - rename t into y.
+      simpl_red; simpl in *.
+      inversion H3; subst; clear H3. {
+        assert (nx = fresh (z :: vs)). {
+          destruct nx.
+          unfold fresh.
+          simpl in *.
+          subst.
+          trivial.
+        }
+        subst.
+        assert (ny = fresh (z::vs)). {
+          inversion H2; subst; clear H2. {
+            unfold fresh in *.
+            simpl in *.
+            contradiction H7.
+            eapply can_join_to_in in H8; eauto.
+          }
+        }
+        inversion H2; subst.
+        apply can_join_inv_copy_1 in H2.
+      }
+      unfold CanJoinToHB; intros; simpl in *.
+      inversion H2; subst; clear H2. {
+        inversion H5; subst; clear H5. {
+          inversion H
+        }
+      }
+    inversion H
+  Qed.
+
+  Let sj_first_can_join:
+    forall sj vs es x k ny nx,
+    SJ (vs,es) k sj ->
+    CanJoin ny x sj ->
+    First x nx vs ->
+    HB es nx ny.
+  Proof.
+    induction sj; intros. {
+      inversion H0.
+    }
+    inversion H0; subst; clear H0.
+    - 
+    induction H0.
+    assert (Node ny vs) by eauto.
+    eapply can_join_to_node_cg in H0; eauto.
+    inversion H.
+    apply node_tr with (b:=vs) in H0; auto.
+  Qed.
+  *)
 End SJ.
+
+
 
