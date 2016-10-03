@@ -832,6 +832,19 @@ Section Defs.
     eauto.
   Qed.
 
+  Require Import Aniceto.Graphs.FGraph.
+
+  Corollary deadlock_avoidance:
+    forall t k wfg,
+    Safe t k ->
+    (forall e, Edge wfg e -> Edge k e) ->
+    DAG (Edge wfg).
+  Proof.
+    intros.
+    assert (DAG (Edge k)) by eauto using safe_to_dag.
+    apply dag_impl with (E:=Edge k); auto.
+  Qed.
+
 End Defs.
 
 Section Examples.
