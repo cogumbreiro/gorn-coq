@@ -572,12 +572,7 @@ End MoreProps.
       clear H' H2
   | [ H1: First ?x ?nx ?v, H2: First ?x ?ny ?v |- _ ] =>
       let H' := fresh "H" in
-      assert (H': y = x) by eauto using first_fun;
-      rewrite H' in *;
-      clear H' H2
-  | [ H1: First ?x ?n ?v, H2: First ?y ?n (_::?v) |- _ ] =>
-      let H' := fresh "H" in
-      assert (H': y = x) by eauto using first_cons_fun;
+      assert (H': ny = nx) by eauto using first_fun;
       rewrite H' in *;
       clear H' H2
   | [ H1: MapsTo ?x ?n1 ?v, H2: MapsTo ?x ?n2 ?v |- _ ] =>
