@@ -570,6 +570,11 @@ End MoreProps.
       assert (H': y = x) by eauto using maps_to_fun_1;
       rewrite H' in *;
       clear H' H2
+  | [ H1: First ?x ?nx ?v, H2: First ?x ?ny (_::?v) |- _ ] =>
+      let H' := fresh "H" in
+      assert (H': ny = nx) by eauto using first_cons_fun;
+      rewrite H' in *;
+      clear H' H2
   | [ H1: First ?x ?nx ?v, H2: First ?x ?ny ?v |- _ ] =>
       let H' := fresh "H" in
       assert (H': ny = nx) by eauto using first_fun;
