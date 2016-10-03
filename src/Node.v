@@ -152,6 +152,8 @@ Section Props.
 
   Definition TaskOf (n:node) (x:A) (vs:list A) := Bijection.IndexOf x (node_id n) vs.
 
+  Definition First (x:A) (n:node) (vs:list A) := Bijection.First x (node_id n) vs.
+
   Lemma maps_to_fun_1:
     forall x y n (vs:list A),
     MapsTo x n vs ->
@@ -367,6 +369,16 @@ Section MoreProps.
     - intuition.
   Qed.
 
+  Lemma maps_to_inv_key:
+    forall {A} (x:A) y vs,
+    MapsTo y (fresh vs) (x :: vs) ->
+    y = x.
+  Proof.
+    unfold MapsTo; intros.
+    apply Bijection.maps_to_inv_key in H.
+    trivial.
+  Qed.
+
   Lemma task_of_inv:
     forall {A} x (y:A) n vs,
     TaskOf n x (y :: vs) ->
@@ -445,6 +457,110 @@ Section MoreProps.
   Proof.
     unfold TaskOf, fresh; eauto using Bijection.index_of_eq.
   Qed.
+
+  Lemma first_fun:
+    forall {A} (x:A) vs (n n':node),
+    First x n vs ->
+    First x n' vs ->
+    n' = n.
+  Proof.
+    intros.
+    destruct n, n'.
+    eauto using Bijection.first_fun.
+  Qed.
+
+  Lemma in_to_node:
+    forall {A} vs (x:A),
+    List.In x vs ->
+    exists n, TaskOf n x vs.
+  Proof.
+    intros.
+    apply Bijection.in_to_index_of in H.
+    destruct H as (n, (Hx, Hy)).
+    unfold TaskOf.
+    exists (make n).
+    auto.
+  Qed.
+
+  Lemma node_tr:
+    forall {A B} (a:list A) (b:list B) n,
+    length a = length b ->
+    Node n a -> Node n b.
+  Proof.
+    intros.
+    unfold Node in *.
+    eauto using Bijection.index_tr.
+  Qed.
+
+  Lemma first_cons:
+    forall {A} (x y:A) n vs,
+    First x n vs ->
+    First x n (y::vs).
+  Proof.
+    unfold First; intros.
+    auto using Bijection.first_cons.
+  Qed.
+
+  Lemma first_eq:
+    forall {A} (x:A) vs,
+    ~ List.In x vs ->
+    First x (fresh vs) (x::vs).
+  Proof.
+    unfold First, fresh; intros.
+    simpl.
+    auto using Bijection.first_eq.
+  Qed.
+
+  Variable A:Type.
+  Variable eq_dec: forall (x y:A), {x = y} + {x <> y}.
+
+  Lemma in_to_first:
+    forall vs (x:A),
+    List.In x vs ->
+    exists n, First x n vs.
+  Proof.
+    unfold First; intros.
+    apply Bijection.in_to_first in H; auto.
+    destruct H as (n, Hf).
+    exists (make n).
+    simpl.
+    trivial.
+  Qed.
+
+  Lemma first_simpl_1:
+    forall {A} (x:A) y vs n,
+    First x n (y :: vs) ->
+    x <> y ->
+    First x n vs.
+  Proof.
+    intros.
+    inversion H; subst; clear H; auto.
+    contradiction H0; auto.
+  Qed.
+
+  Lemma maps_to_to_first:
+    forall (x:A) n vs,
+    MapsTo x n vs ->
+    exists n', First x n' vs.
+  Proof.
+    intros.
+    apply maps_to_to_in in H.
+    auto using in_to_first.
+  Qed.
+
+  Lemma first_cons_fun:
+    forall n n' (x:A) y vs,
+    First x n vs ->
+    First x n' (y :: vs) ->
+    n' = n.
+  Proof.
+    unfold First; intros.
+    eapply Bijection.first_cons_fun in H0; eauto.
+    destruct n, n'.
+    simpl in *.
+    subst.
+    trivial.
+  Qed.
 End MoreProps.
 
   Ltac simpl_node := 
@@ -452,6 +568,16 @@ End MoreProps.
   | [ H1: MapsTo ?x ?n ?v, H2: MapsTo ?y ?n ?v |- _ ] =>
       let H' := fresh "H" in
       assert (H': y = x) by eauto using maps_to_fun_1;
+      rewrite H' in *;
+      clear H' H2
+  | [ H1: First ?x ?nx ?v, H2: First ?x ?ny ?v |- _ ] =>
+      let H' := fresh "H" in
+      assert (H': y = x) by eauto using first_fun;
+      rewrite H' in *;
+      clear H' H2
+  | [ H1: First ?x ?n ?v, H2: First ?y ?n (_::?v) |- _ ] =>
+      let H' := fresh "H" in
+      assert (H': y = x) by eauto using first_cons_fun;
       rewrite H' in *;
       clear H' H2
   | [ H1: MapsTo ?x ?n1 ?v, H2: MapsTo ?x ?n2 ?v |- _ ] =>
@@ -472,5 +598,9 @@ End MoreProps.
   | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H
   | [ H1: MapsTo ?x _ (?y :: _), H2: ?x <> ?y |- _ ] => apply maps_to_neq in H1; auto
   | [ H1: MapsTo ?x _ (?y :: _), H2: ?y <> ?x |- _ ] => apply maps_to_neq in H1; auto
+  | [ H1: First ?x _ (?y :: _), H2: ?x <> ?y |- _ ] => apply first_simpl_1 in H1; auto
+  | [ H1: First ?x _ (?y :: _), H2: ?y <> ?x |- _ ] => apply first_simpl_1 in H1; auto
   | [ H: MapsTo ?x _ (?x :: _) |- _ ] => apply maps_to_inv_eq in H; rewrite H in *; clear H
+  | [ H: MapsTo ?y (fresh ?vs) (?x :: ?vs) |- _ ] => apply maps_to_inv_key in H; rewrite H in *; clear H
+  | [ H: ?x = ?x |- _] => clear H
   end.

@@ -528,11 +528,28 @@ Section IndexOf.
 
 End IndexOf.
 
+Section Index.
+  Variable A:Type.
+
+  Lemma index_tr:
+    forall {A B} (a:list A) (b:list B) n,
+    length a = length b ->
+    Index n a ->
+    Index n b.
+  Proof.
+    intros.
+    inversion H0.
+    apply index_of_tr with (b0:=b) in H1; auto.
+    destruct H1 as (y, Hi).
+    eauto using index_def.
+  Qed.
+End Index.
+
 Section First.
   Variable A:Type.
   Variable eq_dec: forall (x y:A), {x = y} + {x <> y}.
 
-  Let in_to_first:
+  Lemma in_to_first:
     forall vs (x:A),
     List.In x vs ->
     exists n, First x n vs.
@@ -603,5 +620,19 @@ Section First.
       contradiction H2; eauto using first_to_in.
     }
     eauto.
+  Qed.
+
+  Lemma first_cons_fun:
+    forall n n' (x:A) y vs,
+    First x n vs ->
+    First x n' (y :: vs) ->
+    n' = n.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0. {
+      contradiction H3.
+      eauto using first_to_in.
+    }
+    eauto using first_fun.
   Qed.
 End First.
