@@ -245,6 +245,20 @@ Section Edges.
     forall x y,
     HB_Edge (snd cg) (x, y) ->
     Node x (fst cg) /\ Node y (fst cg).
+
+
+  Inductive SpawnPoint x n : computation_graph -> Prop :=
+  | spawn_point_eq:
+    forall vs es n',
+    SpawnPoint x n (x::vs, F (n, n') :: es)
+  | spawn_point_cons_1:
+    forall vs es y,
+    SpawnPoint x n (vs, es) ->
+    SpawnPoint x n (y::vs, es)
+  | spawn_point_cons_2:
+    forall vs es e,
+    SpawnPoint x n (vs, es) ->
+    SpawnPoint x n (vs, e::es).
 End Edges.
 
 Section Props.
