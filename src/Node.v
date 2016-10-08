@@ -561,6 +561,14 @@ Section MoreProps.
     subst.
     trivial.
   Qed.
+
+  Lemma fresh_cons_rw_next:
+    forall (x:A) l,
+    fresh (x :: l) = node_next (fresh l).
+  Proof.
+    intros.
+    unfold fresh, node_next; auto.
+  Qed.
 End MoreProps.
 
   Ltac simpl_node := 
