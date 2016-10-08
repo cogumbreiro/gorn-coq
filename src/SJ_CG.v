@@ -1340,15 +1340,16 @@ Section SJ.
   Definition KnowsEquiv sj cg :=
   forall n x, CanJoin n x sj <-> HBCanJoin cg n x.
 
-  Let hb_can_join_fork:
-    forall vs es n z y e,
-    HBCanJoin (vs, es) n z ->
-    HBCanJoin (y :: vs, F e :: es) n z.
+  Let hb_can_join_neq:
+    forall vs es n x y e,
+    x <> y ->
+    HBCanJoin (vs, es) n x ->
+    HBCanJoin (y :: vs, F e :: es) n x.
   Proof.
     intros.
-    inversion H; subst; clear H;
+    inversion H0; subst; clear H0;
     simpl in *;
-    eauto using hb_can_join_def, spawn_point_fork, hb_impl_cons.
+    eauto using hb_can_join_def, spawn_point_neq, hb_impl_cons.
   Qed.
 
   Let hb_can_join_continue:
@@ -1403,7 +1404,7 @@ Section SJ.
   Proof.
     intros.
     apply hb_can_join_def with (ny:=n). {
-      auto using spawn_point_eq, spawn_point_fork, spawn_point_continue.
+      auto using spawn_point_eq, spawn_point_eq, spawn_point_continue.
     }
     simpl.
     eauto using hb_edge_to_hb, hb_edge_def, edge_eq, in_cons, in_eq.
@@ -1418,6 +1419,27 @@ Section SJ.
     intros.
     inversion H; subst; clear H.
     eauto using hb_can_join_def, hb_trans.
+  Qed.
+
+  Let spawn_point_to_in:
+    forall es vs x n,
+    SpawnPoint x n (vs, es) ->
+    List.In x vs.
+  Proof.
+    induction es; intros. {
+      inversion H.
+    }
+    inversion H; subst; clear H; eauto using in_cons, in_eq.
+  Qed.
+
+  Let hb_can_join_to_in:
+    forall vs es n x,
+    HBCanJoin (vs, es) n x ->
+    List.In x vs.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    eauto.
   Qed.
 
   Let can_join_pres_fork:
@@ -1437,6 +1459,11 @@ Section SJ.
     inversion H3; subst; clear H3; simpl in *. {
       inversion H2; subst; clear H2; simpl in *.
       - apply Hind in H3.
+        assert (z <> y). {
+          unfold not; intros N; subst.
+          apply hb_can_join_to_in in H3.
+          contradiction.
+        }
         auto.
       - apply maps_to_length_rw in Heq.
         rewrite <- Heq in *.
@@ -1451,14 +1478,26 @@ Section SJ.
     assert (R: length (x :: vs) = length (Cons y nz :: sj)) by (simpl; auto).
     apply maps_to_length_rw in R.
     rewrite <- R.
-    destruct H2 as [(?,Hc)|[(?,Hc)|(?,?)]]; subst; try (apply Hind in Hc;
+    destruct H2 as [(?,Hc)|[(?,Hc)|(?,?)]]; subst.
+    - apply Hind in Hc.
+      apply hb_can_join_to_in in Hc.
+      contradiction.
+    - apply Hind in Hc.
       apply hb_can_join_trans with (n:=nz); simpl;
-      eauto using hb_edge_to_hb, hb_edge_def, edge_eq, in_cons, in_eq).
-    apply maps_to_length_rw in Heq.
-    rewrite <- Heq in *.
-    simpl_node.
+      eauto using hb_edge_to_hb, hb_edge_def, edge_eq, in_cons, in_eq.
+    - apply maps_to_length_rw in Heq.
+      rewrite <- Heq in *.
+      simpl_node.
   Qed.
-
+(*
+  Lemma hb_inv_cons:
+    forall x y n1 n2 t es,
+    HB ({| e_t:=t; e_edge:=(n1, n2) |}::es) x y ->
+    (n2 = y /\ (n1 = x \/ HB es x n1)) \/
+    (n2 <> y /\ HB es x y).
+  Proof.
+  Admitted.
+*)
   Let can_join_pres_fork_2:
     forall n cg sj z sj' cg' x y,
     length (fst cg) = length sj ->
@@ -1474,12 +1513,37 @@ Section SJ.
     simpl in *.
     rename ny0 into nz.
     rewrite fresh_cons_rw_next in *.
+    inversion H1; subst; clear H1. {
+      clear nx H12.
+      rename prev into nx.
+      apply hb_inv_cons in H2.
+      apply maps_to_length_rw in H.
+      rewrite H in *.
+      destruct H2 as [(?,[?|?])|(?,?)].
+      - subst.
+        rewrite <- fresh_cons_rw_next with (x:=Cons y nx) in *.
+        apply can_join_copy.
+        apply can_join_eq.
+      destruct (node_eq_dec n (node_next (fresh vs))). {
+        subst.
+        rewrite H in *.
+        rewrite <- fresh_cons_rw_next with (x:=Cons y nx) in *.
+        apply can_join_copy.
+      }
+      apply can_join_cons.
+      apply can_join_copy.
+      
+    }
     destruct (node_eq_dec n (node_next (fresh sj))). {
       subst.
       apply maps_to_length_rw in H.
       rewrite <- H in H2.
+      inversion H1; subst; clear H1. {
       rewrite <- fresh_cons_rw_next with (x:=Cons y prev).
-      apply can_join_copy.
+        clear H2.
+        apply can_join_copy.
+        apply can_join_cons.
+      }
       destruct (tid_eq_dec z y). {
         subst.
         apply can_join_cons.
