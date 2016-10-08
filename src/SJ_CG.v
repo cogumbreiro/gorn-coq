@@ -7,7 +7,6 @@ Require Import CG.
 Require Import SafeJoins.
 Require Import Tid.
 Require Import Node.
-(*Require Import Bijection.*)
 
 Require Import Coq.Structures.OrderedTypeEx.
 Module MN := FMapAVL.Make Nat_as_OT.
@@ -1341,26 +1340,37 @@ Section SJ.
   Definition KnowsEquiv sj cg :=
   forall n x, CanJoin n x sj <-> HBCanJoin cg n x.
 
-  Let hb_can_join_cons_1:
-    forall vs es y n x,
-    HBCanJoin (vs,es) n x ->
-    HBCanJoin (y :: vs, es) n x.
+  Let hb_can_join_fork:
+    forall vs es n z y e,
+    HBCanJoin (vs, es) n z ->
+    HBCanJoin (y :: vs, F e :: es) n z.
   Proof.
     intros.
-    inversion H; subst.
-    simpl in *.
-    eauto using hb_can_join_def, first_cons, spawn_point_cons_1.
+    inversion H; subst; clear H;
+    simpl in *;
+    eauto using hb_can_join_def, spawn_point_fork, hb_impl_cons.
   Qed.
 
-  Let hb_can_join_cons_2:
-    forall n x vs e es,
-    HBCanJoin (vs, es) n x ->
-    HBCanJoin (vs, e:: es) n x.
+  Let hb_can_join_continue:
+    forall vs es n z y e,
+    HBCanJoin (vs, es) n z ->
+    HBCanJoin (y :: vs, C e :: es) n z.
   Proof.
     intros.
-    inversion H; subst.
+    inversion H; subst; clear H;
+    simpl in *;
+    eauto using hb_can_join_def, spawn_point_continue, hb_impl_cons.
+  Qed.
+
+  Let hb_can_join_join:
+    forall vs es n y z e,
+    HBCanJoin (y :: vs, es) n z ->
+    HBCanJoin (y :: vs, J e :: es) n z.
+  Proof.
+    intros.
+    inversion H; subst; clear H;
     simpl in *.
-    eauto using hb_can_join_def, hb_impl_cons, spawn_point_cons_2.
+    eauto using hb_can_join_def, spawn_point_join, hb_impl_cons.
   Qed.
 
   Let fresh_absurd_eq:
@@ -1393,7 +1403,7 @@ Section SJ.
   Proof.
     intros.
     apply hb_can_join_def with (ny:=n). {
-      auto using spawn_point_eq, spawn_point_cons_1, spawn_point_cons_2.
+      auto using spawn_point_eq, spawn_point_fork, spawn_point_continue.
     }
     simpl.
     eauto using hb_edge_to_hb, hb_edge_def, edge_eq, in_cons, in_eq.
@@ -1447,6 +1457,36 @@ Section SJ.
     apply maps_to_length_rw in Heq.
     rewrite <- Heq in *.
     simpl_node.
+  Qed.
+
+  Let can_join_pres_fork_2:
+    forall n cg sj z sj' cg' x y,
+    length (fst cg) = length sj ->
+    KnowsEquiv sj cg ->
+    CG.Reduces cg (x, CG.FORK y) cg' ->
+    Reduces sj cg' sj' ->
+    HBCanJoin cg' n z ->
+    CanJoin n z sj'.
+  Proof.
+    intros.
+    simpl_red.
+    inversion H3; subst; clear H3.
+    simpl in *.
+    rename ny0 into nz.
+    rewrite fresh_cons_rw_next in *.
+    destruct (node_eq_dec n (node_next (fresh sj))). {
+      subst.
+      apply maps_to_length_rw in H.
+      rewrite <- H in H2.
+      rewrite <- fresh_cons_rw_next with (x:=Cons y prev).
+      apply can_join_copy.
+      destruct (tid_eq_dec z y). {
+        subst.
+        apply can_join_cons.
+      }
+    }
+    apply can_join_cons.
+    apply can_join_copy.
   Qed.
 
   Let can_join_pres_1:

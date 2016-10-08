@@ -251,14 +251,18 @@ Section Edges.
   | spawn_point_eq:
     forall vs es n',
     SpawnPoint x n (x::vs, F (n, n') :: es)
-  | spawn_point_cons_1:
-    forall vs es y,
+  | spawn_point_continue:
+    forall vs es e y,
     SpawnPoint x n (vs, es) ->
-    SpawnPoint x n (y::vs, es)
-  | spawn_point_cons_2:
-    forall vs es e,
+    SpawnPoint x n (y::vs, (C e) :: es)
+  | spawn_point_fork:
+    forall vs es e y,
     SpawnPoint x n (vs, es) ->
-    SpawnPoint x n (vs, e::es).
+    SpawnPoint x n (y::vs, (F e) :: es)
+  | spawn_point_join:
+    forall vs es e y,
+    SpawnPoint x n (y::vs, es) ->
+    SpawnPoint x n (y::vs, (J e) :: es).
 End Edges.
 
 Section Props.
