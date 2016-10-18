@@ -249,8 +249,8 @@ Section Edges.
 
   Inductive SpawnPoint x n : computation_graph -> Prop :=
   | spawn_point_eq:
-    forall vs es n',
-    SpawnPoint x n (x::vs, F (n, n') :: es)
+    forall vs es n' n'',
+    SpawnPoint x n (x::vs, F (n', n'') :: C(n', n) :: es)
   | spawn_point_neq:
     forall vs es e y,
     x <> y ->
@@ -907,18 +907,7 @@ Section DAG.
     simpl.
     eauto using reaches_def.
   Qed.
-(*
-  Let walk2_to_hb:
-    forall vs es a b w x n t,
-    Walk2 (FGraph.Edge ((n, fresh vs) :: map e_edge es)) a b w ->
-    HB (x :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) a b.
-  Proof.
-    intros.
-    apply fgraph_to_hb.
-    simpl.
-    eauto using reaches_def.
-  Qed.
-*)
+
   Notation in_edge_dec := (in_dec (Pair.pair_eq_dec node_eq_dec)).
 
   Lemma edge_to_node_cons_node:
@@ -1067,6 +1056,424 @@ Section DAG.
     }
     left; 
     eauto using FGraph.walk2_inv_not_in_walk, reaches_def.
+  Qed.
+
+  Let edge_eq_to_reaches:
+    forall {A} (x y:A) es,
+    Reaches (FGraph.Edge ((x, y) :: es)) x y.
+  Proof.
+    intros.
+    apply reaches_def with (w:=(x,y)::nil).
+    apply edge_to_walk2.
+    simpl.
+    auto.
+  Qed.
+
+  Let fdag_absurd_cons:
+    forall {A} (x:A) es,
+    ~ DAG (FGraph.Edge ((x, x) :: es)).
+  Proof.
+    intros.
+    assert (N: Reaches (FGraph.Edge ((x, x) :: es)) x x) by auto.
+    unfold not; intros H.
+    apply H in N.
+    contradiction.
+  Qed.
+
+  Lemma fdag_reaches_inv_cons_1 {A} (eq_dec: forall (x y:A), { x = y } + { x <> y }):
+    forall (a:A) b es x,
+    DAG (FGraph.Edge ((a,b)::es)) ->
+    Reaches (FGraph.Edge ((a, b) :: es)) x a ->
+    Reaches (FGraph.Edge es) x a.
+  Proof.
+    intros.
+    destruct H0.
+    assert (Hx := H0).
+    destruct (in_dec (Pair.pair_eq_dec eq_dec) (a,b) w). {
+      apply walk2_split with (a0:=a) (b0:=b) in H0; auto;
+      destruct H0 as [?|[?|(?,(?,(?,(Hy,Hw))))]]; subst; auto.
+      + apply reaches_def in Hx.
+        apply H in Hx.
+        contradiction.
+      + apply fdag_absurd_cons in H; contradiction.
+      + assert (N1: Reaches (FGraph.Edge ((a, b) :: es)) b a)
+        by eauto using reaches_def.
+        assert (N2: Reaches (FGraph.Edge ((a, b) :: es)) a b) by auto.
+        assert (N: Reaches (FGraph.Edge ((a, b) :: es)) a a). {
+          eauto using reaches_trans.
+        }
+        apply H in N.
+        contradiction.
+    }
+    eauto using FGraph.walk2_inv_not_in_walk, reaches_def.
+  Qed.
+
+  Lemma fdag_reaches_inv_cons_2 {A} (eq_dec: forall (x y:A), { x = y } + { x <> y }):
+    forall (a:A) b es y,
+    DAG (FGraph.Edge ((a,b)::es)) ->
+    Reaches (FGraph.Edge ((a, b) :: es)) b y ->
+    Reaches (FGraph.Edge es) b y.
+  Proof.
+    intros.
+    destruct H0.
+    assert (Hx := H0).
+    destruct (in_dec (Pair.pair_eq_dec eq_dec) (a,b) w). {
+      apply walk2_split with (a0:=a) (b0:=b) in H0; auto;
+      destruct H0 as [?|[?|(?,(?,(?,(Hy,Hw))))]]; subst; auto.
+      + apply fdag_absurd_cons in H; contradiction.
+      + apply reaches_def in Hx.
+        apply H in Hx.
+        contradiction.
+      + assert (N1: Reaches (FGraph.Edge ((a, b) :: es)) b a). {
+          eauto using reaches_def.
+        }
+        assert (N2: Reaches (FGraph.Edge ((a, b) :: es)) a b) by auto.
+        assert (N: Reaches (FGraph.Edge ((a, b) :: es)) a a). {
+          eauto using reaches_trans.
+        }
+        apply H in N.
+        contradiction.
+    }
+    eauto using FGraph.walk2_inv_not_in_walk, reaches_def.
+  Qed.
+
+  Let walk2_inv_cons {A} (eq_dec: forall (x y:A), { x = y } + { x <> y }):
+    forall  es (a:A) b x y w,
+    DAG (FGraph.Edge ((a,b)::es)) ->
+    Walk2 (FGraph.Edge ((a,b)::es)) x y w ->
+    (List.In (a,b) w /\ (a = x \/ b = y \/ (Reaches (FGraph.Edge es) x a /\ Reaches (FGraph.Edge es) b y))) \/
+    (~ List.In (a,b) w /\ Reaches (FGraph.Edge es) x y).
+  Proof.
+    intros.
+    destruct (in_dec (Pair.pair_eq_dec eq_dec) (a,b) w). {
+      assert (Hw := H0).
+      apply walk2_split with (a0:=a) (b0:=b) in H0; auto;
+      destruct H0 as [?|[?|(?,(?,(?,(Hx,Hy))))]]; auto.
+      subst.
+      assert (Hxa : Reaches (FGraph.Edge ((a, b) :: es)) x a). {
+        eauto using reaches_def.
+      }
+      clear Hx.
+      apply fdag_reaches_inv_cons_1 in Hxa; auto.
+      assert (Hby : Reaches (FGraph.Edge ((a, b) :: es)) b y). {
+        eauto using reaches_def.
+      }
+      clear Hy.
+      apply fdag_reaches_inv_cons_2 in Hby; auto.
+      left; split; auto.
+    }
+    eauto using FGraph.walk2_inv_not_in_walk, reaches_def.
+  Qed.
+
+  Let walk2_absurd_0 {A}:
+    forall (x:A) b es y d w,
+    DAG (FGraph.Edge ((x, b) :: es)) ->
+    Walk2 (FGraph.Edge ((x, b) :: es)) b y ((b, d) :: w) ->
+    ~ List.In (x, b) w.
+  Proof.
+    intros.
+    unfold not; intros i.
+    assert (Hw := H0).
+    apply walk2_split with (a:=x) (b0:=b) in H0; auto using in_cons.
+    destruct H0 as [?|[?|(?,(?,(?,(Hw1,Hw2))))]]; subst.
+    - apply fdag_absurd_cons in H; contradiction.
+    - apply reaches_def in Hw.
+      apply H in Hw.
+      contradiction.
+    - assert (N1: Reaches (FGraph.Edge ((x, b) :: es)) x b) by auto.
+      assert (N2: Reaches (FGraph.Edge ((x, b) :: es)) b x) by eauto using reaches_def.
+      assert (N: Reaches (FGraph.Edge ((x, b) :: es)) b b) by eauto using reaches_trans.
+      apply H in N; contradiction.
+  Qed.
+
+  Let walk2_absurd_1 {A}:
+    forall (x:A) b w y es,
+    DAG (FGraph.Edge ((x, b) :: es)) ->
+    Walk2 (FGraph.Edge ((x, b) :: es)) x y ((x, b) :: w) ->
+    ~ List.In (x,b) w.
+  Proof.
+    intros.
+    unfold not; intros i.
+    inversion H0; subst.
+    destruct w. {
+      inversion i.
+    }
+    destruct p as (b', c).
+    apply ends_with_inv in H2.
+    assert (b'=b). {
+      inversion H3; subst.
+      apply linked_inv in H8.
+      trivial.
+    }
+    subst.
+    destruct i. {
+      inversion H4; subst.
+      apply fdag_absurd_cons in H; contradiction.
+    }
+    inversion H3; subst; clear H3.
+    assert (Hw: Walk2 (FGraph.Edge ((x, b) :: es)) b y ((b,c)::w)). {
+      apply walk2_def; auto using starts_with_def.
+    }
+    apply walk2_absurd_0 in Hw; auto.
+  Qed.
+
+  Let walk2_inv_cons_2 {A} (eq_dec: forall (x y:A), { x = y } + { x <> y }):
+    forall (x:A) b w y es,
+    DAG (FGraph.Edge ((x, b) :: es)) ->
+    Walk2 (FGraph.Edge ((x, b) :: es)) x y ((x, b) :: w) ->
+    b = y \/ Reaches (FGraph.Edge es) b y.
+  Proof.
+    intros.
+    destruct (in_dec (Pair.pair_eq_dec eq_dec) (x,b) w). {
+      eapply walk2_absurd_1 in i; eauto.
+      contradiction.
+    }
+    destruct w. {
+      apply walk2_inv_eq_snd in H0; subst.
+      auto.
+    }
+    apply walk2_inv in H0.
+    destruct H0 as (c, (Heq, (He, Hw))).
+    symmetry in Heq.
+    inversion Heq; subst; clear Heq.
+    apply FGraph.walk2_inv_not_in_walk in Hw; auto.
+    apply reaches_def in Hw.
+    auto.
+  Qed.
+
+  Let walk2_in_reaches {A}:
+    forall w (x:A) v1 v2 vn E,
+    Walk2 E v1 vn ((v1, v2) :: w) ->
+    In (FGraph.Edge w) x ->
+    Reaches E v1 x.
+  Proof.
+    induction w; intros. {
+      inversion H0.
+      destruct H1.
+      inversion H1.
+    }
+    apply walk2_inv in H.
+    destruct H as (v2', (Heq, (He, Hw))).
+    symmetry in Heq.
+    inversion Heq; subst; clear Heq.
+    destruct a as (a,b).
+    destruct H0 as (e, (Hx,Hy)).
+    inversion Hx; subst; clear Hx. {
+      inversion Hy; subst; clear Hy; simpl. {
+        apply walk2_inv_eq_fst in Hw.
+        subst.
+        auto using edge_to_reaches.
+      }
+      assert (Heq := Hw).
+      apply walk2_inv_eq_fst in Heq.
+      subst.
+      inversion Hw; subst; clear Hw.
+      clear H.
+      inversion H1; subst; clear H1.
+      eapply reaches_def;
+      eauto using
+      starts_with_def, ends_with_cons, ends_with_alt,
+      walk_cons, linked_eq, walk2_def, edge_to_walk.
+    }
+    assert (a = v2). {
+      apply walk2_inv_eq_fst in Hw; auto.
+    }
+    subst.
+    assert (Reaches E v2 x). {
+      eapply IHw with (vn:=vn) (v2:=b); eauto using in_def.
+    }
+    eauto using reaches_trans, edge_to_reaches.
+  Qed.
+
+  Let in_cons_eq:
+    forall {A} (x:A) y w,
+    In (FGraph.Edge ((x, y) :: w)) x.
+  Proof.
+    intros.
+    apply in_left with (v':=y).
+    apply in_eq.
+  Qed.
+
+  Let walk2_in_reaches_fst {A}:
+    forall w (x:A) y v1 v2 vn E,
+    Walk2 E v1 vn ((v1, v2) :: w) ->
+    List.In (x,y) w ->
+    Reaches E v1 x.
+  Proof.
+    eauto using walk2_in_reaches, in_left.
+  Qed.
+
+  Let walk2_in_reaches_snd {A}:
+    forall w (x:A) y v1 v2 vn E,
+    Walk2 E v1 vn ((v1, v2) :: w) ->
+    List.In (x,y) w ->
+    Reaches E v1 y.
+  Proof.
+    eauto using walk2_in_reaches, in_right.
+  Qed.
+
+  Let walk2_inv_cons_3 {A} (eq_dec: forall (x y:A), { x = y } + { x <> y }):
+    forall (x:A) b w y es,
+    DAG (FGraph.Edge ((x, b) :: es)) ->
+    List.In (x, b) w ->
+    Walk2 (FGraph.Edge ((x, b) :: es)) x y w ->
+    b = y \/ Reaches (FGraph.Edge es) b y.
+  Proof.
+    intros.
+    destruct w. {
+      inversion H0.
+    }
+    inversion H0; subst; clear H0; eauto.
+    destruct p as (x', c).
+    destruct w. {
+      inversion H2.
+    }
+    assert (x' = x). {
+      apply walk2_inv_eq_fst in H1.
+      auto.
+    }
+    subst.
+    eapply walk2_in_reaches_fst in H1; eauto.
+    apply H in H1.
+    contradiction.
+  Qed.
+
+  Let fdag_walk2_inv_0 {A}:
+    forall (x:A) y w z es,
+    DAG (FGraph.Edge es) ->
+    Walk2 (FGraph.Edge es) x y w ->
+    List.In (x, z) w ->
+    exists w', w = (x,z)::w' /\ ~ List.In (x,z) w'.
+  Proof.
+  Admitted.
+
+  Let fdag_walk2_inv_1 {A}:
+    forall (x:A) y w z es,
+    DAG (FGraph.Edge es) ->
+    Walk2 (FGraph.Edge es) x y w ->
+    List.In (z, y) w ->
+    exists w', w = w' ++ ((z,y)::nil) /\ ~ List.In (z,y) w'.
+  Proof.
+  Admitted.
+
+  Let fdag_walk2_inv_2 {A}:
+    forall es x (y:A) wa wb e,
+    DAG (FGraph.Edge es) ->
+    Walk2 (FGraph.Edge es) x y (wa ++ e :: wb)  ->
+    ~ List.In e wa /\ ~ List.In e wb.
+  Proof.
+  Admitted.
+
+  Let reaches_inv_cons_0 {A} (eq_dec: forall (x y:A), { x = y } + { x <> y }):
+    forall x n2 es w (y:A),
+    DAG (FGraph.Edge ((x, n2) :: es)) ->
+    Walk2 (FGraph.Edge ((x, n2) :: es)) x y w ->
+    List.In (x, n2) w ->
+    n2 = y \/ (n2 <> y /\ Reaches (FGraph.Edge es) n2 y).
+  Proof.
+    intros.
+    destruct (eq_dec n2 y). {
+      auto.
+    }
+    right; split; auto.
+    assert (Hw :=H0).
+    apply fdag_walk2_inv_0 with (z:=n2) in H0; auto; clear H1.
+    destruct H0 as (w', (?, Hn)); subst.
+    destruct w' as [|(a,b)]. {
+      apply walk2_inv_eq_snd in Hw.
+      contradiction.
+    }
+    apply walk2_inv in Hw.
+    destruct Hw as (v2, (Heq, (_,Hw))).
+    inversion Heq; subst; clear Heq.
+    assert (v2=a). {
+      apply walk2_inv_eq_fst in Hw.
+      auto.
+    }
+    subst.
+    apply FGraph.walk2_inv_not_in_walk in Hw; auto.
+    eauto using reaches_def.
+  Qed.
+
+  Let reaches_inv_cons_1 {A} (eq_dec: forall (x y:A), { x = y } + { x <> y }):
+    forall n1 y es w (x:A),
+    DAG (FGraph.Edge ((n1, y) :: es)) ->
+    List.In (n1, y) w ->
+    Walk2 (FGraph.Edge ((n1, y) :: es)) x y w ->
+    n1 = x \/ Reaches (FGraph.Edge es) x n1.
+  Proof.
+    intros.
+    destruct (eq_dec n1 x). {
+      auto.
+    }
+    right.
+    assert (Hw :=H1).
+    apply fdag_walk2_inv_1 with (z:=n1) in H1; auto.
+    destruct H1 as (w', (?, Hn)).
+    subst.
+    destruct w' as [|(a,b)]. {
+      simpl in *.
+      apply walk2_inv_eq_fst in Hw.
+      contradiction.
+    }
+    assert (a = x). {
+      apply walk2_inv_eq_fst in Hw.
+      auto.
+    }
+    subst.
+    apply walk2_split_app in Hw.
+    destruct Hw as (Hw, _).
+    apply FGraph.walk2_inv_not_in_walk in Hw; eauto using reaches_def.
+  Qed.
+
+  Let reaches_inv_cons_2 {A} (eq_dec: forall (x y:A), { x = y } + { x <> y }):
+    forall n1 n2 es (x:A) y wa wb,
+    DAG (FGraph.Edge ((n1, n2) :: es)) ->
+    Walk2 (FGraph.Edge ((n1, n2) :: es)) x n1 wa ->
+    Walk2 (FGraph.Edge ((n1, n2) :: es)) n2 y wb ->
+    Walk2 (FGraph.Edge ((n1, n2) :: es)) x y (wa ++ (n1, n2) :: wb) ->
+    Reaches (FGraph.Edge es) x n1 /\ Reaches (FGraph.Edge es) n2 y.
+  Proof.
+    intros.
+    assert (Hw:=H2).
+    apply fdag_walk2_inv_2 in H2; auto.
+    destruct H2 as (Hn1, Hn2).
+    apply FGraph.walk2_inv_not_in_walk in H0; eauto using reaches_def.
+    apply FGraph.walk2_inv_not_in_walk in H1; eauto using reaches_def.
+  Qed.
+
+  Let reaches_inv_cons {A} (eq_dec: forall (x y:A), { x = y } + { x <> y }):
+    forall  es n1 n2 (x:A) y w,
+    DAG (FGraph.Edge ((n1,n2)::es)) ->
+    Walk2 (FGraph.Edge ((n1,n2)::es)) x y w ->
+    List.In (n1,n2) w ->
+    (n2 = y /\ (n1 = x \/ Reaches (FGraph.Edge es) x n1)) \/
+    (n2 <> y /\ Reaches (FGraph.Edge es) n2 y) \/
+    (Reaches (FGraph.Edge es) x n1 /\ Reaches (FGraph.Edge es) n2 y).
+  Proof.
+    intros.
+    assert (Hw := H0).
+    apply walk2_split with (a:=n1) (b:=n2) in H0; auto.
+    destruct H0 as [?|[?|(wa, (wb, (He, (Hw1, Hw2))))]]; subst.
+    + apply reaches_inv_cons_0 in Hw; auto.
+      destruct Hw as [?|(?,Hr)]; subst; auto.
+    + left.
+      split; auto.
+      apply reaches_inv_cons_1 in Hw; auto.
+    + subst.
+      apply reaches_inv_cons_2 in Hw; auto.
+  Qed.
+
+  Lemma hb_inv_cons:
+    forall x y n1 n2 t es,
+    HB ({| e_t:=t; e_edge:=(n1, n2) |}::es) x y ->
+    (n2 = y /\ (n1 = x \/ HB es x n1)) \/
+    (n2 <> y /\ HB es n2 y) \/
+    (HB es x n1 /\ HB es n2 y).
+  Proof.
+    intros.
+    unfold HB in *.
+    apply reaches_inv_cons.
   Qed.
 
 End DAG.
