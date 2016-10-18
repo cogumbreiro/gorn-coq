@@ -1186,14 +1186,22 @@ Section DAG.
 
   Lemma hb_inv_cons:
     forall x y n1 n2 t es,
+    DAG (FGraph.Edge (cg_edges ({| e_t:=t; e_edge:=(n1, n2) |}::es))) ->
     HB ({| e_t:=t; e_edge:=(n1, n2) |}::es) x y ->
+    HB es x y \/
     (n2 = y /\ (n1 = x \/ HB es x n1)) \/
     (n2 <> y /\ HB es n2 y) \/
     (HB es x n1 /\ HB es n2 y).
   Proof.
     intros.
-    unfold HB in *.
-    apply reaches_inv_cons.
+    repeat rewrite hb_fgraph_spec in *.
+    simpl in H0.
+    inversion H0; clear H0.
+    destruct (List.in_dec (Pair.pair_eq_dec node_eq_dec) (n1,n2) w). {
+      right.
+      eauto using reaches_inv_cons, node_eq_dec.
+    }
+    apply FGraph.walk2_inv_not_in_walk in H1; eauto using reaches_def.
   Qed.
 
 End DAG.
