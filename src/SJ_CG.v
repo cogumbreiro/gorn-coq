@@ -1549,15 +1549,55 @@ Section SJ.
   Lemma hb_inv_cons:
     forall x y n1 n2 t es,
     HB ({| e_t:=t; e_edge:=(n1, n2) |}::es) x y ->
+    HB es x y \/
     (n2 = y /\ (n1 = x \/ HB es x n1)) \/
-    (n2 <> y /\ HB es x y).
+    (n2 <> y /\ HB es n2 y) \/
+    (HB es x n1 /\ HB es n2 y).
   Admitted.
 
-  Let can_join_pres_fork_2:
-    forall n cg sj z sj' cg' x y,
-    length (fst cg) = length sj ->
-    KnowsEquiv sj cg ->
-    EdgeToNode cg ->
+  Let hb_absurd_node:
+    forall vs es n,
+    EdgeToNode (vs, es) ->
+     ~ HB es (fresh vs) n.
+  Proof.
+    intros.
+    unfold not; intros N.
+    apply edge_to_node_hb_fst with (vs:=vs) in N; eauto; simpl_node.
+  Qed.
+
+  Let hb_absurd_node_next:
+    forall vs es n,
+    EdgeToNode (vs, es) ->
+     ~ HB es (node_next (fresh vs)) n.
+  Proof.
+    intros.
+    unfold not; intros N.
+    apply edge_to_node_hb_fst with (vs:=vs) in N; eauto; simpl_node.
+  Qed.
+
+  Let hb_absurd_fresh_lhs:
+    forall nx x (vs:list tid) es (n:node),
+    EdgeToNode (vs, es) ->
+    MapsTo x nx vs ->
+    ~ HB (F (nx, node_next (fresh vs)) :: C (nx, fresh vs) :: es) (fresh vs) n.
+  Proof.
+    intros.
+    unfold not; intros N.
+      apply hb_inv_cons in N.
+      destruct N as [Hy|[(?,[?|Hy])|[(?,Hy)|(Hy,?)]]]; subst;
+      simpl_node;
+      apply hb_inv_cons in Hy;
+      destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; simpl_node;
+      try (apply hb_absurd_node in Hx; auto);
+      try (apply hb_absurd_node_next in Hx; auto).
+  Qed.
+
+  Let can_join_pres_fork_2 cg k sj
+    (Hsj: SJ cg k sj)
+    (Heq: length (fst cg) = length sj)
+    (Hke: KnowsEquiv sj cg)
+    (Hen: EdgeToNode cg):
+    forall n z sj' cg' x y,
     CG.Reduces cg (x, CG.FORK y) cg' ->
     Reduces sj cg' sj' ->
     HBCanJoin cg' n z ->
@@ -1565,82 +1605,75 @@ Section SJ.
   Proof.
     intros.
     simpl_red.
-    inversion H4; subst; clear H4;
+    inversion H1; subst; clear H1;
     simpl in *. {
       rename ny0 into nz.
       rewrite fresh_cons_rw_next in *.
       clear nx; rename prev into nx.
-      apply maps_to_length_rw in H.
-      inversion H2; subst; clear H2. {
-        apply hb_inv_cons in H3.
-        destruct H3 as [(?,[?|?])|(?,?)]; subst.
-        + simpl_node.
-        + apply hb_inv_cons in H3.
-          destruct H3 as [(?,[?|?])|(?,?)]; subst; simpl_node.
-          apply edge_to_node_hb_fst with (vs:=vs) in H3; eauto.
-          simpl_node.
-        + apply hb_inv_cons in H3.
-          destruct H3 as [(?,[?|?])|(?,?)]; subst; simpl_node. {
-            rewrite H.
-            apply can_join_cons.
-            apply can_join_eq.
-          }
-          apply edge_to_node_hb_fst with (vs:=vs) in H4; eauto.
-          simpl_node.
+      apply maps_to_length_rw in Heq.
+      inversion H; subst; clear H. {
+        eapply hb_absurd_fresh_lhs in H0; eauto.
+        contradiction.
       }
-      inversion H12; subst; clear H12.
+      inversion H9; subst; clear H9.
       assert (Hc: HBCanJoin (vs, es) nz z). {
         auto using hb_can_join_eq.
       }
-      apply hb_inv_cons in H3.
-      destruct H3 as [(?,[?|?])|(?,?)]; subst.
-      - rewrite H.
-        rewrite <- fresh_cons_rw_next with (x:=Cons y nz) in *.
+      apply hb_inv_cons in H0.
+      destruct H0 as [Hy|[(?,[?|Hy])|[(?,Hy)|(Hy,?)]]]; subst.
+      - apply Hke in Hc.
+        apply hb_inv_cons in Hy;
+        destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; try (rewrite Heq);
+        eauto using hb_spec, can_join_cons, can_join_neq.
+        + apply edge_to_node_hb_fst with (vs:=vs) in Hx; eauto; simpl_node.
+        + apply edge_to_node_hb_fst with (vs:=vs) in H; eauto; simpl_node.
+      - rewrite Heq.
+        rewrite <- fresh_cons_rw_next with (x:=Cons y nz).
+        assert (Hc0: HBCanJoin (vs, es) nz z). {
+          auto using hb_can_join_eq .
+        }
+        apply Hke in Hc0.
+        auto using can_join_copy, can_join_cons.
+      - rewrite Heq.
+        rewrite <- fresh_cons_rw_next with (x:=Cons y nx).
         apply can_join_copy.
-        apply can_join_cons.
-        apply H0 in Hc.
-        assumption.
-      - rewrite H.
-        rewrite <- fresh_cons_rw_next with (x:=Cons y nx) in *.
-        apply hb_inv_cons in H3.
-        destruct H3 as [(?,[?|?])|(?,?)]; subst.
-        + subst.
-          apply hb_can_join_to_node in Hc; auto.
-          simpl_node.
-        + simpl_node.
-        + apply can_join_copy.
-          apply can_join_cons.
-          assert (Hc1: HBCanJoin (vs, es) nx z) by eauto.
-          apply H0 in Hc1.
-          trivial.
-      - apply hb_inv_cons in H3.
-        rewrite H in *.
-        destruct H3 as [(?,[?|?])|(?,?)]; subst.
+        apply hb_inv_cons in Hy.
+        destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; try (rewrite Heq);
+        simpl_node.
         + apply can_join_cons.
-          apply can_join_neq; auto.
-          apply H0 in Hc.
-          trivial.
-        + apply can_join_cons.
-          apply can_join_neq; auto.
-          assert (Hc1: HBCanJoin (vs, es) nx z) by eauto.
-          apply H0 in Hc1.
-          trivial.
-        + assert (Hc1: HBCanJoin (vs, es) n z) by eauto.
-          apply H0 in Hc1.
-          eauto using can_join_cons.
+          assert (Hc0: HBCanJoin (vs, es) nx z). {
+            eauto using hb_can_join_hb.
+          }
+          apply Hke in Hc0; auto.
+        + apply hb_absurd_node in Hx; auto; contradiction.
+        + apply hb_absurd_node in H; auto; contradiction.
+      - apply hb_inv_cons in Hy.
+        destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; try (rewrite Heq);
+        simpl_node.
+        + apply hb_absurd_node_next in Hx; auto; contradiction.
+        + apply hb_absurd_node_next in Hx; auto; contradiction.
+        + apply hb_absurd_node in Hx; auto; contradiction.
+        + apply hb_absurd_node_next in Hx; auto; contradiction.
+      - apply hb_inv_cons in H.
+        destruct H as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; try (rewrite Heq);
+        simpl_node.
+        + apply hb_absurd_node_next in Hx; auto; contradiction.
+        + apply hb_absurd_node_next in Hx; auto; contradiction.
+        + apply hb_absurd_node in Hx; auto; contradiction.
+        + apply hb_absurd_node_next in Hx; auto; contradiction.
     }
-    apply maps_to_length_rw in H.
-    inversion H2; subst; clear H2. {
-      rewrite H.
+    apply maps_to_length_rw in Heq.
+    inversion H; subst; clear H. {
+      rewrite Heq.
       apply can_join_cons.
       apply can_join_eq.
     }
-    inversion H10; subst; clear H10.
-    assert (CanJoin n z sj). {
-      apply H0.
+    inversion H7; subst; clear H7.
+    assert (Hc: HBCanJoin (vs,es) n z). {
       auto using hb_can_join_eq.
     }
-    auto using can_join_cons.
+    apply Hke in Hc.
+    auto using can_join_cons, can_join_neq.
   Qed.
 (*
   Let can_join_pres_1:

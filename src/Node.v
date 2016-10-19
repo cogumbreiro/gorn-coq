@@ -305,6 +305,28 @@ Section Props.
     apply Bijection.index_absurd_length.
   Qed.
 
+  Lemma node_next_node:
+    forall vs n,
+    Node (node_next n) vs ->
+    Node n vs.
+  Proof.
+    unfold Node; intros.
+    destruct n.
+    simpl in *.
+    auto using Bijection.index_succ.
+  Qed.
+
+  Lemma node_absurd_next_fresh:
+    forall vs,
+    ~ Node (node_next (fresh vs)) vs.
+  Proof.
+    intros.
+    unfold not; intros N.
+    apply node_next_node in N.
+    apply node_absurd_fresh in N.
+    assumption.
+  Qed.
+
   Lemma maps_to_to_node:
     forall (x:A) n vs,
     MapsTo x n vs ->
@@ -313,6 +335,17 @@ Section Props.
     unfold MapsTo, Node.
     intros.
     eauto using Bijection.maps_to_to_index.
+  Qed.
+
+  Lemma maps_to_absurd_next_fresh:
+    forall (x:A) vs,
+    ~ MapsTo x (node_next (fresh vs)) vs.
+  Proof.
+    intros.
+    unfold not; intros N.
+    apply maps_to_to_node in N.
+    apply node_absurd_next_fresh in N.
+    assumption.
   Qed.
 
   Lemma maps_to_to_task_of:
@@ -596,11 +629,17 @@ End MoreProps.
   | [ H: MapsTo _ (fresh ?vs) ?vs |- _ ] =>
       apply maps_to_absurd_fresh in H;
       contradiction
+  | [ H: MapsTo _ (node_next (fresh ?vs)) ?vs |- _ ] =>
+      apply maps_to_absurd_next_fresh in H;
+      contradiction
   | [ H: TaskOf (fresh ?vs) _ ?vs |- _ ] =>
       apply task_of_absurd_fresh in H;
       contradiction
   | [ H: Node (fresh ?vs) ?vs |- _ ] =>
       apply node_absurd_fresh in H;
+      contradiction
+  | [ H: Node (node_next (fresh ?vs)) ?vs |- _ ] =>
+      apply node_absurd_next_fresh in H;
       contradiction
   | [ H: TaskOf (fresh ?vs) ?x (?y :: ?vs) |- _ ] => apply task_of_inv_eq in H; subst
   | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H

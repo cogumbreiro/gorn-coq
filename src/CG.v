@@ -1059,12 +1059,125 @@ Section DAG.
   Qed.
 
   Let fdag_walk2_inv_0 {A}:
-    forall (x:A) y w z es,
+    forall w (x:A) y z es,
     DAG (FGraph.Edge es) ->
     Walk2 (FGraph.Edge es) x y w ->
     List.In (x, z) w ->
     exists w', w = (x,z)::w' /\ ~ List.In (x,z) w'.
   Proof.
+    induction w; intros. {
+      inversion H1.
+    }
+    assert (Hw0 := H0).
+    inversion H1; subst; clear H1. {
+      destruct w as [|(a,b)]. {
+        assert (z = y). {
+          apply walk2_inv_eq_snd in H0.
+          trivial.
+        }
+        subst.
+        eauto.
+      }
+      apply walk2_inv in H0.
+      destruct H0 as (v2, (Heq, (He,Hw))).
+      inversion Heq; subst; clear Heq.
+      unfold FGraph.Edge in He.
+      assert (v2 = a). {
+        apply walk2_inv_eq_fst in Hw.
+        auto.
+      }
+      subst.
+      apply IHw with (z:=b) in Hw; eauto using in_eq; clear IHw.
+      destruct Hw as (w', (Heq, Hn)).
+      inversion Heq; subst; clear Heq.
+      exists ((a,b)::w').
+      split; auto.
+      unfold not; intros N.
+      inversion N; subst; clear N. {
+        inversion H0; subst; clear H0.
+        assert (X: Reaches (FGraph.Edge es) x x). {
+          auto using edge_to_reaches.
+        }
+        apply H in X.
+        assumption.
+      }
+      destruct w' as [|(v1,v2)]. {
+        inversion H0.
+      }
+      inversion H0; subst; clear H0. {
+        inversion H1; subst; clear H1.
+        assert (b = x). {
+          apply walk2_inv_2 in Hw0.
+          inversion Hw0; subst; clear Hw0.
+          inversion H2; subst.
+          apply linked_inv in H7.
+          auto.
+        }
+        subst.
+        assert (Hx: FGraph.Edge es (x, a) /\ FGraph.Edge es (a, x)). {
+          inversion Hw0; subst.
+          inversion H2; subst.
+          inversion H5; subst.
+          auto.
+        }
+        destruct Hx.
+        assert (N: Reaches (FGraph.Edge es) x x). {
+          eauto using reaches_trans, edge_to_reaches.
+        }
+        apply H in N.
+        assumption.
+      }
+      apply walk2_inv_2 in Hw0.
+      assert (He1 : FGraph.Edge es (a,b)). {
+        inversion Hw0.
+        inversion H3.
+        auto.
+      }
+      assert (v1 = b). {
+        inversion Hw0.
+        inversion H3; subst.
+        apply linked_inv in H11.
+        auto.
+      }
+      subst.
+      apply walk2_inv_2 in Hw0.
+      destruct w'. {
+        inversion H1.
+      }
+      apply walk2_inv in Hw0.
+      destruct Hw0 as (v3, (Heq, (He', Hw))).
+      inversion Heq; subst; clear Heq.
+      assert (R: Reaches (FGraph.Edge es) v3 y) by eauto using reaches_def.
+      apply walk2_split with (a0:=x) (b0:=a) in Hw; auto.
+      apply edge_to_reaches in He1.
+      apply edge_to_reaches in He'.
+      apply edge_to_reaches in He.
+      destruct Hw as [?|[?|(?,(?,(Heq,(Hw1,Hw2))))]].
+      + subst.
+        assert (N: Reaches (FGraph.Edge es) a a). {
+          eauto using reaches_trans.
+        }
+        apply H in N.
+        contradiction.
+      + subst.
+        assert (N: Reaches (FGraph.Edge es) y y). {
+          eauto using reaches_trans.
+        }
+        apply H in N.
+        contradiction.
+      + destruct x0; subst; simpl in *. {
+          apply walk2_nil_inv in Hw1.
+          contradiction.
+        }
+        inversion Heq; subst; clear Heq.
+        apply reaches_def in Hw1.
+        apply reaches_def in Hw2.
+        assert (N: Reaches (FGraph.Edge es) x x). {
+          eauto using reaches_trans.
+        }
+        apply H in N.
+        contradiction.
+    }
   Admitted.
 
   Let fdag_walk2_inv_1 {A}:

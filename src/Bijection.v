@@ -142,6 +142,16 @@ Section Defs.
     split; auto using index_lt, lt_to_index.
   Qed.
 
+  Lemma index_succ:
+    forall n l,
+    Index (S n) l ->
+    Index n l.
+  Proof.
+    intros.
+    rewrite index_iff_length in *.
+    auto with *.
+  Qed.
+
   Lemma in_to_index_of:
     forall l x,
     In x l ->
