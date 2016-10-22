@@ -1341,6 +1341,12 @@ Section SJ.
     SpawnPoint y n cg ->
     HBCanJoin cg n y.
 
+  Definition KnowsEquiv1 sj cg :=
+  forall n x, CanJoin n x sj -> HBCanJoin cg n x.
+
+  Definition KnowsEquiv2 sj cg :=
+  forall n x, HBCanJoin cg n x -> CanJoin n x sj.
+
   Definition KnowsEquiv sj cg :=
   forall n x, CanJoin n x sj <-> HBCanJoin cg n x.
 
@@ -1449,7 +1455,7 @@ Section SJ.
   Let can_join_pres_fork:
     forall n cg sj z sj' cg' x y,
     length (fst cg) = length sj ->
-    KnowsEquiv sj cg ->
+    KnowsEquiv1 sj cg ->
     CG.Reduces cg (x, CG.FORK y) cg' ->
     Reduces sj cg' sj' ->
     CanJoin n z sj' ->
@@ -1492,6 +1498,86 @@ Section SJ.
     - apply maps_to_length_rw in Heq.
       rewrite <- Heq in *.
       simpl_node.
+  Qed.
+
+  Let spawn_point_cons:
+    forall x n vs es y e' e,
+    SpawnPoint x n (vs, es) ->
+    SpawnPoint x n (y :: vs, J e' :: C e :: es).
+  Proof.
+    auto using spawn_point_join, spawn_point_continue.
+  Qed.
+
+  Let hb_can_join_cons:
+    forall vs es n x e' e y,
+    HBCanJoin (vs, es) n x ->
+    HBCanJoin (y :: vs, J e' :: C e :: es) n x.
+  Proof.
+    intros.
+    inversion H; subst; clear H; simpl in *. {
+      eauto using hb_cons, hb_can_join_hb.
+    }
+    auto using hb_can_join_eq.
+  Qed.
+
+  Let hb_can_join_cons_c:
+    forall vs es a b y x,
+    HBCanJoin (vs, es) a x ->
+    HBCanJoin (y :: vs, C (a, b) :: es) b x.
+  Proof.
+    intros.
+    inversion H; subst; clear H. {
+      simpl in *.
+      apply hb_can_join_hb with (ny:=ny).
+      + eauto using spawn_point_continue.
+      + simpl in *.
+        remember (_::es) as es'.
+        assert (HB es' ny a) by (subst; auto using hb_cons).
+        assert (HB es' a b) by (subst;auto using edge_to_hb).
+        eauto using hb_trans.
+    }
+    apply hb_can_join_hb with (ny:=a); simpl;
+    auto using spawn_point_continue, edge_to_hb.
+  Qed.
+
+  Let hb_can_join_cons_j:
+    forall vs es a b y x,
+    HBCanJoin (y :: vs, es) a x ->
+    HBCanJoin (y :: vs, J (a, b) :: es) b x.
+  Proof.
+    intros.
+    inversion H; subst; clear H. {
+      simpl in *.
+      apply hb_can_join_hb with (ny:=ny).
+      + eauto using spawn_point_join.
+      + simpl in *.
+        remember (_::es) as es'.
+        assert (HB es' ny a) by (subst; auto using hb_cons).
+        assert (HB es' a b) by (subst;auto using edge_to_hb).
+        eauto using hb_trans.
+    }
+    apply hb_can_join_hb with (ny:=a); simpl;
+    auto using spawn_point_join, edge_to_hb.
+  Qed.
+
+  Let can_join_pres_join:
+    forall n cg sj z sj' cg' x y,
+    length (fst cg) = length sj ->
+    KnowsEquiv1 sj cg ->
+    CG.Reduces cg (x, CG.JOIN y) cg' ->
+    Reduces sj cg' sj' ->
+    CanJoin n z sj' ->
+    HBCanJoin cg' n z.
+  Proof.
+    intros.
+    simpl_red.
+    rename prev into nz.
+    rename H0 into Hind.
+    rename H into Heq.
+    apply Hind in H17.
+    apply maps_to_length_rw in Heq.
+    inversion H3; subst; clear H3; simpl in *;
+          try rewrite <- Heq; auto.
   Qed.
 
   Let spawn_point_to_edge:
@@ -1595,7 +1681,7 @@ Section SJ.
   Let can_join_pres_fork_2 cg k sj
     (Hsj: SJ cg k sj)
     (Heq: length (fst cg) = length sj)
-    (Hke: KnowsEquiv sj cg)
+    (Hke: KnowsEquiv2 sj cg)
     (Hen: EdgeToNode cg):
     forall n z sj' cg' x y,
     CG.Reduces cg (x, CG.FORK y) cg' ->
@@ -1675,88 +1761,7 @@ Section SJ.
     apply Hke in Hc.
     auto using can_join_cons, can_join_neq.
   Qed.
-(*
-  Let can_join_pres_1:
-    forall sj cg sj' cg' e n x,
-    length (fst cg) = length sj ->
-    FirstHB cg ->
-    KnowsEquiv sj cg ->
-    CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
-    CanJoin n x sj' ->
-    HBCanJoin cg' n x.
-  Proof.
-    intros ? ? ? ? ? ? ?.
-    intros Heq Hfhb; intros.
-    destruct e as (z,[]).
-    - rename t into y.
-      simpl_red; simpl in *.
-      }
-  Qed.
 
-  Let can_join_hb_preservation:
-    forall sj cg sj' cg' e,
-    CanJoinSJ_CG sj cg ->
-    CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
-    CanJoinSJ_CG sj' cg'.
-  Proof.
-    intros.
-    unfold CanJoinSJ_CG.
-    intros.
-    split; intros. {
-    }
-    destruct e as (z,[]).
-    - rename t into y.
-      simpl_red; simpl in *.
-      inversion H3; subst; clear H3. {
-        assert (nx = fresh (z :: vs)). {
-          destruct nx.
-          unfold fresh.
-          simpl in *.
-          subst.
-          trivial.
-        }
-        subst.
-        assert (ny = fresh (z::vs)). {
-          inversion H2; subst; clear H2. {
-            unfold fresh in *.
-            simpl in *.
-            contradiction H7.
-            eapply can_join_to_in in H8; eauto.
-          }
-        }
-        inversion H2; subst.
-        apply can_join_inv_copy_1 in H2.
-      }
-      unfold CanJoinToHB; intros; simpl in *.
-      inversion H2; subst; clear H2. {
-        inversion H5; subst; clear H5. {
-          inversion H
-        }
-      }
-    inversion H
-  Qed.
-
-  Let sj_first_can_join:
-    forall sj vs es x k ny nx,
-    SJ (vs,es) k sj ->
-    CanJoin ny x sj ->
-    First x nx vs ->
-    HB es nx ny.
-  Proof.
-    induction sj; intros. {
-      inversion H0.
-    }
-    inversion H0; subst; clear H0.
-    - 
-    induction H0.
-    assert (Node ny vs) by eauto.
-    eapply can_join_to_node_cg in H0; eauto.
-    inversion H.
-    apply node_tr with (b:=vs) in H0; auto.
-  Qed.
-  *)
 End SJ.
 
 

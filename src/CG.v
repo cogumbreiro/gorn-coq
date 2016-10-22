@@ -489,6 +489,27 @@ Section HB.
     split; eauto using hb_to_fgraph, fgraph_to_hb.
   Qed.
 
+  Lemma hb_cons:
+    forall e es x y,
+    HB es x y ->
+    HB (e :: es) x y.
+  Proof.
+    intros.
+    rewrite hb_fgraph_spec in *.
+    eauto using FGraph.reaches_cons.
+  Qed.
+
+  Lemma edge_to_hb:
+    forall x y t es,
+    HB ( {| e_t := t; e_edge := (x,y) |} :: es) x y.
+  Proof.
+    intros.
+    rewrite hb_fgraph_spec.
+    simpl.
+    unfold FGraph.Edge.
+    auto using edge_to_reaches, in_eq.
+  Qed.
+
 End HB.
 
   Ltac simpl_red :=

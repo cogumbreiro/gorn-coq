@@ -16,7 +16,7 @@ install_aniceto() {
   opam pin add --dev-repo coq-aniceto https://bitbucket.org/cogumbreiro/aniceto-coq.git
 }
 coq_shell_url="https://raw.githubusercontent.com/gares/opam-coq-shell/master/src/opam-coq"
-(check_pkg coq-shell || install_coq) &&
+(check_pkg coq || install_coq) &&
 (check_pkg coq-aniceto || install_aniceto) &&
 (test -f Makefile || coq_makefile -f _CoqProject -o Makefile)
 
