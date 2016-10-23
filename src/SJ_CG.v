@@ -1341,14 +1341,11 @@ Section SJ.
     SpawnPoint y n cg ->
     HBCanJoin cg n y.
 
-  Definition KnowsEquiv1 sj cg :=
-  forall n x, CanJoin n x sj -> HBCanJoin cg n x.
+  Notation KnowsEquiv1 sj cg :=
+  (forall n x, CanJoin n x sj -> HBCanJoin cg n x).
 
-  Definition KnowsEquiv2 sj cg :=
-  forall n x, HBCanJoin cg n x -> CanJoin n x sj.
-
-  Definition KnowsEquiv sj cg :=
-  forall n x, CanJoin n x sj <-> HBCanJoin cg n x.
+  Let KnowsEquiv2 sj cg :=
+  (forall n x, HBCanJoin cg n x -> CanJoin n x sj).
 
   Let hb_can_join_neq:
     forall vs es n x y e,
@@ -1832,6 +1829,54 @@ Section SJ.
     eauto using
         can_join_copy,
         hb_can_join_hb, can_join_cons, hb_can_join_eq.
+  Qed.
+  
+  Definition KnowsEquiv sj cg :=
+  forall n x, CanJoin n x sj <-> HBCanJoin cg n x.
+
+  Let knows_equiv_to_1:
+    forall sj cg,
+    KnowsEquiv sj cg ->
+    KnowsEquiv1 sj cg.
+  Proof.
+    intros.
+    apply H in H0.
+    assumption.
+  Qed.
+
+  Let knows_equiv_to_2:
+    forall sj cg,
+    KnowsEquiv sj cg ->
+    KnowsEquiv2 sj cg.
+  Proof.
+    unfold KnowsEquiv2.
+    intros.
+    apply H in H0.
+    assumption.
+  Qed.
+
+  Theorem hb_can_join_preserves cg k sj
+    (Hsj: SJ cg k sj)
+    (Hke: KnowsEquiv sj cg):
+    forall i sj' cg',
+    CG.Reduces cg i cg' ->
+    Reduces sj cg' sj' ->
+    KnowsEquiv sj' cg'.
+  Proof.
+    intros.
+    unfold KnowsEquiv.
+    intros.
+    destruct i.
+    inversion Hsj.
+    split; intros.
+    + destruct o.
+      * eapply can_join_pres_fork; eauto.
+      * eapply can_join_pres_join; eauto.
+      * eapply can_join_pres_continue; eauto.
+    + destruct o.
+      * eapply can_join_pres_fork_2; eauto.
+      * eapply can_join_pres_join_2; eauto.
+      * eapply can_join_pres_continue_2; eauto.
   Qed.
 End SJ.
 
