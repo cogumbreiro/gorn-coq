@@ -727,8 +727,35 @@ Section PropsEx.
     eauto using hb_impl_cons.
   Qed.
 
+  Lemma hb_absurd_node:
+    forall vs es n,
+    EdgeToNode (vs, es) ->
+     ~ HB es (fresh vs) n.
+  Proof.
+    intros.
+    unfold not; intros N.
+    apply edge_to_node_hb_fst with (vs:=vs) in N; eauto; simpl_node.
+  Qed.
+
+  Lemma hb_absurd_node_next:
+    forall vs es n,
+    EdgeToNode (vs, es) ->
+     ~ HB es (node_next (fresh vs)) n.
+  Proof.
+    intros.
+    unfold not; intros N.
+    apply edge_to_node_hb_fst with (vs:=vs) in N; eauto; simpl_node.
+  Qed.
+
 End PropsEx.
 
+  Ltac hb_simpl :=
+  repeat match goal with
+  | [ H1:HB ?es (fresh ?vs) _,H2: EdgeToNode (?vs, ?es) |- _] =>
+    apply hb_absurd_node in H1; auto; contradiction
+  | [ H1:HB ?es (node_next (fresh ?vs) )_,H2: EdgeToNode (?vs, ?es) |- _] =>
+    apply hb_absurd_node_next in H1; auto; contradiction
+  end.
 
 Section DAG.
   Require Import Aniceto.Graphs.DAG.
