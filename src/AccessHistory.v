@@ -1555,15 +1555,7 @@ Section Props.
     - apply wf_lt_edges_prop in H0.
       auto.
   Qed.
-(*
-  Lemma last_write_impl_nodes:
-    forall vs vs' es a h,
-    LastWrite (A:=Trace.datum) (HB es) a h ->
-    LastWrite (HB (vs', es)) a h.
-  Proof.
-    eauto using hb_impl_nodes, last_write_impl.
-  Qed.
-*)
+
   Lemma drf_check_inv_read_last_write:
     forall x n vs ah ah' d es r,
     WellFormed (vs,es) ah ->
