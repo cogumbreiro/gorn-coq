@@ -1126,6 +1126,28 @@ Section DAG.
     apply FGraph.walk2_inv_not_in_walk in H1; eauto using reaches_def.
   Qed.
 
+  Lemma run_to_lt_edges:
+    forall a t cg,
+    Run a t cg ->
+    LtEdges (cg_edges (snd cg)).
+  Proof.
+    intros.
+    induction H. {
+      simpl.
+      apply Forall_nil.
+    }
+    eauto using lt_edges_reduces.
+  Qed.
+
+  Lemma run_to_dag:
+    forall a t cg,
+    Run a t cg ->
+    DAG (FGraph.Edge (cg_edges (snd cg))).
+  Proof.
+    intros.
+    apply run_to_lt_edges in H.
+    auto using cg_dag.
+  Qed.
 End DAG.
 
 Module T.
