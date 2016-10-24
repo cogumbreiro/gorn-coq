@@ -269,6 +269,11 @@ Section SR.
     apply SJ_CG.knows_neq; auto.
   Qed.
 
+  (**
+    Show that the local-knowledge contains
+    SIF (CONTINUE).
+    *)
+
   Let local_to_knows_continue:
     forall cg sj sj' cg' l l' a b x k,
     LocalToKnows l cg sj ->
@@ -305,6 +310,11 @@ Section SR.
     eauto.
   Qed.
 
+  (**
+    Show that the local-knowledge contains
+    SIF (ALLOC).
+    *)
+
   Let local_to_knows_alloc:
     forall cg sj sj' cg' l l' a b x k y d,
     LocalToKnows l cg sj ->
@@ -340,6 +350,11 @@ Section SR.
     eauto.
   Qed.
 
+  (**
+    Show that the local-knowledge contains
+    SIF (WRITE).
+    *)
+
   Let local_to_knows_write:
     forall cg sj sj' cg' l l' a b x k y d,
     LocalToKnows l cg sj ->
@@ -374,6 +389,11 @@ Section SR.
     }
     eauto.
   Qed.
+
+  (**
+    Show that the local-knowledge contains
+    SIF (READ).
+    *)
 
   Let local_to_knows_read:
     forall cg sj sj' cg' l l' a b x k y k' d g g',
@@ -411,6 +431,7 @@ Section SR.
       destruct H0 as [(_,Hx)|(N,_)]; subst. {
         destruct H1 as [?|Hi]. {
           subst.
+          (** this is the crucial step of the proof *)
           apply drf_check_inv_read_last_write with (x:=x) in Hdrf; auto.
           destruct Hdrf as (h, (a, (mt, (Hw, (?,?))))).
           eauto using SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons.
@@ -426,6 +447,11 @@ Section SR.
     }
     eauto.
   Qed.
+
+  (**
+    Show that the local-knowledge contains
+    SIF (FUTURE).
+    *)
 
   Let local_to_knows_future:
     forall cg sj sj' cg' l l' a b x y k ds,
@@ -482,6 +508,11 @@ Section SR.
     apply SJ_CG.knows_neq; auto.
   Qed.
 
+  (**
+    Show that the local-knowledge contains
+    SIF (FORCE).
+    *)
+
   Let local_to_knows_force:
     forall cg sj sj' cg' l l' a b x k y d,
     LocalToKnows l cg sj ->
@@ -510,10 +541,12 @@ Section SR.
         destruct H1 as [|Hi]. {
           subst.
           inversion H4; subst.
-          eauto using local_knows_def, Locals.local_def, maps_to_to_task_of, SJ_CG.knows_append_right.
+          eauto using local_knows_def, Locals.local_def, maps_to_to_task_of,
+            SJ_CG.knows_append_right.
         }
         inversion H4; subst.
-        eauto using SJ_CG.knows_append_left, local_knows_def, Locals.local_def, maps_to_to_task_of.
+        eauto using SJ_CG.knows_append_left, local_knows_def, Locals.local_def,
+          maps_to_to_task_of.
       }
       contradiction N; trivial.
     }
@@ -532,6 +565,8 @@ Section SR.
   Notation local_info := (Locals.local_memory datum).
 
   Definition memory := (cg_access_history * local_info) % type.
+
+  (** If reduces, then local-knowledge-inclusion is preserved. *)
 
   Let local_to_knows_reduces:
     forall cg k sj sj' g g' cg' l l' x o k',
@@ -810,6 +845,8 @@ Section SR.
     simpl_node.
     assumption.
   Qed.
+
+  (** Main lemma *)
 
   Lemma wf_reduces_alt:
     forall cg cg' sj g g' l l' k x o,
