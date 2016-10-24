@@ -1,6 +1,7 @@
 Require Import Coq.Lists.List.
 Require Import Aniceto.Graphs.Graph.
 Require Import Aniceto.Graphs.FGraph.
+Require Import Aniceto.Graphs.DAG.
 Require Import Omega.
 
 Require Import CG.
@@ -1649,63 +1650,62 @@ Section SJ.
     eauto using spawn_point_to_node.
   Qed.
 
-  Lemma hb_inv_cons:
-    forall x y n1 n2 t es,
-    HB ({| e_t:=t; e_edge:=(n1, n2) |}::es) x y ->
-    HB es x y \/
-    (n2 = y /\ (n1 = x \/ HB es x n1)) \/
-    (n2 <> y /\ HB es n2 y) \/
-    (HB es x n1 /\ HB es n2 y).
-  Admitted.
-
   Let hb_absurd_fresh_lhs:
     forall nx x (vs:list tid) es (n:node),
+    DAG (FGraph.Edge (cg_edges (F (nx, node_next (fresh vs)) :: C (nx, fresh vs) :: es))) ->
     EdgeToNode (vs, es) ->
     MapsTo x nx vs ->
     ~ HB (F (nx, node_next (fresh vs)) :: C (nx, fresh vs) :: es) (fresh vs) n.
   Proof.
     intros.
+    assert (Ha : DAG (FGraph.Edge (cg_edges (C (nx, fresh vs) :: es)))) by
+    eauto using f_dag_inv_cons.
+    assert (Hb : DAG (FGraph.Edge (cg_edges es))) by
+    eauto using f_dag_inv_cons.
     unfold not; intros N.
-      apply hb_inv_cons in N.
-      destruct N as [Hy|[(?,[?|Hy])|[(?,Hy)|(Hy,?)]]]; subst;
-      simpl_node;
-      apply hb_inv_cons in Hy;
-      destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; simpl_node;
-      hb_simpl.
+    apply hb_inv_cons in N; auto.
+    destruct N as [Hy|[(?,[?|Hy])|[(?,Hy)|(Hy,?)]]]; subst;
+    simpl_node; auto;
+    apply hb_inv_cons in Hy; auto;
+    destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; simpl_node;
+    hb_simpl.
   Qed.
 
   Let can_join_pres_fork_2 cg k sj
     (Hsj: SJ cg k sj)
     (Heq: length (fst cg) = length sj)
     (Hke: KnowsEquiv2 sj cg)
-    (Hen: EdgeToNode cg):
-    forall n z sj' cg' x y,
-    CG.Reduces cg (x, CG.FORK y) cg' ->
-    Reduces sj cg' sj' ->
+    (Hen: EdgeToNode cg)
+    sj' cg' x y
+    (Hcr: CG.Reduces cg (x, CG.FORK y) cg')
+    (Hr: Reduces sj cg' sj')
+    (Hd: DAG (FGraph.Edge (cg_edges (snd cg')))):
+    forall n z,
     HBCanJoin cg' n z ->
     CanJoin n z sj'.
   Proof.
     intros.
     simpl_red.
-    inversion H1; subst; clear H1;
+    inversion H; subst; clear H;
     simpl in *. {
       rename ny0 into nz.
       rewrite fresh_cons_rw_next in *.
       clear nx; rename prev into nx.
       apply maps_to_length_rw in Heq.
-      inversion H; subst; clear H. {
-        eapply hb_absurd_fresh_lhs in H0; eauto.
+      inversion H0; subst; clear H0. {
+        eapply hb_absurd_fresh_lhs in H1; eauto.
         contradiction.
       }
-      inversion H9; subst; clear H9.
+      inversion H10; subst; clear H10.
       assert (Hc: HBCanJoin (vs, es) nz z). {
         auto using hb_can_join_eq.
       }
-      apply hb_inv_cons in H0.
-      destruct H0 as [Hy|[(?,[?|Hy])|[(?,Hy)|(?,Hy)]]]; subst;
+      apply hb_inv_cons in H1; auto.
+      apply f_dag_inv_cons in Hd.
+      destruct H1 as [Hy|[(?,[?|Hy])|[(?,Hy)|(?,Hy)]]]; subst;
       try rewrite Heq.
       - apply Hke in Hc.
-        apply hb_inv_cons in Hy;
+        apply hb_inv_cons in Hy; auto.
         destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; try (rewrite Heq);
         eauto using hb_spec, can_join_cons, can_join_neq; hb_simpl.
       - rewrite <- fresh_cons_rw_next with (x:=Cons y nz).
@@ -1713,26 +1713,26 @@ Section SJ.
           auto using hb_can_join_eq .
         }
         auto using can_join_copy, can_join_cons.
-      - apply hb_inv_cons in Hy.
+      - apply hb_inv_cons in Hy; auto.
         rewrite <- fresh_cons_rw_next with (x:=Cons y nx).
         apply can_join_copy.
         destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst;
         simpl_node; hb_simpl;
         eauto using hb_can_join_hb, can_join_cons.
-      - apply hb_inv_cons in Hy.
+      - apply hb_inv_cons in Hy; auto.
         destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; try (rewrite Heq);
         simpl_node; hb_simpl.
-      - apply hb_inv_cons in Hy.
+      - apply hb_inv_cons in Hy; auto.
         destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; try (rewrite Heq);
         simpl_node; hb_simpl.
     }
     apply maps_to_length_rw in Heq.
-    inversion H; subst; clear H. {
+    inversion H0; subst; clear H0. {
       rewrite Heq.
       apply can_join_cons.
       apply can_join_eq.
     }
-    inversion H7; subst; clear H7.
+    inversion H8; subst; clear H8.
     assert (Hc: HBCanJoin (vs,es) n z). {
       auto using hb_can_join_eq.
     }
@@ -1744,26 +1744,29 @@ Section SJ.
     (Hsj: SJ cg k sj)
     (Heq: length (fst cg) = length sj)
     (Hke: KnowsEquiv2 sj cg)
-    (Hen: EdgeToNode cg):
-    forall n z sj' cg' x y,
-    CG.Reduces cg (x, CG.JOIN y) cg' ->
-    Reduces sj cg' sj' ->
+    (Hen: EdgeToNode cg)
+    sj' cg' x y
+    (Hcr: CG.Reduces cg (x, CG.JOIN y) cg')
+    (Hr: Reduces sj cg' sj')
+    (Hd: DAG (FGraph.Edge (cg_edges (snd cg')))):
+    forall n z,
     HBCanJoin cg' n z ->
     CanJoin n z sj'.
   Proof.
     intros.
     simpl_red.
-    inversion H1; subst; clear H1;
+    inversion H; subst; clear H;
     simpl in *. {
       rename ny0 into c.
       rename prev into a.
       rename ny into b.
       apply maps_to_length_rw in Heq.
-      inversion H; subst; clear H.
-      inversion H2; subst; clear H2.
-      apply hb_inv_cons in H0.
-      destruct H0 as [Hy|[(?,[?|Hy])|[(?,Hy)|(Hy,?)]]]; subst.
-      + apply hb_inv_cons in Hy.
+      inversion H0; subst; clear H0.
+      inversion H3; subst; clear H3.
+      apply hb_inv_cons in H1; auto.
+      apply f_dag_inv_cons in Hd.
+      destruct H1 as [Hy|[(?,[?|Hy])|[(?,Hy)|(Hy,?)]]]; subst.
+      + apply hb_inv_cons in Hy; auto.
         destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst;
         try rewrite Heq;
         hb_simpl;
@@ -1774,63 +1777,62 @@ Section SJ.
         eauto using
           can_join_append_right, can_join_append_left,
           hb_can_join_hb, can_join_cons, hb_can_join_eq.
-      + apply hb_inv_cons in Hy.
+      + apply hb_inv_cons in Hy; auto.
         destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst;
         try rewrite Heq;
         hb_simpl;
         eauto using
           can_join_append_right, can_join_append_left,
           hb_can_join_hb, can_join_cons, hb_can_join_eq.
-      + apply hb_inv_cons in Hy.
+      + apply hb_inv_cons in Hy; auto.
         destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst;
         try rewrite Heq;
         hb_simpl; simpl_node.
-      + apply hb_inv_cons in H.
+      + apply hb_inv_cons in H; auto.
         destruct H as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst;
         try rewrite Heq;
         hb_simpl; simpl_node.
     }
-    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
     inversion H1; subst; clear H1.
-    rename prev into a.
-    rename ny into b.
-    rename n into c.
-        eauto using
-          can_join_append_right, can_join_append_left,
-          hb_can_join_hb, can_join_cons, hb_can_join_eq.
+    eauto using
+      can_join_append_right, can_join_append_left,
+      hb_can_join_hb, can_join_cons, hb_can_join_eq.
   Qed.
 
   Let can_join_pres_continue_2 cg k sj
     (Hsj: SJ cg k sj)
     (Heq: length (fst cg) = length sj)
     (Hke: KnowsEquiv2 sj cg)
-    (Hen: EdgeToNode cg):
-    forall n z sj' cg' x,
-    CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces sj cg' sj' ->
+    (Hen: EdgeToNode cg)
+    sj' cg' x
+    (Hcr: CG.Reduces cg (x, CG.CONTINUE) cg')
+    (Hr: Reduces sj cg' sj')
+    (Hd: DAG (FGraph.Edge (cg_edges (snd cg')))):
+    forall n z,
     HBCanJoin cg' n z ->
     CanJoin n z sj'.
   Proof.
     intros.
     simpl_red.
-    inversion H1; subst; clear H1;
+    inversion H; subst; clear H;
     simpl in *. {
       apply maps_to_length_rw in Heq.
-      inversion H; subst; clear H.
-      apply hb_inv_cons in H0.
-      destruct H0 as [Hy|[(?,[?|Hy])|[(?,Hy)|(Hy,?)]]]; subst;
+      inversion H0; subst; clear H0.
+      apply hb_inv_cons in H2; auto.
+      destruct H2 as [Hy|[(?,[?|Hy])|[(?,Hy)|(Hy,?)]]]; subst;
       try rewrite Heq;
       hb_simpl;
       eauto using
           can_join_copy,
           hb_can_join_hb, can_join_cons, hb_can_join_eq.
     }
-    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
     eauto using
         can_join_copy,
         hb_can_join_hb, can_join_cons, hb_can_join_eq.
   Qed.
-  
+
   Definition KnowsEquiv sj cg :=
   forall n x, CanJoin n x sj <-> HBCanJoin cg n x.
 
@@ -1857,7 +1859,8 @@ Section SJ.
 
   Theorem hb_can_join_preserves cg k sj
     (Hsj: SJ cg k sj)
-    (Hke: KnowsEquiv sj cg):
+    (Hke: KnowsEquiv sj cg)
+    (Hlt: LtEdges (cg_edges (snd cg))):
     forall i sj' cg',
     CG.Reduces cg i cg' ->
     Reduces sj cg' sj' ->
@@ -1867,6 +1870,8 @@ Section SJ.
     unfold KnowsEquiv.
     intros.
     destruct i.
+    assert (Hlt2: LtEdges (cg_edges (snd cg'))) by eauto using lt_edges_reduces.
+    apply cg_dag in Hlt2.
     inversion Hsj.
     split; intros.
     + destruct o.
