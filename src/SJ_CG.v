@@ -1242,38 +1242,6 @@ Section SJ.
     eauto using sj_reduces.
   Qed.
 
-  Lemma sj_make_cg:
-    forall a,
-    SJ (make_cg a) nil (Nil :: nil).
-  Proof.
-    intros.
-    apply sj_def; auto using make_edge_to_node; unfold make_cg; simpl; auto
-    using free_in_graph_nil, knows_to_edge_nil, incl_nil, edge_to_knows_nil.
-  Qed.
-
-  Lemma sj_spec:
-    forall a t cg k,
-    CG.Run a t cg ->
-    Events.Run t k ->
-    exists sj, SJ cg k sj.
-  Proof.
-    induction t; intros. {
-      inversion H; subst; clear H.
-      inversion H0; subst; clear H0.
-      eauto using sj_make_cg.
-    }
-    inversion H; subst; clear H.
-    inversion H0; subst; clear H0.
-    eapply IHt in H3; eauto.
-    destruct H3 as (sj, Hsj).
-    assert (Hr: exists sj', Reduces sj cg sj'). {
-      inversion Hsj.
-      eauto.
-    }
-    destruct Hr as (sj', Hr).
-    eauto using sj_reduces.
-  Qed.
-
   Theorem hb_spec:
     forall cg k n1 n2 x sj,
     SJ cg k sj ->
@@ -1882,6 +1850,57 @@ Section SJ.
       * eapply can_join_pres_fork_2; eauto.
       * eapply can_join_pres_join_2; eauto.
       * eapply can_join_pres_continue_2; eauto.
+  Qed.
+
+  Lemma sj_make_cg:
+    forall a,
+    SJ (make_cg a) nil (Nil :: nil).
+  Proof.
+    intros.
+    apply sj_def; auto using make_edge_to_node; unfold make_cg; simpl; auto
+    using free_in_graph_nil, knows_to_edge_nil, incl_nil, edge_to_knows_nil.
+  Qed.
+
+  Lemma knows_equiv_nil:
+    forall a,
+    KnowsEquiv (Nil :: nil) (make_cg a).
+  Proof.
+    intros.
+    unfold KnowsEquiv.
+    split; intros.
+    - inversion H; subst; clear H.
+      inversion H3; subst; clear H3.
+    - inversion H; subst; clear H. {
+        inversion H0.
+      }
+      inversion H0.
+  Qed.
+
+  (** Build a SJ from a CG *)
+
+  Theorem sj_spec:
+    forall a t cg k,
+    CG.Run a t cg ->
+    Events.Run t k ->
+    exists sj, SJ cg k sj /\ KnowsEquiv sj cg.
+  Proof.
+    induction t; intros. {
+      inversion H; subst; clear H.
+      inversion H0; subst; clear H0.
+      eauto using sj_make_cg, knows_equiv_nil.
+    }
+    inversion H; subst; clear H.
+    assert (Hcg := H3).
+    inversion H0; subst; clear H0.
+    eapply IHt in H3; eauto.
+    destruct H3 as (sj, (Hsj,Hk)).
+    assert (Hr: exists sj', Reduces sj cg sj'). {
+      inversion Hsj.
+      eauto.
+    }
+    destruct Hr as (sj', Hr).
+    apply CG.run_to_lt_edges in Hcg.
+    eauto using sj_reduces, hb_can_join_preserves.
   Qed.
 End SJ.
 
