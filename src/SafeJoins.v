@@ -10,8 +10,6 @@ Require Import Tid.
 
 Require Import Aniceto.Graphs.FGraph.
 
-Section Defs.
-
   Inductive op_type := FORK | JOIN.
 
   Structure op := {
@@ -19,6 +17,13 @@ Section Defs.
     op_src: tid;
     op_dst: tid
   }.
+
+Module SJ_Notations.
+  Notation F x y := ({| op_t := FORK; op_src:=x; op_dst := y |}).
+  Notation J x y := ({| op_t := JOIN; op_src:=x; op_dst := y |}).
+End SJ_Notations.
+
+Section Defs.
 
   Definition trace := list op.
 
@@ -82,13 +87,23 @@ Section Defs.
     unfold incl in *; auto.
   Qed.
 
-  Lemma eval_inl:
+  Lemma eval_incl:
     forall k o,
     incl k (eval o k).
   Proof.
     intros.
     unfold eval.
     destruct (op_t o); auto using join_incl, fork_incl.
+  Qed.
+
+  Lemma in_eval:
+    forall e k o,
+    List.In e k ->
+    List.In e (eval o k).
+  Proof.
+    intros.
+    assert (Hi: incl k (eval o k)) by auto using eval_incl.
+    auto.
   Qed.
 
   Inductive CanCheckOp (k:known) : op -> Prop :=
@@ -846,6 +861,139 @@ Section Defs.
   Qed.
 
 End Defs.
+
+Section Trace.
+  Import SJ_Notations.
+
+  Inductive Edge : trace -> (tid*tid) ->  Prop :=
+  | edge_fork_eq:
+    forall x y k,
+    Edge (F x y:: k) (x,y)
+  | edge_fork_trans:
+    forall x y z k,
+    Edge k (x, z) ->
+    Edge (F x y::k) (y, z)
+  | edge_join:
+    forall x y z k,
+    Edge k (y, z) ->
+    Edge (J x y::k) (x, z)
+  | edge_cons:
+    forall k e e',
+    Edge k e ->
+    Edge (e'::k) e.
+
+  Inductive Trace: trace -> Prop :=
+  | trace_nil:
+    Trace nil
+  | trace_fork:
+    forall x y l,
+    x <> y ->
+    ~ Graph.In (Edge l) y  ->
+    Trace l ->
+    Trace (F x y:: l)
+  | trace_join:
+    forall x y l,
+    Trace l ->
+    Edge l (x, y) ->
+    Trace (J x y :: l).
+
+  Lemma edge_to_f_edge:
+    forall l e k,
+    Safe l k ->
+    Edge l e ->
+    FGraph.Edge k e.
+  Proof.
+    induction l; intros;
+    unfold FGraph.Edge. {
+      inversion H0.
+    }
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    - unfold eval; simpl.
+      auto using in_fork_5.
+    - eapply IHl in H4; eauto.
+      inversion H3; subst; clear H3.
+      unfold eval; simpl.
+      auto using in_fork_2.
+    - unfold eval; simpl.
+      eapply IHl in H4; eauto.
+      eauto using in_join_2.
+    - apply in_eval.
+      apply IHl with (k:=k0) in H4; auto.
+  Qed.
+
+  Lemma f_edge_to_edge:
+    forall l e k,
+    Safe l k ->
+    FGraph.Edge k e ->
+    Edge l e.
+  Proof.
+    induction l; intros;
+    unfold FGraph.Edge in *. {
+      inversion H; subst.
+      inversion H0.
+    }
+    inversion H; subst; clear H.
+    destruct e as (x, y).
+    destruct a as ([], a, b); unfold eval in *; simpl in *.
+    - apply fork_inv_in in H0.
+      destruct H0 as [(?,?)|[(?,?)|?]]; subst;
+      eauto using edge_fork_trans, edge_fork_eq, edge_cons.
+    - apply join_inv_in in H0.
+      destruct H0 as [(?,?)|?]. {
+        subst.
+        eauto using edge_join.
+      }
+      eauto using edge_cons.
+  Qed.
+
+  Lemma trace_to_safe:
+    forall l,
+    Trace l ->
+    exists k, Safe l k.
+  Proof.
+    intros.
+    induction H.
+    - eauto using safe_nil.
+    - destruct IHTrace as (k, Hs).
+      exists (eval (F x y) k).
+      apply safe_cons; auto.
+      apply can_check_fork; auto.
+      unfold not; intros.
+      destruct H2 as (e, (He, Hi)).
+      contradiction H0.
+      unfold In.
+      eauto using f_edge_to_edge.
+    - destruct IHTrace as (k, Hs).
+      exists (eval (J x y) k).
+      apply safe_cons; auto.
+      apply can_check_join; auto.
+      eauto using edge_to_f_edge.
+  Qed.
+
+  Lemma safe_to_trace:
+    forall l k,
+    Safe l k ->
+    Trace l.
+  Proof.
+    intros.
+    induction H. {
+      auto using trace_nil.
+    }
+    destruct o as ([], a, b). {
+      inversion H; subst; clear H.
+      apply trace_fork; auto.
+      unfold not; intros N.
+      contradiction H4.
+      destruct N as (e, (Hi, He)).
+      unfold In.
+      apply edge_to_f_edge with (k:=k) in Hi; eauto.
+    }
+    inversion H; subst.
+    eauto using f_edge_to_edge, trace_join.
+  Qed.
+
+End Trace.
 
 Section Examples.
 
