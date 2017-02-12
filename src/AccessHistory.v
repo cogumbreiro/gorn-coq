@@ -1,3 +1,8 @@
+Require Tid.
+Require Trace.
+Require Node.
+Require CG.
+
 Require Import Coq.Lists.List.
 Require Import Coq.Relations.Relation_Definitions.
 Require Import Coq.Structures.OrderedTypeEx.
@@ -957,15 +962,13 @@ Section Props.
 End Props.
 
 Module T.
-  Require Import Tid.
-  Require Trace.
-  Require Import Node.
-  Require CG.
+  Import Tid.
+  Import Node.
 
   Notation cg_access_history := (access_history Trace.datum node).
   Notation cg_access_history_op := (op Trace.datum).
 
-  Require Import CG.
+  Import CG.
   Import CG.T.
 
   Section Defs.

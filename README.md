@@ -1,27 +1,21 @@
-# Development
+# SIF formalization in Coq
 
-We use [OPAM](https://opam.ocaml.org/) and [Coq Shell](https://github.com/coq/opam-coq-shell)
-for the development.
+Run once:
 
-This project depends on [Aniceto](https://bitbucket.org/cogumbreiro/aniceto-coq),
-so you need to install it first:
-```
-git clone https://bitbucket.org/cogumbreiro/aniceto-coq
-```
+    ./configure
 
-To setup the requirements of this software do:
-```
-source dev.sh # to install dependencies and setup the environment
-```
+To run the proofs use `make`.
 
-# Setting up CoqIDE in MacOS X
+File `src/SafeJoins.v` corresponds to Section 3, where
+Theorem 3.2 is called `deadlock_avoidance`.
 
-To setup CoqIDE in MacOS you need to set the path of `coqtop` to be aware
-of your OPAM installation.
+File `src/CG.v` corresponds to Section 4.2.
+File `src/AccessHistory.v` corresponds to Section 4.3,
+where Lemma 4.1 is called `wf_reduces`.
 
-Navigate to `CoqIDE -> Externals -> coqtop` and set the output of the
-following command:
+File `src/SJ_CG.v` correspnds to Section 4.4, where Lemma 4.2
+is called `sj_spec`.
 
-```
-which coqtop
-```
+File `src/LocalInfo.v` corresponds to Section 4.5, where Theorem 4.3
+corresponds to `wf_reduces_alt`.
+

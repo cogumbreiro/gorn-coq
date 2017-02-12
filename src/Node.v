@@ -1,5 +1,11 @@
 Set Implicit Arguments.
 
+Require Coq.Arith.Compare_dec.
+Require Coq.FSets.FMapFacts.
+
+Require Tid.
+Require Bijection.
+
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FMapAVL.
@@ -8,8 +14,6 @@ Require Import Coq.Arith.Peano_dec.
 Require Import Omega.
 
 Require Import Aniceto.Map.
-
-Require Coq.FSets.FMapFacts.
 
 Inductive node := make : nat -> node.
 
@@ -48,7 +52,7 @@ Module NODE <: UsualOrderedType.
     inversion H.
   Qed.
 
-  Require Import Coq.Arith.Compare_dec.
+  Import Coq.Arith.Compare_dec.
   Lemma compare:
     forall x y, Compare lt eq x y.
   Proof.
@@ -139,8 +143,7 @@ Section NotIn.
 End NotIn.
 
 Section Props.
-  Require Import Tid.
-  Require Bijection.
+  Import Tid.
 
   Variable A:Type.
 

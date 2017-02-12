@@ -1,5 +1,7 @@
 Set Implicit Arguments.
 
+Require Coq.Arith.Compare_dec.
+
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FMapAVL.
@@ -48,7 +50,7 @@ Module MID <: UsualOrderedType.
     inversion H.
   Qed.
 
-  Require Import Coq.Arith.Compare_dec.
+  Import Coq.Arith.Compare_dec.
   Lemma compare:
     forall x y, Compare lt eq x y.
   Proof.

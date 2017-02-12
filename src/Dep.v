@@ -1,11 +1,12 @@
+Require Coq.Arith.Compare_dec.
+Require Coq.FSets.FMapFacts.
+
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FMapAVL.
 Require Import Coq.FSets.FSetAVL.
 Require Import Coq.Arith.Peano_dec.
 Require Import Aniceto.Map.
-
-Require Coq.FSets.FMapFacts.
 
 Require Import HJ.Mid.
 Require Import HJ.Tid.
@@ -103,7 +104,7 @@ Module SumOrderedType (O1 O2:OrderedType) <: OrderedType.
     - eauto using O2.lt_not_eq.
   Qed.
 
-  Require Import Coq.Arith.Compare_dec.
+  Import Coq.Arith.Compare_dec.
   Lemma compare:
     forall x y, Compare lt eq x y.
   Proof.

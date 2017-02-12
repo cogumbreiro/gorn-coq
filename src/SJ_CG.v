@@ -1903,6 +1903,26 @@ Section SJ.
     eauto using sj_reduces, hb_can_join_preserves.
   Qed.
 End SJ.
-
-
-
+(*
+Section Extra.
+  Lemma build_cg:
+    forall t k,
+    Events.Run t k ->
+    exists a cg, CG.Run a t cg.
+  Proof.
+    induction t; intros. {
+      exists (taskid 0).
+      exists (make_cg (taskid 0)).
+      auto using run_nil.
+    }
+    inversion H; subst; clear H.
+    apply IHt in H2.
+    destruct H2 as (x, (cg, Hr)).
+    exists x.
+    inversion H4; subst; clear H4.
+    - inversion H; subst; clear H.
+      CG.Reduces
+    apply run_cons in Hr.
+  Qed.
+End Extra.
+*)

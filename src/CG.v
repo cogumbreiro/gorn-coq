@@ -1,3 +1,7 @@
+Require Aniceto.Graphs.Graph.
+Require Aniceto.Graphs.DAG.
+Require Trace.
+
 Require Import Coq.Lists.List.
 Require Import Coq.Relations.Relation_Definitions.
 Require Import Coq.Lists.ListSet.
@@ -17,8 +21,6 @@ Set Implicit Arguments.
 
 Require Import Aniceto.Graphs.DAG.
 Require Import Coq.Relations.Relation_Operators.
-Require Aniceto.Graphs.Graph.
-
 Require Import Coq.Structures.OrderedTypeEx.
 
 Section Defs.
@@ -758,7 +760,7 @@ End PropsEx.
   end.
 
 Section DAG.
-  Require Import Aniceto.Graphs.DAG.
+  Import Aniceto.Graphs.DAG.
 
   Let LtEdge e := NODE.lt (fst e) (snd e).
   Definition LtEdges es := List.Forall LtEdge es.
@@ -1151,7 +1153,6 @@ Section DAG.
 End DAG.
 
 Module T.
-  Require Trace.
 
   Definition op_to_cg (o:Trace.op) : op :=
   match o with

@@ -1,7 +1,11 @@
+Require Coq.FSets.FMapFacts.
+Require Coq.Arith.Compare_dec.
+
+Require Aniceto.Map.
+
 Require Import Coq.Structures.OrderedType.
 Require Import Coq.Structures.OrderedTypeEx.
 Require Import Coq.FSets.FMapAVL.
-Require Coq.FSets.FMapFacts.
 Require Import Coq.Arith.Peano_dec.
 Require Import Omega.
 
@@ -42,7 +46,7 @@ Module VAR <: UsualOrderedType.
     inversion H.
   Qed.
 
-  Require Import Coq.Arith.Compare_dec.
+  Import Coq.Arith.Compare_dec.
   Lemma compare:
     forall x y, Compare lt eq x y.
   Proof.
@@ -76,6 +80,6 @@ Module MV := FMapAVL.Make VAR.
 Module MV_Facts := FMapFacts.Facts MV.
 Module MV_Props := FMapFacts.Properties MV.
 
-Require Import Aniceto.Map.
+Import Aniceto.Map.
 
 Module MV_Extra := MapUtil MV.
