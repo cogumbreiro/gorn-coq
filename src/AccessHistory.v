@@ -25,6 +25,14 @@ Section Defs.
   Variable A:Type.
   Variable E:Type.
   Variable Lt: E -> E -> Prop.
+  Variable lt_trans:
+    forall x y z,
+    Lt x y ->
+    Lt y z ->
+    Lt x z.
+  Variable lt_irrefl:
+    forall x,
+    ~ Lt x x.
 
   (**
     An represents the kind of access the node in the CG responsible for the access
@@ -146,16 +154,6 @@ Section Defs.
 
   Ltac expand H := inversion H; subst; clear H.
 
-  Variable lt_trans:
-    forall x y z,
-    Lt x y ->
-    Lt y z ->
-    Lt x z.
-
-  Variable lt_irrefl:
-    forall x,
-    ~ Lt x x.
-
   Lemma racy_access_irrefl_when:
     forall (a b:access),
     a_when a = a_when b ->
@@ -258,7 +256,480 @@ Section Defs.
     apply racy_access_symm  in H0; contradiction.
   Qed.
 
-  Inductive OrderedAdds : list access -> Prop :=
+  Lemma write_some:
+    forall n (d:A),
+    Write (n, Some d).
+  Proof.
+    intros.
+    apply has_data_def.
+  Qed.
+
+  Lemma read_none:
+    forall n,
+    Read (n, None).
+  Proof.
+    intros.
+    unfold Read, not; intros.
+    inversion H.
+  Qed.
+
+  Lemma write_dec:
+    forall a,
+    { Write a } + { ~ Write a }.
+  Proof.
+    intros.
+    destruct a as (?,[]).
+    - auto using write_some.
+    - right; unfold not; intros.
+      inversion H.
+  Defined.
+
+End Defs.
+
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+
+Section LastWrites.
+
+  Variable A:Type.
+  Variable E:Type.
+  Variable Lt: E -> E -> Prop.
+  Variable lt_trans:
+    forall x y z,
+    Lt x y ->
+    Lt y z ->
+    Lt x z.
+  Variable lt_irrefl:
+    forall x,
+    ~ Lt x x.
+
+  Notation HB a b := (Lt (a_when a) (a_when b)).
+  Notation MHP a b := (~ HB a b /\ ~ HB b a).
+  Notation HBE a b := (HB a b \/ a_when a = a_when b).
+
+  Let last_write:
+    forall (a:access A E) b l,
+    LastWrite Lt b l ->
+    Write a ->
+    List.In a l ->
+    HBE a b.
+  Proof.
+    intros.
+    inversion H.
+    eauto.
+  Qed.
+
+  Let last_write_absurd_nil:
+    forall (a:access A E),
+    ~ LastWrite Lt a nil.
+  Proof.
+    unfold not; intros.
+    inversion H.
+    inversion H1.
+  Qed.
+
+
+  Let in_last_write:
+    forall l a b,
+    List.In a l ->
+    LastWrite Lt b l ->
+    Read (A:=A) a \/ (Write a /\ HBE a b).
+  Proof.
+    intros.
+    inversion H0; clear H0.
+    unfold ForallWrites in *; simpl in *.
+    destruct (write_dec a); auto.
+  Qed.
+
+  Let forall_writes_inv:
+    forall P l (a:access A E),
+    ForallWrites P (a :: l) ->
+    ForallWrites P l /\ (Write a -> P a).
+  Proof.
+    intros.
+    unfold ForallWrites in *.
+    rewrite <- Forall_forall in *.
+    inversion H; subst; auto.
+  Qed.
+
+  Let forall_writes_inv_cons:
+    forall P l (a:access A E),
+    ForallWrites P (a :: l) ->
+    ForallWrites P l.
+  Proof.
+    intros.
+    apply forall_writes_inv in H; destruct H.
+    auto.
+  Qed.
+
+  Let forall_reads_inv:
+    forall P l (a:access A E),
+    ForallReads P (a :: l) ->
+    ForallReads P l /\ (Read a -> P a).
+  Proof.
+    intros.
+    unfold ForallReads in *.
+    rewrite <- Forall_forall in *.
+    inversion H; subst; auto.
+  Qed.
+
+  Let forall_reads_inv_cons:
+    forall P l (a:access A E),
+    ForallReads P (a :: l) ->
+    ForallReads P l.
+  Proof.
+    intros.
+    apply forall_reads_inv in H; destruct H.
+    auto.
+  Qed.
+
+  Let last_write_inv_read:
+    forall l (a:access A E) b,
+    Read a ->
+    LastWrite Lt b (a :: l) ->
+    LastWrite Lt b l.
+  Proof.
+    induction l; intros. {
+      inversion H0.
+      inversion H2; subst; clear H2. {
+        contradiction.
+      }
+      inversion H4.
+    }
+    inversion H0; subst; clear H0.
+    inversion H2; subst; clear H2. {
+      contradiction.
+    }
+    inversion H0; subst; clear H0. {
+      eauto using last_write_def, in_eq.
+    }
+    apply forall_writes_inv_cons in H3.
+    auto using last_write_def, in_cons.
+  Qed.
+
+  Let last_write_hbe:
+    forall (x:access A E) y l,
+    LastWrite Lt x l ->
+    LastWrite Lt y l ->
+    HBE x y.
+  Proof.
+    intros.
+    inversion H0.
+    inversion H.
+    apply last_write with (l:=l); auto.
+  Qed.
+
+  Let last_write_inv:
+    forall a (b:access A E) l,
+    LastWrite Lt a (b :: l) ->
+    (b = a /\  ForallWrites (fun c => HBE c a) l) \/
+    (LastWrite Lt a l /\ (Write b -> HBE b a)).
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    destruct H1. {
+      apply forall_writes_inv_cons in H2.
+      auto.
+    }
+    right.
+    apply forall_writes_inv in H2.
+    destruct H2 as (Hf, Hi).
+    eauto using last_write_def.
+  Qed.
+
+  Let in_last_write_write:
+    forall l (a:access A E) b,
+    List.In a l ->
+    Write a ->
+    LastWrite Lt b l ->
+    HBE a b.
+  Proof.
+    intros.
+    eapply in_last_write in H1; eauto.
+    destruct H1; try contradiction.
+    destruct H1.
+    assumption.
+  Qed.
+
+  Lemma last_write_inv_cons_nil:
+    forall (a b:access A E),
+    LastWrite Lt a (b::nil) ->
+    a = b.
+  Proof.
+    intros.
+    inversion H.
+    destruct H1. {
+      auto.
+    }
+    inversion H1.
+  Qed.
+
+  Lemma last_write_inv_cons_read:
+    forall (a:access A E) n l,
+    LastWrite Lt a ((n,None)::l) ->
+    LastWrite Lt a l.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    destruct H1; subst. {
+      inversion H0.
+    }
+    assert (ForallWrites (fun b : access A E => HBE b a) l). {
+      unfold ForallWrites in *; eauto using in_cons.
+    }
+    eauto using last_write_def.
+  Qed.
+
+  Let hb_neq:
+    forall (a:access A E) b,
+    HB a b ->
+    a <> b.
+  Proof.
+    unfold not; intros.
+    subst.
+    apply lt_irrefl in H.
+    assumption.
+  Qed.
+
+  Let hb_eq_when_left:
+    forall (x y z:access A E),
+    HB x z ->
+    a_when y = a_when x ->
+    HB y z.
+  Proof.
+    intros.
+    rewrite H0.
+    assumption.
+  Qed.
+
+  Let hbe_hb_hb_trans:
+    forall (a b c:access A E),
+    HBE a b ->
+    HB b c ->
+    HB a c.
+  Proof.
+    intros.
+    destruct H; subst; eauto.
+  Qed.
+
+  Let write_safe:
+    forall (a:access A E) b l,
+    LastWrite Lt a l ->
+    WriteSafe Lt b l ->
+    HB a b.
+  Proof.
+    intros.
+    inversion H0; subst.
+    eauto.
+  Qed.
+
+  Let write_safe_hb:
+    forall (a b:access A E) l,
+    List.In a l ->
+    Write a ->
+    WriteSafe Lt b l ->
+    HB a b.
+  Proof.
+    intros.
+    inversion H1; subst; clear H1.
+    assert (Hp: HBE a w) by eauto.
+    eauto.
+  Qed.
+
+  Let read_write_safe:
+    forall (a b:access A E) l,
+    List.In b l ->
+    WriteSafe Lt a l ->
+    ReadSafe Lt a l ->
+    HB b a.
+  Proof.
+    intros.
+    destruct (write_dec b); eauto.
+  Qed.
+
+  Let read_in_write_safe_race_free:
+    forall (a b:access A E) l,
+    List.In a l ->
+    Read b ->
+    WriteSafe Lt b l ->
+    RaceFreeAccess Lt a b.
+  Proof.
+    intros.
+    destruct (write_dec a). {
+      eauto using race_free_access_hb, race_free_access_symm.
+    }
+    eauto using race_free_access_read.
+  Qed.
+
+  Lemma last_write_inv_cons_write:
+    forall (a:access A E) n l d,
+    WriteSafe Lt (n,Some d) l ->
+    LastWrite Lt a ((n,Some d)::l) ->
+    n = a_when a.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    destruct H2. {
+      subst.
+      auto.
+    }
+    apply forall_writes_inv in H3.
+    destruct H3 as (_,Hi).
+    assert (Hx : Write (n, Some d)) by auto using write_some.
+    apply Hi in Hx.
+    destruct Hx. {
+      assert (HB a (n, Some d)) by eauto using write_safe_hb.
+      assert (HB a a) by eauto.
+      apply lt_irrefl in H4.
+      contradiction.
+    }
+    auto.
+  Qed.
+
+  Lemma last_write_cons_read:
+    forall (a:access A E) n l,
+    LastWrite Lt a l ->
+    LastWrite Lt a ((n,None)::l).
+  Proof.
+    intros.
+    inversion H; subst.
+    apply last_write_def; auto using in_cons.
+    unfold ForallWrites in *.
+    intros.
+    destruct H3. {
+      subst.
+      inversion H4.
+    }
+    auto.
+  Qed.
+
+  Let last_write_trans:
+    forall (x y z:access A E) l,
+    LastWrite Lt x l ->
+    LastWrite Lt y l ->
+    HB x z ->
+    HB y z.
+  Proof.
+    intros.
+    assert (Hx: HBE y x) by eauto.
+    destruct Hx. {
+      eauto.
+    }
+    subst.
+    eauto.
+  Qed.
+
+  Lemma last_write_to_write:
+    forall (a:access A E) h,
+    LastWrite Lt a h ->
+    Write a.
+  Proof.
+    intros.
+    inversion H; auto.
+  Qed.
+
+  Lemma last_write_to_in:
+    forall (a:access A E) h,
+    LastWrite Lt a h ->
+    List.In a h.
+  Proof.
+    intros; inversion H; auto.
+  Qed.
+
+  Lemma last_write_cons_write:
+    forall e d h,
+    WriteSafe Lt (e, Some d) h ->
+    LastWrite (A:=A) Lt (e, Some d) ((e, Some d) :: h).
+  Proof.
+    intros.
+    apply last_write_def; auto using write_some, in_eq.
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    unfold ForallWrites in *; intros.
+    destruct H0. {
+      subst; auto.
+    }
+    eauto.
+  Qed.
+
+  Lemma write_safe_inv_in:
+    forall (a b:access A E) l,
+    WriteSafe Lt a l ->
+    List.In b l ->
+    Read b \/ HB b a.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    eapply in_last_write in H0; eauto.
+    assert (Write w) by eauto using last_write_to_write.
+    destruct H0 as [?|(?,?)]. {
+      auto.
+    }
+    right.
+    destruct H3. {
+      eauto.
+    }
+    apply hb_eq_when_left with (x:=w); auto.
+  Qed.
+
+  Lemma read_safe_inv_in:
+    forall (a b:access A E) l,
+    ReadSafe Lt a l ->
+    List.In b l ->
+    Write b \/ HB b a.
+  Proof.
+    intros.
+    unfold ReadSafe in H.
+    apply H in H0.
+    destruct (write_dec b). {
+      auto.
+    }
+    auto.
+  Qed.
+
+  Lemma read_write_safe_inv_in:
+    forall (a b:access A E) l,
+    ReadSafe Lt a l ->
+    WriteSafe Lt a l ->
+    List.In b l ->
+    HB b a.
+  Proof.
+    intros.
+    assert (Hx := H1).
+    apply read_safe_inv_in with (a:=a) in H1; auto.
+    apply write_safe_inv_in with (a:=a) in Hx; auto.
+    destruct H1, Hx; try contradiction; auto.
+  Qed.
+
+  Lemma write_safe_read_to_race_free:
+    forall (a b:access A E) l,
+    List.In b l ->
+    Read a ->
+    WriteSafe Lt a l ->
+    RaceFreeAccess Lt a b.
+  Proof.
+    intros.
+    eapply write_safe_inv_in in H; eauto.
+    destruct H.
+    + auto using race_free_access_read.
+    + auto using race_free_access_hb, race_free_access_symm.
+  Qed.
+
+End LastWrites.
+
+
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+
+Section OrderedAdds.
+
+  Variable A:Type.
+  Variable E:Type.
+  Variable Lt: E -> E -> Prop.
+
+  Variable lt_irrefl:
+    forall x,
+    ~ Lt x x.
+
+  Inductive OrderedAdds : list (access A E) -> Prop :=
   | ordered_adds_nil:
     forall a,
     Write a ->
@@ -267,17 +738,17 @@ Section Defs.
     forall a l,
     Read a ->
     OrderedAdds l ->
-    WriteSafe a l ->
+    WriteSafe Lt a l ->
     OrderedAdds (a :: l)
   | ordered_adds_write:
     forall a l,
     Write a ->
     OrderedAdds l ->
-    WriteSafe a l ->
-    ReadSafe a l ->
+    WriteSafe Lt a l ->
+    ReadSafe Lt a l ->
     OrderedAdds (a :: l).
 
-  Inductive Last (a:access) : list access -> Prop :=
+  Inductive Last (a:access A E) : list (access A E) -> Prop :=
   | last_nil:
     Write a ->
     Last a (a :: nil)
@@ -292,27 +763,10 @@ Section Defs.
     Write a ->
     Last a (a::l).
 
-  Definition OrderedAccessHistory (ah:access_history) :=
+  Definition OrderedAccessHistory (ah:access_history A E) :=
     forall r l,
     MM.MapsTo r l ah ->
     OrderedAdds l.
-
-  Let write_some:
-    forall n d,
-    Write (n, Some d).
-  Proof.
-    intros.
-    apply has_data_def.
-  Qed.
-
-  Let read_none:
-    forall n,
-    Read (n, None).
-  Proof.
-    intros.
-    unfold Read, not; intros.
-    inversion H.
-  Qed.
 
   Let ordered_access_history_add_alloc:
     forall r ah n d,
@@ -325,7 +779,7 @@ Section Defs.
     rewrite MM_Facts.add_mapsto_iff in *.
     destruct H0 as [(?,?)|(?,?)]. {
       subst.
-      eauto using ordered_adds_nil.
+      auto using ordered_adds_nil, write_some.
     }
     eauto.
   Qed.
@@ -334,7 +788,7 @@ Section Defs.
     forall ah x l n,
     OrderedAccessHistory ah ->
     MM.MapsTo x l ah ->
-    WriteSafe (n, None) l ->
+    WriteSafe Lt (n, None) l ->
     OrderedAccessHistory (MM.add x ((n,None) :: l) ah).
   Proof.
     intros.
@@ -343,7 +797,7 @@ Section Defs.
     rewrite MM_Facts.add_mapsto_iff in *.
     destruct H2 as [(?,Heq)|(?,?)]. {
       subst.
-      eauto using ordered_adds_read, write_safe_def.
+      apply ordered_adds_read; eauto using read_none, ordered_adds_read.
     }
     eauto.
   Qed.
@@ -352,8 +806,8 @@ Section Defs.
     forall ah x l n d,
     OrderedAccessHistory ah ->
     MM.MapsTo x l ah ->
-    WriteSafe (n, Some d) l ->
-    ReadSafe (n, Some d) l ->
+    WriteSafe Lt (n, Some d) l ->
+    ReadSafe Lt (n, Some d) l ->
     OrderedAccessHistory (MM.add x ((n, Some d) :: l) ah).
   Proof.
     intros.
@@ -362,7 +816,8 @@ Section Defs.
     rewrite MM_Facts.add_mapsto_iff in *.
     destruct H3 as [(?,Heq)|(?,?)]. {
       subst.
-      eauto using ordered_adds_write.
+      apply ordered_adds_write; auto using write_some.
+      apply H in H0; auto.
     }
     eauto.
   Qed.
@@ -370,7 +825,7 @@ Section Defs.
   Lemma ordered_access_history_add:
     forall ah e ah',
     OrderedAccessHistory ah ->
-    RaceFreeAdd ah e ah' ->
+    RaceFreeAdd Lt ah e ah' ->
     OrderedAccessHistory ah'.
   Proof.
     intros.
@@ -402,17 +857,9 @@ Section Defs.
     auto using in_cons.
   Qed.
 
-  Let last_write:
-    forall (a:access) b l,
-    LastWrite b l ->
-    Write a ->
-    List.In a l ->
-    HBE a b.
-  Proof.
-    intros.
-    inversion H.
-    eauto.
-  Qed.
+  Notation HB a b := (Lt (a_when a) (a_when b)).
+  Notation MHP a b := (~ HB a b /\ ~ HB b a).
+  Notation HBE a b := (HB a b \/ a_when a = a_when b).
 
   Let last_inv_cons_nil:
     forall a b,
@@ -434,243 +881,23 @@ Section Defs.
     destruct H; assumption.
   Qed.
 
-  Let last_write_absurd_nil:
-    forall (a:access),
-    ~ LastWrite a nil.
-  Proof.
-    unfold not; intros.
-    inversion H.
-    inversion H1.
-  Qed.
-
-  Let write_dec:
-    forall a,
-    { Write a } + { ~ Write a }.
-  Proof.
-    intros.
-    destruct a as (?,[]).
-    - auto.
-    - right; unfold not; intros.
-      inversion H.
-  Qed.
-
-  Let in_last_write:
-    forall l a b,
-    List.In a l ->
-    LastWrite b l ->
-    Read a \/ (Write a /\ HBE a b).
-  Proof.
-    intros.
-    inversion H0; clear H0.
-    unfold ForallWrites in *; simpl in *.
-    destruct (write_dec a); auto.
-  Qed.
-
-  Let forall_writes_inv:
-    forall P l a,
-    ForallWrites P (a :: l) ->
-    ForallWrites P l /\ (Write a -> P a).
-  Proof.
-    intros.
-    unfold ForallWrites in *.
-    rewrite <- Forall_forall in *.
-    inversion H; subst; auto.
-  Qed.
-
-  Let forall_writes_inv_cons:
-    forall P l a,
-    ForallWrites P (a :: l) ->
-    ForallWrites P l.
-  Proof.
-    intros.
-    apply forall_writes_inv in H; destruct H.
-    auto.
-  Qed.
-
-  Let forall_reads_inv:
-    forall P l a,
-    ForallReads P (a :: l) ->
-    ForallReads P l /\ (Read a -> P a).
-  Proof.
-    intros.
-    unfold ForallReads in *.
-    rewrite <- Forall_forall in *.
-    inversion H; subst; auto.
-  Qed.
-
-  Let forall_reads_inv_cons:
-    forall P l a,
-    ForallReads P (a :: l) ->
-    ForallReads P l.
-  Proof.
-    intros.
-    apply forall_reads_inv in H; destruct H.
-    auto.
-  Qed.
-
-  Let last_write_inv_read:
-    forall l a b,
-    Read a ->
-    LastWrite b (a :: l) ->
-    LastWrite b l.
-  Proof.
-    induction l; intros. {
-      inversion H0.
-      inversion H2; subst; clear H2. {
-        contradiction.
-      }
-      inversion H4.
-    }
-    inversion H0; subst; clear H0.
-    inversion H2; subst; clear H2. {
-      contradiction.
-    }
-    inversion H0; subst; clear H0. {
-      eauto using last_write_def, in_eq.
-    }
-    apply forall_writes_inv_cons in H3.
-    auto using last_write_def, in_cons.
-  Qed.
-
-  Let hb_neq:
-    forall a b,
-    HB a b ->
-    a <> b.
-  Proof.
-    unfold not; intros.
-    subst.
-    apply lt_irrefl in H.
-    assumption.
-  Qed.
-
-  Let last_write_hbe:
-    forall x y l,
-    LastWrite x l ->
-    LastWrite y l ->
-    HBE x y.
-  Proof.
-    intros.
-    inversion H0.
-    inversion H.
-    apply last_write with (l:=l); auto.
-  Qed.
-
-  Let hb_eq_when_left:
+  Variable lt_trans:
     forall x y z,
-    HB x z ->
-    a_when y = a_when x ->
-    HB y z.
-  Proof.
-    intros.
-    rewrite H0.
-    assumption.
-  Qed.
+    Lt x y ->
+    Lt y z ->
+    Lt x z.
 
-  Let last_write_trans:
-    forall x y z l,
-    LastWrite x l ->
-    LastWrite y l ->
-    HB x z ->
-    HB y z.
-  Proof.
-    intros.
-    assert (Hx: HBE y x) by eauto.
-    destruct Hx. {
-      eauto.
-    }
-    subst.  
-    eauto.
-  Qed.
-
-  Let write_safe:
-    forall a b l,
-    LastWrite a l ->
-    WriteSafe b l ->
-    HB a b.
-  Proof.
-    intros.
-    inversion H0; subst.
-    eauto.
-  Qed.
-
-  Let last_write_inv:
-    forall a b l,
-    LastWrite a (b :: l) ->
-    (b = a /\  ForallWrites (fun c => HBE c a) l) \/
-    (LastWrite a l /\ (Write b -> HBE b a)).
-  Proof.
-    intros.
-    inversion H; subst; clear H.
-    destruct H1. {
-      apply forall_writes_inv_cons in H2.
-      auto.
-    }
-    right.
-    apply forall_writes_inv in H2.
-    destruct H2 as (Hf, Hi).
-    eauto using last_write_def.
-  Qed.
-
-  Let in_last_write_write:
-    forall l a b,
-    List.In a l ->
-    Write a ->
-    LastWrite b l ->
-    HBE a b.
-  Proof.
-    intros.
-    eapply in_last_write in H1; eauto.
-    destruct H1; try contradiction.
-    destruct H1.
-    assumption.
-  Qed.
-
-  Let hbe_hb_hb_trans:
-    forall a b c,
-    HBE a b ->
-    HB b c ->
-    HB a c.
-  Proof.
-    intros.
-    destruct H; subst; eauto.
-  Qed.
-
-  Let write_safe_hb:
-    forall a b l,
-    List.In a l ->
-    Write a ->
-    WriteSafe b l ->
-    HB a b.
-  Proof.
-    intros.
-    inversion H1; subst; clear H1.
-    assert (Hp: HBE a w) by eauto.
-    eauto.
-  Qed.
-
-  Let read_write_safe:
-    forall a b l,
+  Let read_write_safe_race_free:
+    forall (a b:access A E) l,
+    ReadSafe Lt a l ->
+    WriteSafe Lt a l ->
     List.In b l ->
-    WriteSafe a l ->
-    ReadSafe a l ->
-    HB b a.
+    RaceFreeAccess Lt a b.
   Proof.
     intros.
-    destruct (write_dec b); eauto.
-  Qed.
-
-  Let read_in_write_safe_race_free:
-    forall a b l,
-    List.In a l ->
-    Read b ->
-    WriteSafe b l ->
-    RaceFreeAccess a b.
-  Proof.
-    intros.
-    destruct (write_dec a). {
-      eauto using race_free_access_hb, race_free_access_symm.
-    }
-    eauto using race_free_access_read.
+    apply race_free_access_symm,
+          race_free_access_hb,
+          read_write_safe_inv_in with (l:=l); auto.
   Qed.
 
   Let ordered_adds_race_free:
@@ -678,7 +905,7 @@ Section Defs.
     OrderedAdds l ->
     List.In a l ->
     List.In b l ->
-    RaceFreeAccess a b.
+    RaceFreeAccess Lt a b.
   Proof.
     induction l; intros. {
       inversion H0.
@@ -688,13 +915,14 @@ Section Defs.
     inversion H; subst; clear H;
     try inversion H3;
     try inversion H2;
-    eauto using race_free_access_symm, race_free_access_hbe.
+    eauto using race_free_access_symm, race_free_access_hbe,
+    write_safe_read_to_race_free.
   Qed.
 
   Lemma ordered_access_history_to_race_free_history:
     forall ah,
     OrderedAccessHistory ah ->
-    RaceFreeHistory ah.
+    RaceFreeHistory Lt ah.
   Proof.
     unfold RaceFreeHistory, OrderedAccessHistory.
     intros.
@@ -702,109 +930,15 @@ Section Defs.
     eauto.
   Qed.
 
-  Lemma last_write_inv_cons_nil:
-    forall a b,
-    LastWrite a (b::nil) ->
-    a = b.
-  Proof.
-    intros.
-    inversion H.
-    destruct H1. {
-      auto.
-    }
-    inversion H1.
-  Qed.
-
-  Lemma last_write_inv_cons_read:
-    forall a n l,
-    LastWrite a ((n,None)::l) ->
-    LastWrite a l.
-  Proof.
-    intros.
-    inversion H; subst; clear H.
-    destruct H1; subst. {
-      inversion H0.
-    }
-    assert (ForallWrites (fun b : access => HBE b a) l). {
-      unfold ForallWrites in *; eauto using in_cons.
-    }
-    eauto using last_write_def.
-  Qed.
-
-  Lemma write_eq:
-    forall n d,
-    Write (n, Some d).
-  Proof.
-    auto using has_data_def.
-  Qed.
-
-  Lemma last_write_inv_cons_write:
-    forall a n l d,
-    WriteSafe (n,Some d) l ->
-    LastWrite a ((n,Some d)::l) ->
-    n = a_when a.
-  Proof.
-    intros.
-    inversion H0; subst; clear H0.
-    destruct H2. {
-      subst.
-      auto.
-    }
-    apply forall_writes_inv in H3.
-    destruct H3 as (_,Hi).
-    assert (Hx : Write (n, Some d)) by auto using write_eq.
-    apply Hi in Hx.
-    destruct Hx. {
-      assert (HB a (n, Some d)) by eauto using write_safe_hb.
-      assert (HB a a) by eauto.
-      apply lt_irrefl in H4.
-      contradiction.
-    }
-    auto.
-  Qed.
-
-  Lemma last_write_cons_read:
-    forall a n l,
-    LastWrite a l ->
-    LastWrite a ((n,None)::l).
-  Proof.
-    intros.
-    inversion H; subst.
-    apply last_write_def; auto using in_cons.
-    unfold ForallWrites in *.
-    intros.
-    destruct H3. {
-      subst.
-      inversion H4.
-    }
-    auto.
-  Qed.
-
-  Lemma last_write_cons_write:
-    forall e d h,
-    WriteSafe (e, Some d) h ->
-    LastWrite (e, Some d) ((e, Some d) :: h).
-  Proof.
-    intros.
-    apply last_write_def; auto using in_eq.
-    inversion H; subst; clear H.
-    inversion H0; subst; clear H0.
-    unfold ForallWrites in *; intros.
-    destruct H0. {
-      subst; auto.
-    }
-    eauto.
-  Qed.
-
   Definition LastWriteFun ah :=
-    forall a b r h,
+    forall (a b:access A E) r h,
     MM.MapsTo r h ah ->
-    LastWrite a h ->
-    LastWrite b h ->
+    LastWrite Lt a h ->
+    LastWrite Lt b h ->
     a = b.
 
   Definition AccessFun ah :=
-    forall a b r h,
+    forall (a b:access A E) r h,
     MM.MapsTo r h ah ->
     List.In a h ->
     List.In b h ->
@@ -814,7 +948,7 @@ Section Defs.
   Definition LastWriteDef ah :=
     forall r h,
     MM.MapsTo r h ah ->
-    exists a, LastWrite a h.
+    exists (a:access A E), LastWrite Lt a h.
 
   Lemma access_to_last_write_fun:
     forall ah,
@@ -834,25 +968,9 @@ Section Defs.
     contradiction.
   Qed.
 
-  Lemma last_write_to_write:
-    forall a h,
-    LastWrite a h ->
-    Write a.
-  Proof.
-    intros.
-    inversion H; auto.
-  Qed.
+End OrderedAdds.
 
-  Lemma last_write_to_in:
-    forall a h,
-    LastWrite a h ->
-    List.In a h.
-  Proof.
-    intros; inversion H; auto.
-  Qed.
-
-End Defs.
-
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
 
 Section Props.
   Variable A:Type.
@@ -1263,7 +1381,7 @@ Section Props.
     destruct H0 as [(?,?)|(?,mt)]. {
       subst.
       exists (fresh vs, Some d).
-      apply last_write_def; eauto using write_eq, in_eq.
+      apply last_write_def; eauto using write_some, in_eq.
       unfold ForallWrites; intros.
       destruct H0. {
         subst; auto.
