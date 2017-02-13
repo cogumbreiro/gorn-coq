@@ -22,8 +22,17 @@ Set Implicit Arguments.
 Section Defs.
   (** There are two kinds of events we observe: reading and writing to shared memory. *)
 
+  (** [A] is the type of the data. *)
+
   Variable A:Type.
+  
+  (** [E] is the type of event. *)
+  
   Variable E:Type.
+  
+  (** An event [E] is a causal relation (a pre-order), thus
+    transitive and irreflexive. *)
+  
   Variable Lt: E -> E -> Prop.
   Variable lt_trans:
     forall x y z,
@@ -34,37 +43,43 @@ Section Defs.
     forall x,
     ~ Lt x x.
 
-  (**
-    An represents the kind of access the node in the CG responsible for the access
-    and the target variable.
-   *)
-  Inductive op_type := READ | WRITE | ALLOC.
-
-  Definition op := (op_type * A) % type.
+  (** An [access] pairs an event of type [E] with a payload
+  which is either [None] for a read or [Some d] for a store 
+  *)
 
   Notation payload := (option A).
 
   Definition access := (E * payload) % type.
 
+  (** Rename fst and snd to more understandable terms. *)
+
   Definition a_when := @fst E payload.
   Definition a_what := @snd E payload.
+
+  (** Some notation to operate over accesses. *)
 
   Notation HB a b := (Lt (a_when a) (a_when b)).
   Notation MHP a b := (~ HB a b /\ ~ HB b a).
   Notation HBE a b := (HB a b \/ a_when a = a_when b).
 
-  Inductive HasData : payload -> Prop :=
-  | has_data_def:
-    forall x,
-    HasData (Some x).
+  (** Again, a [Write] holds some data. *)
 
-  Definition Write a := HasData (a_what a).
+  Inductive Write: access -> Prop :=
+  | write_some:
+    forall n x,
+    Write (n, Some x).
+
+  (** Otherwise, we have a read. *)
 
   Definition Read a := ~ Write a.
 
+  (** An access history records all the saccesses for each
+  memory id. *)
+
   Definition access_history := MM.t (list access).
 
-  (** Two accesses are racy *)
+  (** The standard definition of a race: the events are concurrent
+  and there is at least one write. *)
 
   Inductive RacyAccess : access -> access -> Prop :=
   | racy_access_def:
@@ -74,34 +89,12 @@ Section Defs.
     MHP a b ->
     RacyAccess a b.
 
+  (** Race-free accesses are trivially defined. *)
+
   Definition RaceFreeAccess a b := ~ RacyAccess a b.
 
-  Definition ForallWrites (P : access -> Prop) l : Prop :=
-    forall a,
-    List.In a l ->
-    Write a ->
-    P a.
-
-  Definition ForallReads (P: access -> Prop) l : Prop :=
-    forall a,
-    List.In a l ->
-    Read a ->
-    P a.
-
-  Inductive LastWrite (a:access) (l:list access) : Prop :=
-  | last_write_def:
-    Write a ->
-    List.In a l->
-    ForallWrites (fun b=>HBE b a) l ->
-    LastWrite a l.
-
-  Inductive MapsTo r (x:A) ah : Prop :=
-  | maps_to_def:
-    forall a l,
-    MM.MapsTo r l ah ->
-    LastWrite a l ->
-    a_what a = Some x ->
-    MapsTo r x ah.
+  (** Finally a race-free history is such that two accesses
+  in the same memory location are race free. *)
 
   Definition RaceFreeHistory ah :=
     forall r l a b,
@@ -109,48 +102,6 @@ Section Defs.
     List.In a l ->
     List.In b l ->
     RaceFreeAccess a b.
-
-  (** A write-safe access happens before all writes *)
-
-  Inductive WriteSafe a l : Prop :=
-  | write_safe_def:
-    forall w,
-    (* take the last-write *)
-    LastWrite w l ->
-    (* the access must succeed the last-write *)
-    HB w a ->
-    WriteSafe a l.
-
-  (** A read-safe happens before all reads. *)
-
-  Definition ReadSafe a l := ForallReads (fun b => HB b a) l.
-
-  Inductive RaceFreeAdd: access_history -> (mid * E * op) -> access_history -> Prop :=
-  | race_free_add_alloc:
-    forall g r d n,
-    ~ MM.In r g ->
-    (* update the shared memory to record the allocation *)
-    RaceFreeAdd g (r, n, (ALLOC, d)) (MM.add r ((n, Some d)::nil) g)
-
-  | race_free_read:
-    forall g l n r a d,
-    MM.MapsTo r l g ->
-    (* same as [WriteSafe] *)
-    LastWrite a l ->
-    HB a (n, None) ->
-    a_what a = Some d ->
-    (* update the shared memory to record the read *)
-    RaceFreeAdd g (r, n, (READ, d)) (MM.add r ((n, None)::l) g)
-
-  | race_free_write:
-    forall g r d n l,
-    (* update the shared memory to record the read *)
-    MM.MapsTo r l g ->
-    (* make sure the write is safe with other writes in l *)
-    WriteSafe (n, Some d) l ->
-    (* the write must also be safe wrt all reads *)
-    ReadSafe (n, Some d) l ->
-    RaceFreeAdd g (r, n, (WRITE, d)) (MM.add r ((n, Some d)::l) g).
 
   Ltac expand H := inversion H; subst; clear H.
 
@@ -255,7 +206,7 @@ Section Defs.
     unfold RaceFreeAccess, not in *; intros.
     apply racy_access_symm  in H0; contradiction.
   Qed.
-
+(*
   Lemma write_some:
     forall n (d:A),
     Write (n, Some d).
@@ -263,7 +214,7 @@ Section Defs.
     intros.
     apply has_data_def.
   Qed.
-
+*)
   Lemma read_none:
     forall n,
     Read (n, None).
@@ -294,22 +245,103 @@ Section LastWrites.
   Variable E:Type.
   Variable Lt: E -> E -> Prop.
   Variable lt_trans:
-    forall x y z,
+    forall (x y z:E),
     Lt x y ->
     Lt y z ->
     Lt x z.
   Variable lt_irrefl:
-    forall x,
+    forall (x:E),
     ~ Lt x x.
 
   Notation HB a b := (Lt (a_when a) (a_when b)).
   Notation MHP a b := (~ HB a b /\ ~ HB b a).
   Notation HBE a b := (HB a b \/ a_when a = a_when b).
 
+  (** As we need to state definition in terms of the reads and the writes,
+   let us define a predicate for all reads/writes. *)
+
+  Definition ForallWrites (P : access A E -> Prop) l : Prop :=
+    forall a,
+    List.In a l ->
+    Write a ->
+    P a.
+
+  Definition ForallReads (P: access A E -> Prop) l : Prop :=
+    forall a,
+    List.In a l ->
+    Read a ->
+    P a.
+
+  (** The last write *)
+
+  Inductive LastWrite (a:access A E) (l:list (access A E)) : Prop :=
+  | last_write_def:
+    Write a ->
+    List.In a l->
+    ForallWrites (fun b => HBE b a) l ->
+    LastWrite a l.
+
+  Inductive MapsTo r (x:A) ah : Prop :=
+  | maps_to_def:
+    forall a l,
+    MM.MapsTo r l ah ->
+    LastWrite a l ->
+    a_what a = Some x ->
+    MapsTo r x ah.
+
+  (** A write-safe access happens before all writes *)
+
+  Inductive WriteSafe (a:access A E) l : Prop :=
+  | write_safe_def:
+    forall w,
+    (* take the last-write *)
+    LastWrite w l ->
+    (* the access must succeed the last-write *)
+    HB w a ->
+    WriteSafe a l.
+
+  (** A read-safe happens before all reads. *)
+
+  Definition ReadSafe (a:access A E) l := ForallReads (fun b => HB b a) l.
+
+  (**
+    We distinguish between createion, reading and writing.
+   *)
+
+  Inductive op_type := READ | WRITE | ALLOC.
+
+  Definition op := (op_type * A) % type.
+
+  Inductive RaceFreeAdd: access_history A E -> (mid * E * op) -> access_history A E -> Prop :=
+  | race_free_add_alloc:
+    forall g r d n,
+    ~ MM.In r g ->
+    (* update the shared memory to record the allocation *)
+    RaceFreeAdd g (r, n, (ALLOC, d)) (MM.add r ((n, Some d)::nil) g)
+
+  | race_free_read:
+    forall g l (n n':E) r d,
+    MM.MapsTo r l g ->
+    (* same as [WriteSafe] *)
+    LastWrite (n', Some d) l ->
+    Lt n' n ->
+    (* update the shared memory to record the read *)
+    RaceFreeAdd g (r, n, (READ, d)) (MM.add r ((n, None)::l) g)
+
+  | race_free_write:
+    forall g r d n l,
+    (* update the shared memory to record the read *)
+    MM.MapsTo r l g ->
+    (* make sure the write is safe with other writes in l *)
+    WriteSafe (n, Some d) l ->
+    (* the write must also be safe wrt all reads *)
+    ReadSafe (n, Some d) l ->
+    RaceFreeAdd g (r, n, (WRITE, d)) (MM.add r ((n, Some d)::l) g).
+
 (* begin hide *)
   Let last_write:
     forall (a:access A E) b l,
-    LastWrite Lt b l ->
+    LastWrite b l ->
     Write a ->
     List.In a l ->
     HBE a b.
@@ -321,7 +353,7 @@ Section LastWrites.
 
   Let last_write_absurd_nil:
     forall (a:access A E),
-    ~ LastWrite Lt a nil.
+    ~ LastWrite a nil.
   Proof.
     unfold not; intros.
     inversion H.
@@ -331,7 +363,7 @@ Section LastWrites.
   Let in_last_write:
     forall l a b,
     List.In a l ->
-    LastWrite Lt b l ->
+    LastWrite b l ->
     Read (A:=A) a \/ (Write a /\ HBE a b).
   Proof.
     intros.
@@ -385,8 +417,8 @@ Section LastWrites.
   Let last_write_inv_read:
     forall l (a:access A E) b,
     Read a ->
-    LastWrite Lt b (a :: l) ->
-    LastWrite Lt b l.
+    LastWrite b (a :: l) ->
+    LastWrite b l.
   Proof.
     induction l; intros. {
       inversion H0.
@@ -408,8 +440,8 @@ Section LastWrites.
 
   Let last_write_hbe:
     forall (x:access A E) y l,
-    LastWrite Lt x l ->
-    LastWrite Lt y l ->
+    LastWrite x l ->
+    LastWrite y l ->
     HBE x y.
   Proof.
     intros.
@@ -420,9 +452,9 @@ Section LastWrites.
 
   Let last_write_inv:
     forall a (b:access A E) l,
-    LastWrite Lt a (b :: l) ->
+    LastWrite a (b :: l) ->
     (b = a /\  ForallWrites (fun c => HBE c a) l) \/
-    (LastWrite Lt a l /\ (Write b -> HBE b a)).
+    (LastWrite a l /\ (Write b -> HBE b a)).
   Proof.
     intros.
     inversion H; subst; clear H.
@@ -440,7 +472,7 @@ Section LastWrites.
     forall l (a:access A E) b,
     List.In a l ->
     Write a ->
-    LastWrite Lt b l ->
+    LastWrite b l ->
     HBE a b.
   Proof.
     intros.
@@ -453,7 +485,7 @@ Section LastWrites.
 
   Lemma last_write_inv_cons_nil:
     forall (a b:access A E),
-    LastWrite Lt a (b::nil) ->
+    LastWrite a (b::nil) ->
     a = b.
   Proof.
     intros.
@@ -466,8 +498,8 @@ Section LastWrites.
 
   Lemma last_write_inv_cons_read:
     forall (a:access A E) n l,
-    LastWrite Lt a ((n,None)::l) ->
-    LastWrite Lt a l.
+    LastWrite a ((n,None)::l) ->
+    LastWrite a l.
   Proof.
     intros.
     inversion H; subst; clear H.
@@ -516,8 +548,8 @@ Section LastWrites.
 
   Let write_safe:
     forall (a:access A E) b l,
-    LastWrite Lt a l ->
-    WriteSafe Lt b l ->
+    LastWrite a l ->
+    WriteSafe b l ->
     HB a b.
   Proof.
     intros.
@@ -529,7 +561,7 @@ Section LastWrites.
     forall (a b:access A E) l,
     List.In a l ->
     Write a ->
-    WriteSafe Lt b l ->
+    WriteSafe b l ->
     HB a b.
   Proof.
     intros.
@@ -541,8 +573,8 @@ Section LastWrites.
   Let read_write_safe:
     forall (a b:access A E) l,
     List.In b l ->
-    WriteSafe Lt a l ->
-    ReadSafe Lt a l ->
+    WriteSafe a l ->
+    ReadSafe a l ->
     HB b a.
   Proof.
     intros.
@@ -553,7 +585,7 @@ Section LastWrites.
     forall (a b:access A E) l,
     List.In a l ->
     Read b ->
-    WriteSafe Lt b l ->
+    WriteSafe b l ->
     RaceFreeAccess Lt a b.
   Proof.
     intros.
@@ -566,8 +598,8 @@ Section LastWrites.
 
   Lemma last_write_inv_cons_write:
     forall (a:access A E) n l d,
-    WriteSafe Lt (n,Some d) l ->
-    LastWrite Lt a ((n,Some d)::l) ->
+    WriteSafe (n,Some d) l ->
+    LastWrite a ((n,Some d)::l) ->
     n = a_when a.
   Proof.
     intros.
@@ -591,8 +623,8 @@ Section LastWrites.
 
   Lemma last_write_cons_read:
     forall (a:access A E) n l,
-    LastWrite Lt a l ->
-    LastWrite Lt a ((n,None)::l).
+    LastWrite a l ->
+    LastWrite a ((n,None)::l).
   Proof.
     intros.
     inversion H; subst.
@@ -609,8 +641,8 @@ Section LastWrites.
 (* begin hide *)
   Let last_write_trans:
     forall (x y z:access A E) l,
-    LastWrite Lt x l ->
-    LastWrite Lt y l ->
+    LastWrite x l ->
+    LastWrite y l ->
     HB x z ->
     HB y z.
   Proof.
@@ -626,7 +658,7 @@ Section LastWrites.
 
   Lemma last_write_to_write:
     forall (a:access A E) h,
-    LastWrite Lt a h ->
+    LastWrite a h ->
     Write a.
   Proof.
     intros.
@@ -635,7 +667,7 @@ Section LastWrites.
 
   Lemma last_write_to_in:
     forall (a:access A E) h,
-    LastWrite Lt a h ->
+    LastWrite a h ->
     List.In a h.
   Proof.
     intros; inversion H; auto.
@@ -643,8 +675,8 @@ Section LastWrites.
 
   Lemma last_write_cons_write:
     forall e d h,
-    WriteSafe Lt (e, Some d) h ->
-    LastWrite (A:=A) Lt (e, Some d) ((e, Some d) :: h).
+    WriteSafe (e, Some d) h ->
+    LastWrite (e, Some d) ((e, Some d) :: h).
   Proof.
     intros.
     apply last_write_def; auto using write_some, in_eq.
@@ -659,7 +691,7 @@ Section LastWrites.
 
   Lemma write_safe_inv_in:
     forall (a b:access A E) l,
-    WriteSafe Lt a l ->
+    WriteSafe a l ->
     List.In b l ->
     Read b \/ HB b a.
   Proof.
@@ -679,7 +711,7 @@ Section LastWrites.
 
   Lemma read_safe_inv_in:
     forall (a b:access A E) l,
-    ReadSafe Lt a l ->
+    ReadSafe a l ->
     List.In b l ->
     Write b \/ HB b a.
   Proof.
@@ -694,8 +726,8 @@ Section LastWrites.
 
   Lemma read_write_safe_inv_in:
     forall (a b:access A E) l,
-    ReadSafe Lt a l ->
-    WriteSafe Lt a l ->
+    ReadSafe a l ->
+    WriteSafe a l ->
     List.In b l ->
     HB b a.
   Proof.
@@ -710,7 +742,7 @@ Section LastWrites.
     forall (a b:access A E) l,
     List.In b l ->
     Read a ->
-    WriteSafe Lt a l ->
+    WriteSafe a l ->
     RaceFreeAccess Lt a b.
   Proof.
     intros.
@@ -925,6 +957,7 @@ Section OrderedAdds.
     inversion H; subst; clear H;
     try inversion H3;
     try inversion H2;
+    subst;
     eauto using race_free_access_symm, race_free_access_hbe,
     write_safe_read_to_race_free.
   Qed.
@@ -1701,8 +1734,9 @@ Section Props.
     rename H into Hwf.
     rename H0 into Hwf'.
     simpl_drf_check.
-    assert (Hlw := H5).
-    exists l; exists a.
+    assert (Hlw := H6).
+    simpl in *.
+    exists l; exists (n', Some d).
     split; auto.
     split; eauto using last_write_inv_c, wf_node, last_write_to_in.
   Qed.
@@ -1719,9 +1753,7 @@ Section Props.
     b = a.
   Proof.
     intros.
-    inversion H3; subst; clear H3.
-    destruct b; simpl in *.
-    subst.
+    inversion H3; subst; clear H3; simpl in *.
     assert (a_when (n, Some x) = a_when a). {
       eapply last_write_inv_cons_write; eauto using hb_irrefl, wf_lt_edges_prop.
       eauto using hb_trans.
