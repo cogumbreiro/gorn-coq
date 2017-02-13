@@ -320,7 +320,7 @@ Section LastWrites.
     We distinguish between createion, reading and writing.
    *)
 
-  Inductive op_type := READ | WRITE | ALLOC.
+  Inductive op_type := READ | WRITE.
 
   Definition op := (op_type * A) % type.
 
@@ -329,7 +329,7 @@ Section LastWrites.
     forall g r d n,
     ~ MM.In r g ->
     (* update the shared memory to record the allocation *)
-    RaceFreeAdd g (r, n, (ALLOC, d)) (MM.add r ((n, Some d)::nil) g)
+    RaceFreeAdd g (r, n, (WRITE, d)) (MM.add r ((n, Some d)::nil) g)
 
   | race_free_read:
     forall g l (n n':E) r d,
@@ -1156,7 +1156,7 @@ Module T.
 
   Definition op_to_ah (o:Trace.op) : option (mid*cg_access_history_op) :=
   match o with
-  | Trace.ALLOC r d => Some (r, (ALLOC, d))
+  | Trace.ALLOC r d => Some (r, (WRITE, d))
   | Trace.READ r d => Some (r, (READ, d))
   | Trace.WRITE r d => Some (r, (WRITE, d))
   | _ => None
@@ -1183,7 +1183,7 @@ Module T.
     forall (vs:list tid) n es ah m d ah',
     DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.ALLOC m d) ah' ->
     RaceFreeAdd (CG.HB (CG.C (n, fresh vs) :: es)) ah
-       (m, fresh vs, (ALLOC, d)) ah'.
+       (m, fresh vs, (WRITE, d)) ah'.
   Proof.
     intros.
     inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.

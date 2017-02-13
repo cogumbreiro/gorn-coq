@@ -779,7 +779,15 @@ Section SR.
     - apply last_write_inv_cons_nil in Hlw; subst.
       simpl_structs.
       eauto.
+    - assert ((fresh vs, Some d) = a). {
+        eapply wf_last_write_inv_cons_write with (ah:=g); eauto using write_some.
+      }
+      subst; simpl in *; simpl_node; simpl_structs.
+      eauto.
     - apply last_write_inv_cons_read in Hlw.
+      eauto.
+    - apply last_write_inv_cons_nil in Hlw; subst.
+      simpl_structs.
       eauto.
     - assert ((fresh vs, Some d) = a). {
         eapply wf_last_write_inv_cons_write with (ah:=g); eauto using write_some.
