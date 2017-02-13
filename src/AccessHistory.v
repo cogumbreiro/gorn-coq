@@ -225,7 +225,7 @@ Section Defs.
     - subst.
       auto using race_free_access_refl_when.
   Qed.
-
+(* begin hide *)
   Let mhp_symm:
     forall a b,
     MHP a b ->
@@ -235,7 +235,7 @@ Section Defs.
     destruct H.
     auto.
   Qed.
-
+(* end hide *)
   Lemma racy_access_symm:
     forall a b,
     RacyAccess a b ->
@@ -306,6 +306,7 @@ Section LastWrites.
   Notation MHP a b := (~ HB a b /\ ~ HB b a).
   Notation HBE a b := (HB a b \/ a_when a = a_when b).
 
+(* begin hide *)
   Let last_write:
     forall (a:access A E) b l,
     LastWrite Lt b l ->
@@ -326,7 +327,6 @@ Section LastWrites.
     inversion H.
     inversion H1.
   Qed.
-
 
   Let in_last_write:
     forall l a b,
@@ -449,6 +449,7 @@ Section LastWrites.
     destruct H1.
     assumption.
   Qed.
+(* end hide *)
 
   Lemma last_write_inv_cons_nil:
     forall (a b:access A E),
@@ -478,6 +479,8 @@ Section LastWrites.
     }
     eauto using last_write_def.
   Qed.
+
+(* begin hide *)
 
   Let hb_neq:
     forall (a:access A E) b,
@@ -559,6 +562,7 @@ Section LastWrites.
     }
     eauto using race_free_access_read.
   Qed.
+(* end hide *)
 
   Lemma last_write_inv_cons_write:
     forall (a:access A E) n l d,
@@ -602,6 +606,7 @@ Section LastWrites.
     auto.
   Qed.
 
+(* begin hide *)
   Let last_write_trans:
     forall (x y z:access A E) l,
     LastWrite Lt x l ->
@@ -617,6 +622,7 @@ Section LastWrites.
     subst.
     eauto.
   Qed.
+(* end hide *)
 
   Lemma last_write_to_write:
     forall (a:access A E) h,
@@ -728,6 +734,11 @@ Section OrderedAdds.
   Variable lt_irrefl:
     forall x,
     ~ Lt x x.
+  Variable lt_trans:
+    forall x y z,
+    Lt x y ->
+    Lt y z ->
+    Lt x z.
 
   Inductive OrderedAdds : list (access A E) -> Prop :=
   | ordered_adds_nil:
@@ -768,6 +779,7 @@ Section OrderedAdds.
     MM.MapsTo r l ah ->
     OrderedAdds l.
 
+(* begin hide *)
   Let ordered_access_history_add_alloc:
     forall r ah n d,
     OrderedAccessHistory ah ->
@@ -821,6 +833,7 @@ Section OrderedAdds.
     }
     eauto.
   Qed.
+(* end hide *)
 
   Lemma ordered_access_history_add:
     forall ah e ah',
@@ -833,6 +846,7 @@ Section OrderedAdds.
     inversion H0; subst; clear H0; eauto using write_safe_def.
   Qed.
 
+(* begin hide *)
   Let last_to_write:
     forall l a,
     Last a l ->
@@ -856,11 +870,13 @@ Section OrderedAdds.
     subst.
     auto using in_cons.
   Qed.
+(* end hide *)
 
   Notation HB a b := (Lt (a_when a) (a_when b)).
   Notation MHP a b := (~ HB a b /\ ~ HB b a).
   Notation HBE a b := (HB a b \/ a_when a = a_when b).
 
+(* begin hide *)
   Let last_inv_cons_nil:
     forall a b,
     Last a (b :: nil) ->
@@ -880,12 +896,6 @@ Section OrderedAdds.
     apply last_inv_cons_nil in H.
     destruct H; assumption.
   Qed.
-
-  Variable lt_trans:
-    forall x y z,
-    Lt x y ->
-    Lt y z ->
-    Lt x z.
 
   Let read_write_safe_race_free:
     forall (a b:access A E) l,
@@ -918,6 +928,7 @@ Section OrderedAdds.
     eauto using race_free_access_symm, race_free_access_hbe,
     write_safe_read_to_race_free.
   Qed.
+(* end hide *)
 
   Lemma ordered_access_history_to_race_free_history:
     forall ah,
