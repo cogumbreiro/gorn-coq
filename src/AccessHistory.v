@@ -20,18 +20,22 @@ Require Import HJ.Mid.
 Set Implicit Arguments.
 
 Section Defs.
-  (** There are two kinds of events we observe: reading and writing to shared memory. *)
-
-  (** [A] is the type of the data. *)
+  (** 
+  Access history records for each memory id: all the accesses to memory.
+  An access consists of the causality event that performed the access
+  and the kind of address, which can be either a read or a write,
+  and in the case of a write, the written data.
+  
+  Let [A] be the type of the data. *)
 
   Variable A:Type.
   
-  (** [E] is the type of event. *)
+  (** And [E] be the type of the causality event. *)
   
   Variable E:Type.
   
-  (** An event [E] is a causal relation (a pre-order), thus
-    transitive and irreflexive. *)
+  (** As usual, an event [E] is ordered by a causality relation [Lt]
+    that is a pre-order, thus transitive and irreflexive. *)
   
   Variable Lt: E -> E -> Prop.
   Variable lt_trans:
@@ -105,6 +109,7 @@ Section Defs.
 
   Ltac expand H := inversion H; subst; clear H.
 
+(* begin hide *)
   Lemma racy_access_irrefl_when:
     forall (a b:access),
     a_when a = a_when b ->
@@ -122,6 +127,15 @@ Section Defs.
     intros.
     assert (a_when a = a_when a) by trivial; eauto using racy_access_irrefl_when.
   Qed.
+(* end hide *)
+
+  (** If the same event performs multiple reads or multiple writes,
+  these are race-free (as there is no concurrency in this case). 
+  The rest are usual properties of race-free accesses (reflexivity,
+  symmetry, reads do not race with each order, and 
+  ordered accesses do not race with each other. These properties
+  are necessary since we defined a race-free access by negating
+  a racy access. *)
 
   Lemma race_free_access_refl_when:
     forall (a b:access),
@@ -139,8 +153,9 @@ Section Defs.
     unfold RaceFreeAccess.
     auto using racy_access_irrefl.
   Qed.
-
-  Notation Ordered a b := (HB a b \/ HB b a).
+(* begin hide *)
+(*  Notation Ordered a b := (HB a b \/ HB b a). *)
+(* end hide *)
 
   Lemma race_free_access_read:
     forall (a:access) b,
@@ -206,15 +221,7 @@ Section Defs.
     unfold RaceFreeAccess, not in *; intros.
     apply racy_access_symm  in H0; contradiction.
   Qed.
-(*
-  Lemma write_some:
-    forall n (d:A),
-    Write (n, Some d).
-  Proof.
-    intros.
-    apply has_data_def.
-  Qed.
-*)
+
   Lemma read_none:
     forall n,
     Read (n, None).
@@ -226,12 +233,12 @@ Section Defs.
 
   Lemma write_dec:
     forall a,
-    { Write a } + { ~ Write a }.
+    { Write a } + { Read a }.
   Proof.
     intros.
     destruct a as (?,[]).
     - auto using write_some.
-    - right; unfold not; intros.
+    - right; unfold Read, not; intros.
       inversion H.
   Defined.
 
@@ -240,6 +247,11 @@ End Defs.
 (* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
 
 Section LastWrites.
+
+  (**
+    The theory of race-free-adds defines sufficient conditions to
+    maintain a data race-free access-history.
+   *)
 
   Variable A:Type.
   Variable E:Type.
