@@ -302,7 +302,7 @@ Section LastWrites.
     MapsTo r x ah.
 
   (** A write-safe access happens before all writes *)
-
+(*
   Inductive WriteSafe (a:access A E) l : Prop :=
   | write_safe_def:
     forall w,
@@ -311,8 +311,10 @@ Section LastWrites.
     (* the access must succeed the last-write *)
     HBE w a ->
     WriteSafe a l.
-
+*)
   (** A read-safe happens before all reads. *)
+
+  Definition WriteSafe (a:access A E) l := ForallWrites (fun b => HBE b a) l.
 
   Definition ReadSafe (a:access A E) l := ForallReads (fun b => HBE b a) l.
 
@@ -346,7 +348,7 @@ Section LastWrites.
     forall g l (n n':E) r d,
     MM.MapsTo r l g ->
     (* The read is ordered wrt the reads *)
-    ForallWrites (fun b => HBE b (n, None)) l ->
+    WriteSafe (n, None) l ->
     (* Get the value of the last write *)
     LastWrite (n', Some d) l ->
     (* update the shared memory to record the read *)
@@ -356,8 +358,8 @@ Section LastWrites.
     forall g r d n l,
     (* update the shared memory to record the read *)
     MM.MapsTo r l g ->
-    ForallWrites (fun b => HBE b (n, Some d)) l ->
-    ForallReads (fun b => HBE b (n, Some d)) l ->
+    WriteSafe (n, Some d) l ->
+    ReadSafe (n, Some d) l ->
     Add g (r, n, (WRITE, d)) (MM.add r ((n, Some d)::l) g).
 
   Lemma hbe_trans:
@@ -397,7 +399,7 @@ Section LastWrites.
     apply add_read with (n':=n'); auto.
     eapply last_write_to_forall_writes; eauto.
   Qed.
-
+(*
   Lemma write_safe_alt:
     forall n d l n',
     ForallWrites (fun b : access A E => HBE b (n, None)) l ->
@@ -409,13 +411,15 @@ Section LastWrites.
     inversion H0; subst; clear H0.
     apply H in H1; auto.
   Qed.
-
+*)
   Theorem add_write_alt:
-    forall g r d n l,
+    forall g r d n w l,
     (* update the shared memory to record the read *)
     MM.MapsTo r l g ->
-    (* make sure the write is safe with other writes in l *)
-    WriteSafe (n, Some d) l ->
+    (* take the last-write *)
+    LastWrite w l ->
+    (* the access must succeed the last-write *)
+    HBE w (n, Some d) ->
     (* the write must also be safe wrt all reads *)
     ReadSafe (n, Some d) l ->
     Add g (r, n, (WRITE, d)) (MM.add r ((n, Some d)::l) g).
@@ -518,6 +522,21 @@ Section LastWrites.
     unfold ForallWrites; intros b; intros.
     inversion H1; subst; clear H1. {
       contradiction.
+    }
+    auto.
+  Qed.
+
+  Lemma forall_writes_cons_write:
+    forall (P:access A E -> Prop) l (a:access A E),
+    Write a ->
+    P a ->
+    ForallWrites P l ->
+    ForallWrites P (a :: l).
+  Proof.
+    intros.
+    unfold ForallWrites; intros b; intros.
+    inversion H2; subst; clear H2. {
+      assumption.
     }
     auto.
   Qed.
@@ -693,8 +712,8 @@ Section LastWrites.
     HBE a b.
   Proof.
     intros.
-    inversion H0; subst.
-    apply hbe_trans with (y:=w); info_eauto.
+    inversion H; subst.
+    apply hbe_trans with (y:=a); eauto.
   Qed.
 
   Let write_safe_hbe:
@@ -705,9 +724,7 @@ Section LastWrites.
     HBE a b.
   Proof.
     intros.
-    inversion H1; subst; clear H1.
-    assert (Hp: HBE a w) by eauto.
-    eapply hbe_trans; eauto.
+    auto.
   Qed.
 
   Let read_write_safe:
@@ -818,15 +835,7 @@ Section LastWrites.
     WriteSafe (e, Some d) h ->
     LastWrite (e, Some d) ((e, Some d) :: h).
   Proof.
-    intros.
-    apply last_write_def; auto using write_some, in_eq.
-    inversion H; subst; clear H.
-    inversion H0; subst; clear H0.
-    unfold ForallWrites in *; intros.
-    destruct H0. {
-      subst; auto.
-    }
-    apply hbe_trans with (y:=w); auto.
+    auto using last_write_def, write_some, in_eq, forall_writes_cons_write.
   Qed.
 
   Lemma last_write_cons_write_2:
@@ -862,17 +871,8 @@ Section LastWrites.
     Read b \/ HBE b a.
   Proof.
     intros.
-    inversion H; subst; clear H.
-    eapply in_last_write in H0; eauto.
-    assert (Write w) by eauto using last_write_to_write.
-    destruct H0 as [?|(?,?)]. {
-      auto.
-    }
-    right.
-    destruct H3. {
-      apply hbe_trans with (y:=w); auto.
-    }
-    apply hbe_eq_when_left with (x:=w); auto.
+    apply H in H0.
+    destruct (write_dec b); auto.
   Qed.
 
   Lemma read_safe_inv_in:
@@ -1012,7 +1012,7 @@ Section OrderedAdds.
     rewrite MM_Facts.add_mapsto_iff in *.
     destruct H3 as [(?,Heq)|(?,?)]. {
       subst.
-      apply ordered_adds_read; eauto using read_none, ordered_adds_read, write_safe_alt.
+      apply ordered_adds_read; eauto using read_none, ordered_adds_read.
     }
     eauto.
   Qed.
@@ -1020,40 +1020,17 @@ Section OrderedAdds.
   Let ordered_access_history_add_write_0:
     forall l n d,
     OrderedAdds l ->
-    ForallWrites (fun b => HBE b (n, Some d)) l ->
-    ForallReads (fun b => HBE b (n, Some d)) l ->
+    WriteSafe Lt (n, Some d) l ->
+    ReadSafe Lt (n, Some d) l ->
     OrderedAdds ((n, Some d) :: l).
   Proof.
     intros.
-    inversion H; subst; clear H.
-    - apply ordered_adds_write; auto using write_some.
-      + auto using ordered_adds_nil.
-      + apply write_safe_def with (w:=a).
-        * apply last_write_def; auto using in_eq.
-          unfold ForallWrites; intros.
-          inversion H; subst; clear H; auto.
-          inversion H4.
-        * apply H0; auto using in_eq.
-    - inversion H4; subst; clear H4.
-      assert (LastWrite Lt w (a :: l0)). {
-        apply last_write_def; eauto using last_write_to_write,
-        last_write_to_in, List.in_cons.
-        inversion H.
-        apply forall_writes_cons_read; auto.
-      }
-      apply ordered_adds_write; auto using write_some. {
-        apply ordered_adds_read; auto.
-        apply write_safe_def with (w:=w); auto.
-      }
-      apply write_safe_def with (w:=w); auto. {
-        assert (HBE a (n, Some d)). {
-          apply H1; auto using in_eq.
-        }
-        apply hbe_trans with (y:=a); auto.
-      }
-    - apply ordered_adds_write; auto using write_some, ordered_adds_write.
-      apply write_safe_def with (w:=a); auto using last_write_cons_write_2.
-      apply H0; auto using in_eq.
+    inversion H; subst; clear H;
+    auto using
+      ordered_adds_nil,
+      ordered_adds_read,
+      ordered_adds_write,
+      write_some.
   Qed.
 
   Let ordered_access_history_add_write:
@@ -1083,7 +1060,7 @@ Section OrderedAdds.
   Proof.
     intros.
     unfold RaceFreeHistory; intros.
-    inversion H0; subst; clear H0; eauto using write_safe_def.
+    inversion H0; subst; clear H0; eauto.
   Qed.
 
 (* begin hide *)
@@ -1293,10 +1270,8 @@ Section Props.
     WriteSafe (A:=A) P a h ->
     WriteSafe Q a h.
   Proof.
-    intros.
-    inversion H.
-    inversion H0; subst.
-    apply write_safe_def with (w:=w); auto using last_write_impl; eauto.
+    unfold WriteSafe in *.
+    auto using forall_writes_impl.
   Qed.
 
   Let read_safe_impl:
