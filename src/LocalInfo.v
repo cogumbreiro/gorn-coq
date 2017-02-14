@@ -12,8 +12,6 @@ Require SJ_CG.
 Require Import Trace.
 Require Import Omega.
 
-Import AccessHistory.T.
-
 Module Locals.
 Section Defs.
   Variable A:Type.
@@ -210,14 +208,14 @@ Section SR.
     MN.In n l ->
     Node n vs.
 
-  Definition LastWriteCanJoin (g:cg_access_history) cg sj :=
+  Definition LastWriteCanJoin (g:AccessHistory.T.cg_access_history) cg sj :=
     forall x a h r,
     MM.MapsTo r h g ->
     AccessHistory.LastWrite (HB cg) a h ->
     AccessHistory.a_what a = Some (d_task x) ->
     SJ_CG.CanJoin (AccessHistory.a_when a) x sj.
 
-  Definition LastWriteKnows (cg:computation_graph) (g:cg_access_history) l :=
+  Definition LastWriteKnows (cg:computation_graph) (g:AccessHistory.T.cg_access_history) l :=
     forall x y n h r,
     MM.MapsTo r h g ->
     AccessHistory.LastWrite (HB (snd cg)) (n, Some (d_task y)) h ->
@@ -405,9 +403,9 @@ Section SR.
     DomIncl l (fst cg) ->
     LastWriteCanJoin g (snd cg) sj ->
     SJ_CG.SJ cg' k' sj' ->
-    DRF_Check (snd cg') g (READ y d) g' ->
-    WellFormed cg g ->
-    WellFormed cg' g' ->
+    AccessHistory.T.DRF_Check (snd cg') g (READ y d) g' ->
+    AccessHistory.T.WellFormed cg g ->
+    AccessHistory.T.WellFormed cg' g' ->
     length (fst cg) = length sj ->
     SJ_CG.Knows (fst cg') sj' (a, b).
   Proof.
@@ -431,7 +429,7 @@ Section SR.
         destruct H1 as [?|Hi]. {
           subst.
           (** this is the crucial step of the proof *)
-          apply drf_check_inv_read_last_write with (x:=x) in Hdrf; auto.
+          apply AccessHistory.T.drf_check_inv_read_last_write with (x:=x) in Hdrf; auto.
           destruct Hdrf as (h, (a, (mt, (Hw, (?,?))))).
           eauto using SJ_CG.knows_def, maps_to_eq, SJ_CG.hb_spec, SJ_CG.can_join_cons.
         }
@@ -563,7 +561,7 @@ Section SR.
 
   Notation local_info := (Locals.local_memory datum).
 
-  Definition memory := (cg_access_history * local_info) % type.
+  Definition memory := (AccessHistory.T.cg_access_history * local_info) % type.
 
   (** If reduces, then local-knowledge-inclusion is preserved. *)
 
@@ -576,14 +574,14 @@ Section SR.
     SJ_CG.SJ cg' k' sj' ->
 
     Reduces cg' l o l' ->
-    DRF_Check (snd cg') g o g' ->
+    AccessHistory.T.DRF_Check (snd cg') g o g' ->
     SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
 
     length (fst cg) = length sj ->
     DomIncl l (fst cg) ->
     LastWriteCanJoin g (snd cg) sj ->
-    WellFormed cg g ->
-    WellFormed cg' g' ->
+    AccessHistory.T.WellFormed cg g ->
+    AccessHistory.T.WellFormed cg' g' ->
     LocalToKnows l' cg' sj'.
   Proof.
     intros.
@@ -677,8 +675,8 @@ Section SR.
   Let task_of_simpl:
     forall vs r es h z a n g l x t,
     LastWriteKnows (vs, es) g l ->
-    WellFormed (vs, es) g ->
-    WellFormed (z :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) g ->
+    AccessHistory.T.WellFormed (vs, es) g ->
+    AccessHistory.T.WellFormed (z :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) g ->
     AccessHistory.LastWrite (HB ({| e_t := t; e_edge := (n,fresh vs) |} :: es)) a h ->
     MM.MapsTo r h g ->
     TaskOf (AccessHistory.a_when a) x (z :: vs) ->
@@ -690,9 +688,10 @@ Section SR.
       subst.
       destruct a; simpl in *.
       subst.
-      eapply AccessHistory.T.last_write_inv_c in H2; eauto.
-      apply AccessHistory.last_write_to_in in H2.
-      eapply wf_node with (vs:=vs) (es:=es) in H2; eauto.
+      assert (Hi: In (fresh vs, o) h). {
+        eapply AccessHistory.last_write_to_in; eauto.
+      }
+      eapply AccessHistory.T.wf_node with (vs:=vs) (es:=es) in Hi; eauto.
       simpl in *.
       simpl_node.
     }
@@ -701,7 +700,7 @@ Section SR.
 
   Let last_write_can_join_continue:
     forall a x r g h vs es sj z c t n,
-    WellFormed (vs, es) g ->
+    AccessHistory.T.WellFormed (vs, es) g ->
     LastWriteCanJoin g es sj ->
     AccessHistory.LastWrite (HB ({| e_t:=t; e_edge:=(n, fresh vs)|} :: es)) a h ->
     MM.MapsTo r h g ->
@@ -710,7 +709,7 @@ Section SR.
     SJ_CG.CanJoin (AccessHistory.a_when a) x (c :: sj).
   Proof.
     intros.
-    eapply last_write_inv_c in H1; eauto using wf_continue.
+    eapply AccessHistory.T.last_write_inv_c in H1; eauto using AccessHistory.T.wf_continue.
     eapply H0 in H3; eauto.
     auto using SJ_CG.can_join_cons.
   Qed.
@@ -750,12 +749,12 @@ Section SR.
     forall g cg cg' sj l o l' sj' g' z,
     LastWriteCanJoin g (snd cg) sj ->
 
-    WellFormed cg g ->
-    WellFormed cg' g' ->
+    AccessHistory.T.WellFormed cg g ->
+    AccessHistory.T.WellFormed cg' g' ->
 
     Reduces cg' l o l' ->
     T.TReduces cg (z,o) cg' ->
-    DRF_Check (snd cg') g o g' ->
+    AccessHistory.T.DRF_Check (snd cg') g o g' ->
     SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
 
     length (fst cg) = length sj ->
@@ -766,7 +765,7 @@ Section SR.
     intros.
     unfold LastWriteCanJoin.
     intros.
-    destruct o; simpl in *; handle_all; simpl_drf_check; eauto;
+    destruct o; simpl in *; handle_all; AccessHistory.T.simpl_drf_check; eauto;
     rename H9 into Hlw;
     rename H10 into Heq;
     try (
@@ -779,7 +778,7 @@ Section SR.
       simpl_structs.
       eauto.
     - assert ((fresh vs, Some d) = a). {
-        eapply wf_last_write_inv_cons_write with (ah:=g); eauto using AccessHistory.write_some.
+        eapply AccessHistory.T.wf_last_write_inv_cons_write with (ah:=g); eauto using AccessHistory.write_some.
       }
       subst; simpl in *; simpl_node; simpl_structs.
       eauto.
@@ -793,11 +792,11 @@ Section SR.
       }
       subst; simpl in *; simpl_node; simpl_structs.
       eauto.
-    - eapply last_write_inv_c in Hlw; eauto using wf_continue.
-      eapply last_write_inv_c in Hlw; eauto using wf_continue.
+    - eapply AccessHistory.T.last_write_inv_c in Hlw; eauto using AccessHistory.T.wf_continue.
+      eapply AccessHistory.T.last_write_inv_c in Hlw; eauto using AccessHistory.T.wf_continue.
       eapply H in Heq; eauto.
       auto using SJ_CG.can_join_cons.
-    - eapply last_write_inv_j in Hlw; eauto using wf_continue.
+    - eapply AccessHistory.T.last_write_inv_j in Hlw; eauto using AccessHistory.T.wf_continue.
   Qed.
 
   Structure WellFormed cg k sj g l := {
@@ -813,7 +812,7 @@ Section SR.
     WellFormed cg k sj g l ->
     T.TReduces cg (x,o) cg' ->
     Reduces cg' l o l' ->
-    DRF_Check (snd cg') g o g' ->
+    AccessHistory.T.DRF_Check (snd cg') g o g' ->
     SJ_CG.Reduces sj cg' sj' -> (* show that this is implied *)
     exists k', WellFormed cg' k' sj' g' l'.
   Proof.
@@ -821,7 +820,7 @@ Section SR.
     inversion H.
     assert (Hx:=H3).
     eapply SJ_CG.sj_reduces_alt in H3; eauto.
-    assert (Hwf: AccessHistory.T.WellFormed cg' g') by eauto using wf_reduces.
+    assert (Hwf: AccessHistory.T.WellFormed cg' g') by eauto using AccessHistory.T.wf_reduces.
     destruct H3 as (k',Hsj).
     exists k'.
     inversion wf_sj_well_formed0.
@@ -833,12 +832,12 @@ Section SR.
     WellFormed cg k sj g l ->
     T.TReduces cg (x,o) cg' ->
     Reduces cg' l o l' ->
-    DRF_Check (snd cg') g o g' ->
+    AccessHistory.T.DRF_Check (snd cg') g o g' ->
     exists sj', 
     SJ_CG.Reduces sj cg' sj'.
   Proof.
     intros.
-    destruct o; simpl in *; handle_all; simpl_drf_check;
+    destruct o; simpl in *; handle_all; AccessHistory.T.simpl_drf_check;
     eauto using SJ_CG.reduces_continue, SJ_CG.reduces_fork.
     exists (SJ_CG.Append nx0 ny0::sj).
     eapply SJ_CG.reduces_join;eauto using maps_to_cons.
@@ -860,14 +859,14 @@ Section SR.
     WellFormed cg k sj g l ->
     T.TReduces cg (x,o) cg' ->
     Reduces cg' l o l' ->
-    DRF_Check (snd cg') g o g' ->
+    AccessHistory.T.DRF_Check (snd cg') g o g' ->
     exists sj' k', WellFormed cg' k' sj' g' l'.
   Proof.
     intros.
     assert (Hsj: exists sj', SJ_CG.Reduces sj cg' sj') by
     eauto using wf_sj_cg_reduces.
     destruct Hsj as (sj', Hsj).
-    eauto using wf_reduces.
+    eauto using AccessHistory.T.wf_reduces, wf_reduces.
   Qed.
 
 End SR.
