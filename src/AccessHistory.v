@@ -1922,7 +1922,12 @@ Section Props.
       auto.
   Qed.
 
-  Lemma drf_check_inv_read_last_write:
+  (**
+   Given a race-free trace, if we have a read, then
+   there is a last-write that precedes the read.
+   *)
+
+  Theorem drf_check_inv_read_last_write:
     forall x n vs ah ah' d es r,
     WellFormed (vs,es) ah ->
     WellFormed (x :: vs,C (n, fresh vs) :: es) ah' ->

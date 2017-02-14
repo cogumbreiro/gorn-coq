@@ -5,7 +5,7 @@ Require Import Coq.Lists.List.
 Require Import Tid.
 Require Import Lang.
 Require Import Mid.
-Require Import AccessHistory.
+Require AccessHistory.
 Require Import Node.
 Require Import CG.
 Require SJ_CG.
@@ -213,16 +213,16 @@ Section SR.
   Definition LastWriteCanJoin (g:cg_access_history) cg sj :=
     forall x a h r,
     MM.MapsTo r h g ->
-    LastWrite (HB cg) a h ->
-    a_what a = Some (d_task x) ->
-    SJ_CG.CanJoin (a_when a) x sj.
+    AccessHistory.LastWrite (HB cg) a h ->
+    AccessHistory.a_what a = Some (d_task x) ->
+    SJ_CG.CanJoin (AccessHistory.a_when a) x sj.
 
   Definition LastWriteKnows (cg:computation_graph) (g:cg_access_history) l :=
     forall x y a h r,
     MM.MapsTo r h g ->
-    LastWrite (HB (snd cg)) a h ->
-    a_what a = Some (d_task y) ->
-    TaskOf (a_when a) x (fst cg) ->
+    AccessHistory.LastWrite (HB (snd cg)) a h ->
+    AccessHistory.a_what a = Some (d_task y) ->
+    TaskOf (AccessHistory.a_when a) x (fst cg) ->
     LocalKnows cg l (x, y).
 
   Ltac expand H := inversion H; subst; clear H.
@@ -680,10 +680,10 @@ Section SR.
     LastWriteKnows (vs, es) g l ->
     WellFormed (vs, es) g ->
     WellFormed (z :: vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) g ->
-    LastWrite (HB ({| e_t := t; e_edge := (n,fresh vs) |} :: es)) a h ->
+    AccessHistory.LastWrite (HB ({| e_t := t; e_edge := (n,fresh vs) |} :: es)) a h ->
     MM.MapsTo r h g ->
-    TaskOf (a_when a) x (z :: vs) ->
-    TaskOf (a_when a) x vs.
+    TaskOf (AccessHistory.a_when a) x (z :: vs) ->
+    TaskOf (AccessHistory.a_when a) x vs.
   Proof.
     intros.
     apply task_of_inv in H4.
@@ -691,8 +691,8 @@ Section SR.
       subst.
       destruct a; simpl in *.
       subst.
-      eapply last_write_inv_c in H2; eauto.
-      apply last_write_to_in in H2.
+      eapply AccessHistory.T.last_write_inv_c in H2; eauto.
+      apply AccessHistory.last_write_to_in in H2.
       eapply wf_node with (vs:=vs) (es:=es) in H2; eauto.
       simpl in *.
       simpl_node.
@@ -704,11 +704,11 @@ Section SR.
     forall a x r g h vs es sj z c t n,
     WellFormed (vs, es) g ->
     LastWriteCanJoin g es sj ->
-    LastWrite (HB ({| e_t:=t; e_edge:=(n, fresh vs)|} :: es)) a h ->
+    AccessHistory.LastWrite (HB ({| e_t:=t; e_edge:=(n, fresh vs)|} :: es)) a h ->
     MM.MapsTo r h g ->
-    a_what a = Some (d_task x) ->
+    AccessHistory.a_what a = Some (d_task x) ->
     MapsTo z n vs ->
-    SJ_CG.CanJoin (a_when a) x (c :: sj).
+    SJ_CG.CanJoin (AccessHistory.a_when a) x (c :: sj).
   Proof.
     intros.
     eapply last_write_inv_c in H1; eauto using wf_continue.
@@ -776,21 +776,21 @@ Section SR.
       destruct Hmt as [(?,?)|(?,?)]; eauto;
       subst
     ).
-    - apply last_write_inv_cons_nil in Hlw; subst.
+    - apply AccessHistory.last_write_inv_cons_nil in Hlw; subst.
       simpl_structs.
       eauto.
     - assert ((fresh vs, Some d) = a). {
-        eapply wf_last_write_inv_cons_write with (ah:=g); eauto using write_some.
+        eapply wf_last_write_inv_cons_write with (ah:=g); eauto using AccessHistory.write_some.
       }
       subst; simpl in *; simpl_node; simpl_structs.
       eauto.
-    - apply last_write_inv_cons_read in Hlw.
+    - apply AccessHistory.last_write_inv_cons_read in Hlw.
       eauto.
-    - apply last_write_inv_cons_nil in Hlw; subst.
+    - apply AccessHistory.last_write_inv_cons_nil in Hlw; subst.
       simpl_structs.
       eauto.
     - assert ((fresh vs, Some d) = a). {
-        eapply wf_last_write_inv_cons_write with (ah:=g); eauto using write_some.
+        eapply AccessHistory.T.wf_last_write_inv_cons_write with (ah:=g); eauto using AccessHistory.write_some.
       }
       subst; simpl in *; simpl_node; simpl_structs.
       eauto.
@@ -822,7 +822,7 @@ Section SR.
     inversion H.
     assert (Hx:=H3).
     eapply SJ_CG.sj_reduces_alt in H3; eauto.
-    assert (Hwf: T.WellFormed cg' g') by eauto using wf_reduces.
+    assert (Hwf: AccessHistory.T.WellFormed cg' g') by eauto using wf_reduces.
     destruct H3 as (k',Hsj).
     exists k'.
     inversion wf_sj_well_formed0.
