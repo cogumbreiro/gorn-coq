@@ -1152,6 +1152,152 @@ Section DAG.
   Qed.
 End DAG.
 
+Module GraphOps.
+Section Defs.
+  Variable A:Type.
+  Inductive lang :=
+  | init : A -> lang
+  | fork : A -> A -> A -> lang -> lang
+  | join : A -> A -> A -> lang -> lang
+  | seq: A -> A -> lang -> lang.
+
+  Inductive In: A -> lang -> Prop :=
+  | in_init:
+    forall x,
+    In x (init x)
+  | in_fork_l:
+    forall x y z l,
+    In y (fork x y z l)
+  | in_fork_r:
+    forall x y z l,
+    In z (fork x y z l)
+  | in_fork_cons:
+    forall x y z w l,
+    In w l ->
+    In z (fork x y z l)
+  | in_join_eq:
+    forall x y z l,
+    In z (join x y z l)
+  | in_join_cons:
+    forall x y z w l,
+    In w l ->
+    In w (join x y z l)
+  | in_seq:
+    forall x y l,
+    In y (seq x y l)
+  | in_seq_cons:
+    forall l x y z,
+    In z l ->
+    In z (seq x y l).
+
+  Inductive WF: lang -> Prop :=
+  | wf_init:
+    forall x,
+    WF (init x)
+  | wf_fork:
+    forall x y z l,
+    In x l ->
+    ~ In y l ->
+    ~ In z l ->
+    WF (fork x y z l)
+  | wf_join:
+    forall x y z l,
+    In x l ->
+    In y l ->
+    ~ In z l ->
+    WF (fork x y z l)
+  | wf_seq:
+    forall x y l,
+    In x l ->
+    ~ In y l ->
+    WF (seq x y l).
+
+  Inductive Edge: lang -> (A * A) -> Prop :=
+  | edge_fork_c:
+    forall x y z l,
+    Edge (fork x y z l) (x, y)
+  | edge_fork_f:
+    forall x y z l,
+    Edge (fork x y z l) (x, z)
+  | edge_join_l:
+    forall x y z l,
+    Edge (join x y z l) (x, z)
+  | edge_join_r:
+    forall x y z l,
+    Edge (join x y z l) (y, z)
+  | edge_seq_eq:
+    forall x y l,
+    Edge (seq x y l) (x, y)
+  | edge_cons_fork:
+    forall x y z l e,
+    Edge l e ->
+    Edge (fork x y z l) e
+  | edge_cons_join:
+    forall x y z l e,
+    Edge l e ->
+    Edge (join x y z l) e
+  | edge_cons_seq:
+    forall x y l e,
+    Edge l e ->
+    Edge (seq x y l) e.
+
+End Defs.
+
+Section CG_Bridge.
+
+  Inductive AsExpr: list tid -> trace -> lang node -> Prop :=
+  | as_expr_nil:
+    forall t,
+    AsExpr (t::nil) nil (init (make 1))
+  | as_expr_fork:
+    forall x y n l vs ts,
+    AsExpr vs ts l ->
+    MapsTo x n vs ->
+    AsExpr (y::x::vs) ((x, FORK y)::ts) (fork n (fresh vs) (fresh (x::vs)) l)
+  | as_expr_join:
+    forall x y m n l vs ts,
+    AsExpr vs ts l ->
+    MapsTo x n vs ->
+    MapsTo y m vs ->
+    AsExpr (x::vs) ((x, JOIN y)::ts) (fork n m (fresh vs) l).
+
+(*
+  Lemma trace_eq_wf:
+    forall ts vs es t l e,
+    TraceOf (vs, es) t ts ->
+    AsExpr vs ts l ->
+    HB_Edge es e ->
+    Edge l e.
+  Proof.
+    induction ts; intros. {
+      inversion H; subst.
+      inversion H1.
+      inversion H2.
+      inversion H3.
+    }
+    inversion H; subst; clear H.
+    - rename vs0 into vs.
+      rename es0 into es.
+      inversion H1; subst; clear H1.
+      inversion H; subst; rename H into Hx.
+      inversion H1; subst; clear H1. {
+        inversion H0; subst; clear H0.
+        simpl_node.
+        apply edge_fork_f.
+      }
+      inversion H; subst; clear H. {
+        inversion H0; subst; clear H0.
+        simpl_node.
+        apply edge_fork_c.
+      }
+      inversion H0; subst;clear H0.
+      simpl_node.
+      eauto using edge_cons_fork, hb_edge_def, edge_def.
+    - 
+  Qed.*)
+End CG_Bridge.
+End GraphOps.
+
 Module T.
 
   Definition op_to_cg (o:Trace.op) : op :=

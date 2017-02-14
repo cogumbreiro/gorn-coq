@@ -631,7 +631,9 @@ Section LastWrites.
   Qed.
 (* end hide *)
 
-  Lemma last_write_inv_cons_nil:
+  (** EXPORTED *)
+
+  Theorem last_write_inv_cons_nil:
     forall (a b:access A E),
     LastWrite a (b::nil) ->
     a = b.
@@ -822,7 +824,9 @@ Section LastWrites.
     inversion H; auto.
   Qed.
 
-  Lemma last_write_to_in:
+  (** *EXPORTED* *)
+
+  Theorem last_write_to_in:
     forall (a:access A E) h,
     LastWrite a h ->
     List.In a h.
