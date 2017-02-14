@@ -218,11 +218,10 @@ Section SR.
     SJ_CG.CanJoin (AccessHistory.a_when a) x sj.
 
   Definition LastWriteKnows (cg:computation_graph) (g:cg_access_history) l :=
-    forall x y a h r,
+    forall x y n h r,
     MM.MapsTo r h g ->
-    AccessHistory.LastWrite (HB (snd cg)) a h ->
-    AccessHistory.a_what a = Some (d_task y) ->
-    TaskOf (AccessHistory.a_when a) x (fst cg) ->
+    AccessHistory.LastWrite (HB (snd cg)) (n, Some (d_task y)) h ->
+    TaskOf n x (fst cg) ->
     LocalKnows cg l (x, y).
 
   Ltac expand H := inversion H; subst; clear H.
