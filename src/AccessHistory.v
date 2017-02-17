@@ -1342,7 +1342,7 @@ Module T.
 
   Definition op_to_ah (o:Trace.op) : option (mid*cg_access_history_op) :=
   match o with
-  | Trace.ALLOC r d => Some (r, (WRITE, d))
+  | Trace.ALLOC r => None
   | Trace.READ r d => Some (r, (READ, d))
   | Trace.WRITE r d => Some (r, (WRITE, d))
   | _ => None
@@ -1366,16 +1366,13 @@ Module T.
     Node (a_when a) vs.
 
   Lemma drf_check_inv_alloc:
-    forall (vs:list tid) n es ah m d ah',
-    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.ALLOC m d) ah' ->
-    Add (CG.HB (CG.C (n, fresh vs) :: es)) ah
-       (m, fresh vs, (WRITE, d)) ah'.
+    forall (vs:list tid) n es ah m ah',
+    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.ALLOC m) ah' ->
+    ah = ah'.
   Proof.
     intros.
-    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
-    inversion H1; subst; clear H1.
-    inversion H2; subst; clear H2.
-    assumption.
+    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0;
+    auto.
   Qed.
 
   Lemma drf_check_inv_read:
@@ -1438,7 +1435,7 @@ End Defs.
 
   Ltac simpl_drf_check :=
   match goal with
-  | [ H1: DRF_Check _ _ (Trace.ALLOC _ _) _ |- _ ] =>
+  | [ H1: DRF_Check _ _ (Trace.ALLOC _) _ |- _ ] =>
     apply drf_check_inv_alloc in H1; inversion H1; subst; clear H1
   | [ H1: DRF_Check _ _ Trace.CONTINUE _ |- _ ] =>
     apply drf_check_inv_continue in H1; subst

@@ -11,7 +11,7 @@ Section Defs.
 
   Inductive op :=
   | CONTINUE: op
-  | ALLOC: mid -> datum -> op
+  | ALLOC: mid -> op
   | READ: mid -> datum -> op
   | WRITE: mid -> datum -> op
   | FUTURE: tid -> list datum -> op

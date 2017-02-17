@@ -89,7 +89,7 @@ Section Defs.
     Locals.MapsTo n d l ->
     (* add reference y to the locals of task x *)
     Locals.Reduces l (n', CONS (d_mem r) n) l' ->
-    Reduces l (ALLOC r d) l'
+    Reduces l (ALLOC r) l'
 
   | reduces_read:
     forall l d n n' r l' es,
@@ -160,7 +160,7 @@ End Defs.
   match goal with
     | [ H1: Reduces (_::_,_::_) _ CONTINUE _ |- _ ] =>
       inversion H1; subst; clear H1
-    | [ H1: Reduces (_::_,_::_) _ (ALLOC _ _) _ |- _ ] =>
+    | [ H1: Reduces (_::_,_::_) _ (ALLOC _) _ |- _ ] =>
       inversion H1; subst; clear H1
     | [ H1: Reduces (_::_,_::_) _ (WRITE _ _) _ |- _ ] =>
       inversion H1; subst; clear H1
@@ -188,7 +188,7 @@ Section SR.
   Definition op_to_cg (o:op) : CG.op :=
   match o with
   | CONTINUE => CG.CONTINUE
-  | ALLOC _ _ => CG.CONTINUE
+  | ALLOC _ => CG.CONTINUE
   | WRITE _ _ => CG.CONTINUE
   | READ _ _ => CG.CONTINUE
   | FUTURE x _ => CG.FORK x
@@ -313,10 +313,10 @@ Section SR.
     *)
 
   Let local_to_knows_alloc:
-    forall cg sj sj' cg' l l' a b x k y d,
+    forall cg sj sj' cg' l l' a b x k y,
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces cg' l (ALLOC y d) l' ->
+    Reduces cg' l (ALLOC y) l' ->
     LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj cg' sj' ->
     SJ_CG.SJ cg k sj ->
@@ -328,7 +328,7 @@ Section SR.
     handle_all.
     expand H2.
     simpl in *.
-    expand H5.
+    expand H7.
     apply task_of_inv in H3.
     rewrite MN_Facts.add_mapsto_iff in *.
     destruct H3 as [(?,?)|mt]. {
@@ -774,14 +774,6 @@ Section SR.
       destruct Hmt as [(?,?)|(?,?)]; eauto;
       subst
     ).
-    - apply AccessHistory.last_write_inv_cons_nil in Hlw; subst.
-      simpl_structs.
-      eauto.
-    - assert ((fresh vs, Some d) = a). {
-        eapply AccessHistory.T.wf_last_write_inv_cons_write with (ah:=g); eauto using AccessHistory.write_some.
-      }
-      subst; simpl in *; simpl_node; simpl_structs.
-      eauto.
     - apply AccessHistory.last_write_inv_cons_read in Hlw.
       eauto.
     - apply AccessHistory.last_write_inv_cons_nil in Hlw; subst.
