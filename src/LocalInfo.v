@@ -19,7 +19,7 @@ Section Defs.
   Inductive op :=
   | COPY : node -> op
   | CONS : A -> node -> op
-  | NEW : list A -> op.
+  | UNION : node -> node -> op.
 
   Definition task_local := list A.
 
@@ -37,9 +37,10 @@ Section Defs.
     ~ MN.In n' m ->
     Reduces m (n', CONS x n) (MN.add n' (x::l) m)
   | reduces_new:
-    forall l n,
-    ~ MN.In n m ->
-    Reduces m (n, NEW l) (MN.add n l m).
+    forall n n1 n2 l1 l2,
+    MN.MapsTo n1 l1 m ->
+    MN.MapsTo n2 l2 m ->
+    Reduces m (n, UNION n1 n2) (MN.add n (l1++l2) m).
 
   Inductive MapsTo (n:node) (x:A) (ls:local_memory) : Prop :=
   | local_def:
@@ -47,7 +48,6 @@ Section Defs.
     MN.MapsTo n l ls ->
     List.In x l ->
     MapsTo n x ls.
-
 
   Lemma maps_to_to_in:
     forall n x l,
@@ -66,7 +66,7 @@ End Defs.
       inversion H1; subst; clear H1
     | [ H1: Reduces _ (_, CONS _ _) _ |- _ ] =>
       inversion H1; subst; clear H1
-    | [ H1: Reduces _ (_, NEW _) _ |- _ ] =>
+    | [ H1: Reduces _ (_, UNION _ _ _) _ |- _ ] =>
       inversion H1; subst; clear H1
     end.
 
@@ -119,8 +119,8 @@ Section Defs.
     (* add task y to the locals of x *)
     Locals.Reduces l (nx', CONS (d_task y) nx) l' ->
     (* set the locals of y to be ds *)
-    Locals.Reduces l' (ny, NEW ds) l'' ->
-    Reduces l (FUTURE x ds) l
+    Locals.Reduces l' (ny, COPY datum nx) l'' ->
+    Reduces l (FUTURE x) l
 
   | reduce_force:
     forall l nx nx' ny d l' y es,
@@ -131,8 +131,8 @@ Section Defs.
     (* Task y is in the local memory of nx *)
     Locals.MapsTo nx (d_task y) l ->
     (* Add d to the locals of x *)
-    Locals.Reduces l (nx', CONS d nx) l' ->
-    Reduces l (FORCE y d) l'
+    Locals.Reduces l (nx', UNION datum nx ny) l' ->
+    Reduces l (FORCE y) l'
 
   | reduce_continue:
     forall l n n' l' es,
@@ -151,6 +151,7 @@ End Defs.
 
   Ltac simpl_structs :=
   repeat simpl in *; match goal with
+  | [ H2: ?x = ?x |- _ ] => clear H2
   | [ H2: _ :: _ = _ :: _ |- _ ] => inversion H2; subst; clear H2
   | [ H2:(_,_) = (_,_) |- _ ] => inversion H2; subst; clear H2
   | [ H2: Some _ = Some _ |- _ ] => inversion H2; subst; clear H2
@@ -166,9 +167,9 @@ End Defs.
       inversion H1; subst; clear H1
     | [ H1: Reduces (_::_,_::_) _ (READ _ _) _ |- _ ] =>
       inversion H1; subst; clear H1
-    | [ H1: Reduces (_::_::_,_::_::_) _ (FUTURE _ _) _ |- _ ] =>
+    | [ H1: Reduces (_::_::_,_::_::_) _ (FUTURE _) _ |- _ ] =>
       inversion H1; subst; clear H1
-    | [ H1: Reduces (_::_,_::_::_) _ (FORCE _ _) _ |- _ ] =>
+    | [ H1: Reduces (_::_,_::_::_) _ (FORCE _) _ |- _ ] =>
       inversion H1; subst; clear H1
   end;
   simpl_structs.
@@ -191,8 +192,8 @@ Section SR.
   | ALLOC _ => CG.CONTINUE
   | WRITE _ _ => CG.CONTINUE
   | READ _ _ => CG.CONTINUE
-  | FUTURE x _ => CG.FORK x
-  | FORCE x _ => CG.JOIN x
+  | FUTURE x => CG.FORK x
+  | FORCE x => CG.JOIN x
   end.
 
   Definition event_to_cg (e:event) : CG.event :=
@@ -451,10 +452,10 @@ Section SR.
     *)
 
   Let local_to_knows_future:
-    forall cg sj sj' cg' l l' a b x y k ds,
+    forall cg sj sj' cg' l l' a b x y k,
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.FORK y) cg' ->
-    Reduces cg' l (FUTURE y ds) l' ->
+    Reduces cg' l (FUTURE y) l' ->
     LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj cg' sj' ->
     SJ_CG.SJ cg k sj ->
@@ -468,24 +469,16 @@ Section SR.
     handle_all.
     expand H2; simpl in *.
     apply task_of_inv in H3.
-    destruct H3 as [(?,?)|mt]. {
+    destruct H3 as [(?,?)|mt]; simpl_structs. {
       subst.
-      apply Locals.maps_to_to_in in H10.
-      apply Hdom in H10.
-      apply node_lt in H10.
-      unfold NODE.lt, fresh in *.
-      simpl in *.
-      omega.
+      apply Locals.maps_to_to_in,Hdom in H6.
+      simpl_node. (* absurd *)
     }
     apply task_of_inv in mt.
     destruct mt as [(?,?)|mt]. {
       subst.
-      apply Locals.maps_to_to_in in H10.
-      apply Hdom in H10.
-      apply node_lt in H10.
-      unfold NODE.lt, fresh in *.
-      simpl in *.
-      omega.
+      apply Locals.maps_to_to_in, Hdom in H6.
+      simpl_node.
     }
     assert (SJ_CG.Knows vs sj (a,b)) by eauto using Locals.local_def, local_knows_def.
     destruct (tid_eq_dec y a). {
@@ -511,10 +504,10 @@ Section SR.
     *)
 
   Let local_to_knows_force:
-    forall cg sj sj' cg' l l' a b x k y d,
+    forall cg sj sj' cg' l l' a b x k y,
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.JOIN y) cg' ->
-    Reduces cg' l (FORCE y d) l' ->
+    Reduces cg' l (FORCE y) l' ->
     LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj cg' sj' ->
     SJ_CG.SJ cg k sj ->
@@ -526,24 +519,19 @@ Section SR.
     handle_all.
     expand H2.
     simpl in *.
-    expand H5.
+    expand H8.
     rename es0 into es.
     rename ny0 into ny.
-    rewrite MN_Facts.add_mapsto_iff in *.
     apply task_of_inv in H3.
+    rewrite MN_Facts.add_mapsto_iff in *.
     destruct H3 as [(?,?)|mt]. {
       subst.
       destruct H0 as [(_,?)|(N,_)]. {
         subst.
-        destruct H1 as [|Hi]. {
-          subst.
-          inversion H4; subst.
-          eauto using local_knows_def, Locals.local_def, maps_to_to_task_of,
-            SJ_CG.knows_append_right.
-        }
-        inversion H4; subst.
-        eauto using SJ_CG.knows_append_left, local_knows_def, Locals.local_def,
-          maps_to_to_task_of.
+        apply in_app_or in H1; destruct H1 as [Hi|Hi];
+        inversion H4; subst;
+        eauto using local_knows_def, Locals.local_def, maps_to_to_task_of,
+          SJ_CG.knows_append_left, SJ_CG.knows_append_right.
       }
       contradiction N; trivial.
     }

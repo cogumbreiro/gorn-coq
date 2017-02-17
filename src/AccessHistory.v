@@ -1400,8 +1400,8 @@ Module T.
   Qed.
 
   Lemma drf_check_inv_future:
-   forall cg ah ah' t l,
-    DRF_Check cg ah (Trace.FUTURE t l) ah' ->
+   forall cg ah ah' t,
+    DRF_Check cg ah (Trace.FUTURE t) ah' ->
     ah' = ah.
   Proof.
     intros.
@@ -1410,8 +1410,8 @@ Module T.
   Qed.
 
   Lemma drf_check_inv_force:
-   forall cg ah ah' t l,
-    DRF_Check cg ah (Trace.FORCE t l) ah' ->
+   forall cg ah ah' t,
+    DRF_Check cg ah (Trace.FORCE t) ah' ->
     ah' = ah.
   Proof.
     intros.
@@ -1443,9 +1443,9 @@ End Defs.
     apply drf_check_inv_read in H1; inversion H1; subst; clear H1
   | [ H1: DRF_Check _ _ (Trace.WRITE _ _) _ |- _ ] =>
     apply drf_check_inv_write in H1; inversion H1; subst; clear H1
-  | [ H1: DRF_Check _ _ (Trace.FUTURE _ _) _ |- _ ] =>
+  | [ H1: DRF_Check _ _ (Trace.FUTURE _) _ |- _ ] =>
     apply drf_check_inv_future in H1; subst
-  | [ H1: DRF_Check _ _ (Trace.FORCE _ _) _ |- _ ] =>
+  | [ H1: DRF_Check _ _ (Trace.FORCE _) _ |- _ ] =>
     apply drf_check_inv_force in H1; subst
   end.
 

@@ -14,8 +14,8 @@ Section Defs.
   | ALLOC: mid -> op
   | READ: mid -> datum -> op
   | WRITE: mid -> datum -> op
-  | FUTURE: tid -> list datum -> op
-  | FORCE: tid -> datum -> op.
+  | FUTURE: tid -> op
+  | FORCE: tid -> op.
 
   Definition event := (tid * op) % type.
 

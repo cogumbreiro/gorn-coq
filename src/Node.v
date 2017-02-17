@@ -330,6 +330,16 @@ Section Props.
     assumption.
   Qed.
 
+  Lemma node_absurd_cons_fresh:
+    forall vs x,
+    ~ Node (fresh (x::vs)) vs.
+  Proof.
+    intros.
+    assert (Hx := node_absurd_next_fresh).
+    unfold node_next, fresh in *; simpl in *.
+    auto.
+  Qed.
+
   Lemma maps_to_to_node:
     forall (x:A) n vs,
     MapsTo x n vs ->
@@ -643,6 +653,9 @@ End MoreProps.
       contradiction
   | [ H: Node (node_next (fresh ?vs)) ?vs |- _ ] =>
       apply node_absurd_next_fresh in H;
+      contradiction
+  | [ H: Node (fresh (_::?vs)) ?vs |- _ ] =>
+      apply node_absurd_cons_fresh in H;
       contradiction
   | [ H: TaskOf (fresh ?vs) ?x (?y :: ?vs) |- _ ] => apply task_of_inv_eq in H; subst
   | [ H: MapsTo ?x (fresh ?vs) (?x :: ?vs) |- _ ] => clear H

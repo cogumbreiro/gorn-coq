@@ -1306,8 +1306,8 @@ Module T.
   | Trace.ALLOC _ => CONTINUE
   | Trace.WRITE _ _ => CONTINUE
   | Trace.READ _ _ => CONTINUE
-  | Trace.FUTURE x _ => FORK x
-  | Trace.FORCE x _ => JOIN x
+  | Trace.FUTURE x => FORK x
+  | Trace.FORCE x => JOIN x
   end.
 
   Definition event_to_cg (e:Trace.event) :=
