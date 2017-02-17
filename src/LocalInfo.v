@@ -132,13 +132,7 @@ Section Defs.
     Locals.MapsTo nx (d_task y) l ->
     (* Add d to the locals of x *)
     Locals.Reduces l (nx', UNION datum nx ny) l' ->
-    Reduces l (FORCE y) l'
-
-  | reduce_continue:
-    forall l n n' l' es,
-    snd cg = C (n, n') :: es ->
-    Locals.Reduces l (n', COPY datum n) l' ->
-    Reduces l CONTINUE l'.
+    Reduces l (FORCE y) l'.
 
   Inductive LocalKnows (l:local_memory datum) : tid * tid -> Prop :=
   | local_knows_def:
@@ -188,7 +182,6 @@ Section SR.
 
   Definition op_to_cg (o:op) : CG.op :=
   match o with
-  | CONTINUE => CG.CONTINUE
   | ALLOC _ => CG.CONTINUE
   | WRITE _ _ => CG.CONTINUE
   | READ _ _ => CG.CONTINUE
@@ -265,47 +258,6 @@ Section SR.
       eapply SJ_CG.knows_copy; eauto.
     }
     apply SJ_CG.knows_neq; auto.
-  Qed.
-
-  (**
-    Show that the local-knowledge contains
-    SIF (CONTINUE).
-    *)
-
-  Let local_to_knows_continue:
-    forall cg sj sj' cg' l l' a b x k,
-    LocalToKnows l cg sj ->
-    CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces cg' l CONTINUE l' ->
-    LocalKnows cg' l' (a, b) ->
-    SJ_CG.Reduces sj cg' sj' ->
-    SJ_CG.SJ cg k sj ->
-    DomIncl l (fst cg) ->
-    length (fst cg) = length sj ->
-    SJ_CG.Knows (fst cg') sj' (a, b).
-  Proof.
-    intros.
-    SJ_CG.simpl_red.
-    simpl_red; Locals.simpl_red; simpl in *.
-    expand H2; simpl in *. (* Knows *)
-    apply task_of_inv in H3.
-    destruct H3 as [(?,?)|?]. {
-      subst.
-      inversion H9; subst.
-      rewrite MN_Facts.add_mapsto_iff in *.
-      destruct H0 as [(_,?)|(N,_)]. {
-        subst.
-        eapply SJ_CG.knows_copy; eauto.
-      }
-      contradiction N; trivial.
-    }
-    expand H9.
-    rewrite MN_Facts.add_mapsto_iff in *.
-    destruct H1 as [(?,?)|(?,?)]. {
-      subst.
-      simpl_node.
-    }
-    eauto.
   Qed.
 
   (**
@@ -603,12 +555,6 @@ Section SR.
       eauto using node_cons, maps_to_to_node.
     - simpl in *.
       rewrite MN_Facts.add_in_iff in *.
-      destruct H2. {
-        subst.
-        auto using node_eq.
-      }
-      eauto using node_cons, maps_to_to_node.
-    - rewrite MN_Facts.add_in_iff in *.
       destruct H2. {
         subst.
         auto using node_eq.

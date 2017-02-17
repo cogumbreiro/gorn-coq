@@ -10,7 +10,6 @@ Section Defs.
   | d_any : datum.
 
   Inductive op :=
-  | CONTINUE: op
   | ALLOC: mid -> op
   | READ: mid -> datum -> op
   | WRITE: mid -> datum -> op

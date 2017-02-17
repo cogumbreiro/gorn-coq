@@ -1389,16 +1389,6 @@ Module T.
     auto.
   Qed.
 
-  Lemma drf_check_inv_continue:
-    forall cg ah ah',
-    DRF_Check cg ah Trace.CONTINUE ah' ->
-    ah' = ah.
-  Proof.
-    intros.
-    inversion H; subst; clear H; simpl in *; inversion H0.
-    trivial.
-  Qed.
-
   Lemma drf_check_inv_future:
    forall cg ah ah' t,
     DRF_Check cg ah (Trace.FUTURE t) ah' ->
@@ -1437,8 +1427,6 @@ End Defs.
   match goal with
   | [ H1: DRF_Check _ _ (Trace.ALLOC _) _ |- _ ] =>
     apply drf_check_inv_alloc in H1; inversion H1; subst; clear H1
-  | [ H1: DRF_Check _ _ Trace.CONTINUE _ |- _ ] =>
-    apply drf_check_inv_continue in H1; subst
   | [ H1: DRF_Check _ _ (Trace.READ _ _) _ |- _ ] =>
     apply drf_check_inv_read in H1; inversion H1; subst; clear H1
   | [ H1: DRF_Check _ _ (Trace.WRITE _ _) _ |- _ ] =>

@@ -31,7 +31,7 @@ Section Defs.
   | CONTINUE : op.
 
   Definition event := (tid * op) % type.
-  Definition trace := list event.    
+  Definition trace := list event.
 
   Inductive edge_type :=
   | E_FORK
@@ -1302,7 +1302,6 @@ Module T.
 
   Definition op_to_cg (o:Trace.op) : op :=
   match o with
-  | Trace.CONTINUE => CONTINUE
   | Trace.ALLOC _ => CONTINUE
   | Trace.WRITE _ _ => CONTINUE
   | Trace.READ _ _ => CONTINUE
