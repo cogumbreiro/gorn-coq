@@ -118,28 +118,6 @@ Section Edges.
     MapsTo x curr (x::vs) ->
     Reduces (vs,es) (x, CONTINUE) (x::vs, C (prev, curr) :: es).
 
-  (** The cannonical way to interpret the results of a reduction step in a CG. *)
-
-  Inductive result :=
-  | R_FORK: cg_edge -> cg_edge -> result
-  | R_JOIN: cg_edge -> cg_edge -> result
-  | R_CONTINUE: cg_edge -> result.
-
-  Inductive ReductionResult : event ->  computation_graph -> result -> Prop :=
-  | reduction_result_fork:
-    forall y x vs es nx,
-    MapsTo x nx vs ->
-    ReductionResult (x, FORK y) (y::x::vs, F (nx,fresh (x::vs))::C (nx,fresh vs)::es) (R_FORK (F (nx,fresh (x::vs))) (C (nx,fresh vs)))
-  | result_join:
-    forall x y nx ny vs es,
-    MapsTo y ny vs ->
-    MapsTo x nx vs ->
-    ReductionResult (x, JOIN y) (x::vs, J (ny,fresh vs) :: C (nx,fresh vs)::es) (R_JOIN (J (ny,fresh vs)) (C (nx,fresh vs)))
-  | result_continue:
-    forall x nx es vs,
-    MapsTo x nx vs ->
-    ReductionResult (x, CONTINUE) (x::vs, C (nx,fresh vs)::es) (R_CONTINUE (C (nx,fresh vs))).
-
   Definition make_cg x : computation_graph := (x::nil, nil).
 
   Inductive Run (x:tid): trace -> computation_graph -> Prop :=
@@ -150,94 +128,6 @@ Section Edges.
     Run x t cg ->
     Reduces cg o cg' ->
     Run x (o::t) cg'.
-
-  (** Getting the trace from a computation, which works as the type of a CG. *)
-
-  Inductive TraceOf : computation_graph -> tid -> trace -> Prop :=
-  | trace_of_nil:
-    forall x,
-    TraceOf (make_cg x) x nil
-  | trace_of_fork:
-    forall vs es a t x y nx,
-    x <> y ->
-    ~ List.In y vs ->
-    TraceOf (vs, es) a t ->
-    MapsTo x nx vs ->
-    TraceOf (y::x::vs, F (nx, fresh (x::vs)) :: C (nx, fresh vs) :: es)
-       a ((x, FORK y)::t)
-  | trace_of_join:
-    forall vs es a t x y ny nx,
-    x <> y ->
-    TraceOf (vs, es) a t ->
-    MapsTo x nx vs ->
-    MapsTo y ny vs ->
-    TraceOf (x::vs, J (ny, fresh vs) :: C (nx, fresh vs) :: es)
-       a ((x, JOIN y)::t)
-  | trace_of_continue:
-    forall vs es a t x nx,
-    TraceOf (vs, es) a t ->
-    MapsTo x nx vs ->
-    TraceOf (x::vs, C (nx, fresh vs) :: es) a ((x, CONTINUE)::t).
-
-  Lemma trace_of_cons:
-    forall cg a t e cg',
-    TraceOf cg a t ->
-    Reduces cg e cg' ->
-    TraceOf cg' a (e::t).
-  Proof.
-    intros.
-    inversion H0; subst; clear H0.
-    - inversion H3; subst; clear H3.
-      assert (prev = nx) by eauto using maps_to_fun_2; subst.
-      apply maps_to_inv_eq in H11; subst.
-      apply maps_to_inv_eq in H5; subst.
-      auto using trace_of_fork.
-    - inversion H2; subst; clear H2.
-      apply maps_to_inv_eq in H3; subst.
-      apply maps_to_inv_eq in H10; subst.
-      apply maps_to_neq in H4; auto.
-      eauto using trace_of_join.
-    - apply maps_to_inv_eq in H2; subst.
-      auto using trace_of_continue.
-  Qed.
-
-  Lemma run_to_trace_of:
-    forall cg a t,
-    Run a t cg ->
-    TraceOf cg a t.
-  Proof.
-    intros.
-    induction H. {
-      apply trace_of_nil.
-    }
-    eauto using trace_of_cons.
-  Qed.
-
-  Lemma trace_of_to_run:
-    forall cg a t,
-    TraceOf cg a t ->
-    Run a t cg.
-  Proof.
-    intros.
-    induction H.
-    - apply run_nil.
-    - eapply run_cons; eauto.
-      apply reduces_fork; auto using maps_to_eq, reduces_continue.
-    - eauto using run_cons, reduces_join, reduces_continue, maps_to_eq, maps_to_cons.
-    - eauto using run_cons, reduces_continue, maps_to_eq, maps_to_cons.
-  Qed.
-
-  (**
-     The main result is that the information in the trace is
-     the same as the information in the CG.
-     *)
-
-  Lemma trace_of_spec:
-    forall cg a t,
-    Run a t cg <-> TraceOf cg a t.
-  Proof.
-    split; auto using trace_of_to_run, run_to_trace_of.
-  Qed.
 
   Definition cg_nodes (cg:computation_graph) := fst cg.
 
@@ -608,15 +498,6 @@ Section PropsEx.
     induction H.
     - auto using make_edge_to_node.
     - eauto using run_cons, reduces_edge_to_node.
-  Qed.
-
-  Lemma reduction_results_spec:
-    forall cg e cg',
-    Reduces cg e cg' ->
-    exists r, ReductionResult e cg' r.
-  Proof.
-    intros.
-    destruct e as (?,[]); simpl_red; eauto using reduction_result_fork, result_join, result_continue.
   Qed.
 
   Lemma f_edge_to_hb_edge:
