@@ -546,56 +546,56 @@ Section Defs.
     contradiction.
   Defined.
 
-  Inductive WF: computation_graph -> Prop :=
-  | wf_nil:
-    WF []
-  | wf_init:
+  Inductive CG: computation_graph -> Prop :=
+  | cg_nil:
+    CG []
+  | cg_init:
     forall x l,
-    WF l ->
+    CG l ->
     ~ In x l ->
-    WF ((Expr.init x)::l)
-  | wf_fork:
+    CG ((Expr.init x)::l)
+  | cg_fork:
     forall x y z l,
-    WF l ->
+    CG l ->
     Running y l ->
     ~ In x l ->
     ~ In z l ->
-    WF ((Expr.fork x y z)::l)
-  | wf_join:
+    CG ((Expr.fork x y z)::l)
+  | cg_join:
     forall x y z l,
-    WF l ->
+    CG l ->
     Running x l ->
     Leaf z l ->
     ~ In y l ->
-    WF ((Expr.join x y z)::l)
-  | wf_seq:
+    CG ((Expr.join x y z)::l)
+  | cg_seq:
     forall x y l,
-    WF l ->
+    CG l ->
     Running x l ->
     ~ In y l ->
-    WF ((Expr.seq x y)::l).
+    CG ((Expr.seq x y)::l).
 
-  Lemma wf_inv_cons:
+  Lemma cg_inv_cons:
     forall e l,
-    WF (e :: l) ->
-    WF l.
+    CG (e :: l) ->
+    CG l.
   Proof.
     intros.
     inversion H; subst; clear H; auto.
   Qed.
 
-  Definition wf_dec l:
-    { WF l } + { ~ WF l }.
+  Definition cg_dec l:
+    { CG l } + { ~ CG l }.
   Proof.
     induction l. {
-      auto using wf_nil.
+      auto using cg_nil.
     }
     destruct IHl. {
       destruct a.
       - destruct (in_dec a l). {
           right; unfold not; intros N; inversion N; subst; contradiction.
         }
-        auto using wf_init.
+        auto using cg_init.
       - destruct (running_dec a0 l). {
           destruct (in_dec a l). {
             right; unfold not; intros N; inversion N; subst; contradiction.
@@ -603,7 +603,7 @@ Section Defs.
           destruct (in_dec a1 l). {
             right; unfold not; intros N; inversion N; subst; contradiction.
           }
-          auto using wf_fork.
+          auto using cg_fork.
         }
         right; unfold not; intros N; inversion N; subst; contradiction.
       - destruct (running_dec a l). {
@@ -611,7 +611,7 @@ Section Defs.
             right; unfold not; intros N; inversion N; subst; contradiction.
           }
           destruct (leaf_dec a1 l). {
-            auto using wf_join.
+            auto using cg_join.
           }
           right; unfold not; intros N; inversion N; subst; contradiction.
         }
@@ -620,7 +620,7 @@ Section Defs.
           destruct (in_dec a0 l). {
             right; unfold not; intros N; inversion N; subst; contradiction.
           }
-          auto using wf_seq.
+          auto using cg_seq.
         }
         right; unfold not; intros N; inversion N; subst; contradiction.
     }
@@ -628,23 +628,23 @@ Section Defs.
     inversion N; subst; try contradiction.
   Defined.
 
-  Definition is_wf l :=
-  if wf_dec l then true else false.
+  Definition is_cg l :=
+  if cg_dec l then true else false.
 
-  Lemma is_wf_true:
+  Lemma is_cg_true:
     forall l,
-    is_wf l = true ->
-    WF l.
+    is_cg l = true ->
+    CG l.
   Proof.
-    unfold is_wf; intros.
-    destruct (wf_dec l); auto.
+    unfold is_cg; intros.
+    destruct (cg_dec l); auto.
     inversion H.
   Qed.
 End Defs.
 
 Module Examples.
 
-  Goal WF [
+  Goal CG [
     Expr.join 6 7 5;
     Expr.join 2 6 4;
     Expr.fork 5 3 4;
@@ -652,7 +652,7 @@ Module Examples.
     Expr.init 1
   ].
   Proof.
-    assert (is_wf Peano_dec.eq_nat_dec [
+    assert (is_cg Peano_dec.eq_nat_dec [
       Expr.join 6 7 5;
       Expr.join 2 6 4;
       Expr.fork 5 3 4;
@@ -662,11 +662,11 @@ Module Examples.
       compute.
       trivial.
     }
-    apply is_wf_true in H.
+    apply is_cg_true in H.
     auto.
   Qed.
 
-  Goal WF [
+  Goal CG [
     Expr.seq 8 11;   (* (h, rd(a, g)) *)
     Expr.seq 5 10;   (* (g, rd(b, h)) *)
     Expr.seq 7 9;    (* (f, wr(b, h)) *)
@@ -678,7 +678,7 @@ Module Examples.
     Expr.init 1      (* (f, init) *)
   ].
   Proof.
-    assert (is_wf Peano_dec.eq_nat_dec [
+    assert (is_cg Peano_dec.eq_nat_dec [
     Expr.seq 8 11;   (* (h, rd(a, g)) *)
     Expr.seq 5 10;   (* (g, rd(b, h)) *)
     Expr.seq 7 9;    (* (f, wr(b, h)) *)
@@ -692,7 +692,7 @@ Module Examples.
       compute.
       trivial.
     }
-    apply is_wf_true in H.
+    apply is_cg_true in H.
     auto.
   Qed.
 End Examples.
@@ -718,23 +718,67 @@ Section Props.
 
   Definition trace := list action.
 
-  Definition computation_graph := lang node.
+  Definition actions := MN.t action.
 
-  Inductive CG: trace -> computation_graph -> Prop :=
-  | cg_nil:
-    forall x,
-    CG [(x, INIT)] (init (@fresh action []))
-  | cg_mem:
-    forall t cg x o n m r,
-    CG t cg ->
-    MapsTo (x, o) n t ->
-    CG ((x, MEM r m)::t) (seq n (fresh t) cg)
+  Inductive TaskOf n x (a:actions) : Prop :=
+  | task_of_def:
+    forall o,
+    MN.MapsTo n (x, o) a ->
+    TaskOf n x a.
+
+  Inductive Trace: trace -> computation_graph node -> actions -> Prop :=
+  | trace_nil:
+    Trace [] [] (MN.empty action)
+  | trace_init:
+    forall x n cg a t,
+    Trace t cg a ->
+    Trace ((x, INIT)::t) (Expr.init n :: cg) (MN.add n (x,INIT) a)
+  | trace_mem:
+    forall t cg x n n' m r a,
+    Trace t cg a ->
+    TaskOf n x a ->
+    Trace ((x, MEM r m)::t) (Expr.seq n n' :: cg) (MN.add n (x, MEM r m) a)
   | cg_future:
-    forall x y t cg n o,
-    CG t cg ->
-    MapsTo (x, o) n t ->
-    CG ((y, INIT)::(x, FUTURE y)::t) (fork (fresh ((x, FUTURE y)::t)) n (fresh t) cg)
-  | cg_join:
-    forall 
-  
+    forall x y t cg nx nx' ny a,
+    Trace t cg a ->
+    TaskOf nx x a ->
+    Trace ((x, FUTURE y)::t) (Expr.fork ny nx nx'::cg)
+      (MN.add ny (y, INIT) (MN.add nx' (x, FUTURE y) a))
+  | trace_join:
+    forall nx ny nx' t cg a x y,
+    Trace t cg a ->
+    TaskOf nx x a ->
+    TaskOf ny y a ->
+    Trace ((x, FUTURE y)::t) (Expr.join nx nx' ny::cg)
+      (MN.add nx' (x, FORCE y) a).
+
+  Definition known_sets := MN.t (list tid).
+
+  Section KnownSet.
+    Variable a: actions.
+
+    Inductive KnownSet: computation_graph node -> known_sets -> Prop :=
+    | known_set_nil:
+      KnownSet [] (MN.empty (list tid))
+    | known_set_init:
+      forall cg ks n,
+      KnownSet cg ks ->
+      KnownSet (Expr.init n :: cg) (MN.add n nil ks)
+    | known_set_mem:
+      forall cg ks n n',
+      KnownSet cg ks ->
+      KnownSet (Expr.seq n n' :: cg) ks
+    | known_set_fork:
+      forall cg ks y l nx ny nx',
+      KnownSet cg ks ->
+      TaskOf ny y a ->
+      MN.MapsTo nx l ks ->
+      KnownSet (Expr.fork ny nx nx' :: cg) (MN.add ny l (MN.add nx' (y::l) ks))
+    | known_set_join:
+      forall cg ks lx ly nx ny nx',
+      KnownSet cg ks ->
+      MN.MapsTo nx lx ks ->
+      MN.MapsTo ny ly ks ->
+      KnownSet (Expr.fork nx nx' ny :: cg) (MN.add nx' (ly ++ lx) ks).
+  End KnownSet.
 End Props.
