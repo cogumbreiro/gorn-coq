@@ -447,7 +447,7 @@ Section Defs.
     auto using c_edge_out_false.
   Defined.
 
-  Let is_leaf (x: A) l := is_in x l && negb (c_edge_out x l).
+  Definition is_leaf (x: A) l := is_in x l && negb (c_edge_out x l).
 
   Lemma is_leaf_true:
     forall x l,
@@ -643,158 +643,19 @@ Section Defs.
 End Defs.
 
 Module Examples.
-  (*Import Expr.*)
-(*
-  Lemma top_in_6:
-    Top.In 6 [join 2 6 4; fork 5 4 5; fork 3 1 2; init 1].
-  Proof.
-    unfold Top.In.
-    auto using Exists_cons_hd, in_join.
-  Qed.
-
-  Lemma top_in_5:
-    Top.In 5 [join 2 6 4; fork 5 4 5; fork 3 1 2; init 1].
-  Proof.
-    unfold Top.In.
-    apply Exists_cons_tl.
-    auto using Exists_cons_hd, Exists_cons_tl, in_join.
-  Qed.
-
-  Lemma leaf_6:
-    Leaf 6 [join 2 6 4; fork 5 4 5; fork 3 1 2; init 1].
-  Proof.
-    apply leaf_def. {
-      unfold Supremum, not; intros.
-      inversion H; clear H.
-      inversion H0; subst; clear H0.
-      apply walk_to_forall in H2.
-      rewrite Forall_forall in H2.
-      destruct w. {
-        apply starts_with_inv_nil in H.
-        assumption.
-      }
-      destruct p as (a,b).
-      apply starts_with_eq in H.
-      subst.
-      assert (Hi: List.In (6,b) ((6,b)::w)) by auto using in_eq.
-      apply H2 in Hi.
-      apply Exists_exists in Hi.
-      destruct Hi as (?, (Hi, He)).
-      inversion Hi; subst; clear Hi. {
-        destruct He as [X|X]; inversion X.
-      }
-      inversion H; subst; clear H. {
-        destruct He as [X|X]; inversion X.
-      }
-      inversion H0; subst; clear H0. {
-        destruct He as [X|X]; inversion X.
-      }
-      inversion H; subst; clear H. {
-        destruct He as [X|X]; inversion X.
-      }
-      inversion H0.
-    }
-    auto using top_in_6.
-  Qed.
-
-  Lemma leaf_5:
-    Leaf 5 [join 2 6 4; fork 5 4 5; fork 3 1 2; init 1].
-  Proof.
-    apply leaf_def. {
-      unfold Supremum, not; intros.
-      inversion H; clear H.
-      inversion H0; subst; clear H0.
-      apply walk_to_forall in H2.
-      rewrite Forall_forall in H2.
-      destruct w. {
-        apply starts_with_inv_nil in H.
-        assumption.
-      }
-      destruct p as (a,b).
-      apply starts_with_eq in H.
-      subst.
-      assert (Hi: List.In (5,b) ((5,b)::w)) by auto using in_eq.
-      apply H2 in Hi.
-      apply Exists_exists in Hi.
-      destruct Hi as (?, (Hi, He)).
-      inversion Hi; subst; clear Hi. {
-        destruct He as [X|X]; inversion X.
-      }
-      inversion H; subst; clear H. {
-        destruct He as [X|X]; inversion X.
-      }
-      inversion H0; subst; clear H0. {
-        destruct He as [X|X]; inversion X.
-      }
-      inversion H; subst; clear H. {
-        destruct He as [X|X]; inversion X.
-      }
-      inversion H0.
-    }
-    auto using top_in_5.
-  Qed.
-
-*)
-
-  Let wf_0:
-   WF [
-    Expr.init 1
-  ].
-  Proof.
-    assert (is_wf Peano_dec.eq_nat_dec [Expr.init 1] = true). {
-      compute.
-      trivial.
-    }
-    apply is_wf_true in H.
-    assumption.
-  Qed.
-
-  Let wf_1:
-   WF [
-    Expr.fork 3 1 2;
-    Expr.init 1
-  ].
-  Proof.
-    assert (is_wf Peano_dec.eq_nat_dec [
-      Expr.fork 3 1 2;
-      Expr.init 1
-   ] = true). {
-      compute.
-      trivial.
-    }
-    apply is_wf_true in H.
-    auto.
-  Qed.
-
-  Goal WF [
-    Expr.fork 6 3 4;
-    Expr.fork 3 1 2;
-    Expr.init 1
-  ].
-  Proof.
-    assert (is_wf Peano_dec.eq_nat_dec [
-      Expr.fork 6 3 4;
-      Expr.fork 3 1 2;
-      Expr.init 1
-   ] = true). {
-      compute.
-      trivial.
-    }
-    apply is_wf_true in H.
-    auto.
-  Qed.
 
   Goal WF [
     Expr.join 6 7 5;
     Expr.join 2 6 4;
-    Expr.fork 6 3 4;
+    Expr.fork 5 3 4;
     Expr.fork 3 1 2;
     Expr.init 1
   ].
   Proof.
     assert (is_wf Peano_dec.eq_nat_dec [
+      Expr.join 6 7 5;
       Expr.join 2 6 4;
-      Expr.fork 6 3 4;
+      Expr.fork 5 3 4;
       Expr.fork 3 1 2;
       Expr.init 1
    ] = true). {
@@ -805,6 +666,35 @@ Module Examples.
     auto.
   Qed.
 
+  Goal WF [
+    Expr.seq 8 11;   (* (h, rd(a, g)) *)
+    Expr.seq 5 10;   (* (g, rd(b, h)) *)
+    Expr.seq 7 9;    (* (f, wr(b, h)) *)
+    Expr.fork 8 6 7; (* (f, async h) *)
+    Expr.seq 4 6;    (* (f, wr(a, g)) *)
+    Expr.fork 5 3 4; (* (f, async g) *)
+    Expr.seq 2 3;    (* (f, new y) *)
+    Expr.seq 1 2;    (* (f, new x) *)
+    Expr.init 1      (* (f, init) *)
+  ].
+  Proof.
+    assert (is_wf Peano_dec.eq_nat_dec [
+    Expr.seq 8 11;   (* (h, rd(a, g)) *)
+    Expr.seq 5 10;   (* (g, rd(b, h)) *)
+    Expr.seq 7 9;    (* (f, wr(b, h)) *)
+    Expr.fork 8 6 7; (* (f, async h) *)
+    Expr.seq 4 6;    (* (f, wr(a, g)) *)
+    Expr.fork 5 3 4; (* (f, async g) *)
+    Expr.seq 2 3;    (* (f, new y) *)
+    Expr.seq 1 2;    (* (f, new x) *)
+    Expr.init 1      (* (f, init) *)
+   ] = true). {
+      compute.
+      trivial.
+    }
+    apply is_wf_true in H.
+    auto.
+  Qed.
 End Examples.
 
 Section Props.
