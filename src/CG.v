@@ -1069,6 +1069,58 @@ Section DAG.
     apply run_to_lt_edges in H.
     auto using cg_dag.
   Qed.
+
+  Let reduces_continue_fun:
+    forall cg x cg1 cg2,
+    Reduces cg (x, CONTINUE) cg1 ->
+    Reduces cg (x, CONTINUE) cg2 ->
+    cg1 = cg2.
+  Proof.
+    intros.
+    inversion H; inversion H0; subst.
+    simpl_node.
+    inversion H8; subst; clear H8.
+    simpl_node.
+    trivial.
+  Qed.
+
+  Let reduces_fun:
+    forall cg a cg1 cg2,
+    Reduces cg a cg1 ->
+    Reduces cg a cg2 ->
+    cg1 = cg2.
+  Proof.
+    intros.
+    inversion H; subst; clear H;
+    inversion H0; subst; clear H0.
+    - trivial.
+    - assert (Heq: (vs'0, es'0) = (vs',es')) by eauto.
+      inversion Heq; subst.
+      simpl_node.
+      trivial.
+    - assert (Heq: (vs'0, es'0) = (vs',es')) by eauto.
+      inversion Heq; subst.
+      simpl_node.
+      trivial.
+    - simpl_node.
+      trivial.
+  Qed.
+
+  Lemma run_fun:
+    forall t cg cg',
+    Run t cg ->
+    Run t cg' ->
+    cg' = cg.
+  Proof.
+    induction t; intros. {
+      inversion H; inversion H0; subst; auto.
+    }
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    assert (cg0 = cg1) by auto.
+    subst.
+    eauto.
+  Qed.
 End DAG.
 
 Module T.
