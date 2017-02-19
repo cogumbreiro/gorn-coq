@@ -125,14 +125,14 @@ Section Edges.
 
   Definition make_cg x : computation_graph := (x::nil, nil).
 
-  Inductive Run (x:tid): trace -> computation_graph -> Prop :=
+  Inductive Run: trace -> computation_graph -> Prop :=
   | run_nil:
-    Run x nil (make_cg x)
+    Run nil (nil,nil)
   | run_cons:
     forall cg o t cg',
-    Run x t cg ->
+    Run t cg ->
     Reduces cg o cg' ->
-    Run x (o::t) cg'.
+    Run (o::t) cg'.
 
   Definition cg_nodes (cg:computation_graph) := fst cg.
 
@@ -502,14 +502,23 @@ Section PropsEx.
     eauto using node_cons, edge_to_node_in_fst, edge_to_node_in_snd.
   Qed.
 
+  Lemma edge_to_node_nil:
+    EdgeToNode (nil, nil).
+  Proof.
+    unfold EdgeToNode; intros.
+    simpl in *.
+    rewrite hb_edge_spec in H.
+    inversion H.
+  Qed.
+
   Lemma run_to_edge_to_node:
-    forall t a cg,
-    Run a t cg ->
+    forall t cg,
+    Run t cg ->
     EdgeToNode cg.
   Proof.
     intros.
     induction H.
-    - auto using make_edge_to_node.
+    - auto using edge_to_node_nil.
     - eauto using run_cons, reduces_edge_to_node.
   Qed.
 
@@ -1039,8 +1048,8 @@ Section DAG.
   Qed.
 
   Lemma run_to_lt_edges:
-    forall a t cg,
-    Run a t cg ->
+    forall t cg,
+    Run t cg ->
     LtEdges (cg_edges (snd cg)).
   Proof.
     intros.
@@ -1052,8 +1061,8 @@ Section DAG.
   Qed.
 
   Lemma run_to_dag:
-    forall a t cg,
-    Run a t cg ->
+    forall t cg,
+    Run t cg ->
     DAG (FGraph.Edge (cg_edges (snd cg))).
   Proof.
     intros.
