@@ -615,6 +615,7 @@ Section MoreProps.
     intros.
     unfold fresh, node_next; auto.
   Qed.
+
 End MoreProps.
 
   Ltac simpl_node := 

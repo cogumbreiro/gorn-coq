@@ -26,6 +26,7 @@ Require Import Coq.Structures.OrderedTypeEx.
 Section Defs.
 
   Inductive op :=
+  | INIT: op
   | FORK : tid -> op
   | JOIN : tid -> op
   | CONTINUE : op.
@@ -97,6 +98,10 @@ Section Edges.
   Qed.
 
   Inductive Reduces: computation_graph -> event -> computation_graph -> Prop :=
+  | reduces_init:
+    forall vs es x,
+    ~ List.In x vs ->
+    Reduces (vs,es) (x, INIT) (x::vs, es)
   | reduces_fork:
     forall vs es es' vs' y x nx ny,
     x <> y ->
@@ -140,6 +145,11 @@ Section Edges.
 
 
   Inductive SpawnPoint x n : computation_graph -> Prop :=
+  | spawn_point_init:
+    forall vs es y,
+    ~ List.In y vs ->
+    SpawnPoint x n (vs, es) ->
+    SpawnPoint x n (y::vs, es)
   | spawn_point_eq:
     forall vs es n' n'',
     SpawnPoint x n (x::vs, F (n', n'') :: C(n', n) :: es)
@@ -417,6 +427,7 @@ End HB.
       | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_node
       end
   | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_node
+  | [ H: Reduces _ (_, INIT) _ |- _ ] => inversion H; subst; clear H; simpl_node
   end.
 
 Section PropsEx.
@@ -483,10 +494,12 @@ Section PropsEx.
     destruct H1 as (et, He).
     destruct e as (?,[]); simpl_red; simpl in *;
     inversion He as (?,e,Hi,Hx,Hy,Heq); subst; clear He;
-    destruct Hi as [Hx|Hx]; subst; simpl in *; inversion Heq; subst;
+    try (destruct Hi as [Hx|Hx]; subst; simpl in *; inversion Heq; subst;
     eauto 8 using maps_to_lt, lt_to_node, node_cons, maps_to_eq;
     destruct Hx; subst; simpl in *; inversion Heq;subst;
-      split; eauto using maps_to_lt, lt_to_node, node_cons, maps_to_eq.
+      split; eauto using maps_to_lt, lt_to_node, node_cons, maps_to_eq).
+    split;
+    eauto using node_cons, edge_to_node_in_fst, edge_to_node_in_snd.
   Qed.
 
   Lemma run_to_edge_to_node:
@@ -761,7 +774,7 @@ Section DAG.
     LtEdges (map e_edge (snd cg')).
   Proof.
     intros.
-    destruct e as (?,[]); simpl_red; simpl in *;
+    destruct e as (?,[]); simpl_red; simpl in *; auto;
     apply List.Forall_cons; eauto.
   Qed.
 
@@ -809,6 +822,20 @@ Section DAG.
     unfold NODE.lt, fresh; simpl; auto.
   Qed.
 
+  Let sub_fresh_cons:
+    forall vs x (t:tid),
+    Sup (fresh vs) x ->
+    Sup (fresh (t :: vs)) x.
+  Proof.
+    unfold Sup; intros.
+    simpl in *.
+    assert (NODE.lt (fresh vs) (fresh (t::vs))). {
+      unfold fresh in *; simpl in *.
+      auto with *.
+    }
+    eauto using NODE.lt_trans.
+  Qed.
+
   Lemma has_sup_reduces:
     forall cg cg' e,
     HasSup cg ->
@@ -817,7 +844,7 @@ Section DAG.
   Proof.
     intros.
     destruct e as (?,[]); simpl_red;
-      unfold HasSup in *; simpl in *;
+      unfold HasSup in *; simpl in *; try (
       apply List.Forall_cons; eauto;
       try (apply List.Forall_cons; eauto);
       rewrite List.Forall_forall in *;
@@ -825,7 +852,9 @@ Section DAG.
       apply H in H0;
       unfold Sup in *;
       simpl in *;
-      eauto using NODE.lt_trans.
+      eauto using NODE.lt_trans).
+    rewrite List.Forall_forall in *; intros.
+    auto.
   Qed.
 
   Let walk2_to_hb:
@@ -1042,6 +1071,7 @@ Module T.
   | Trace.READ _ _ => CONTINUE
   | Trace.FUTURE x => FORK x
   | Trace.FORCE x => JOIN x
+  | Trace.INIT => INIT
   end.
 
   Definition event_to_cg (e:Trace.event) :=

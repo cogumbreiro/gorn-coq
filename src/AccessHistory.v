@@ -1342,7 +1342,6 @@ Module T.
 
   Definition op_to_ah (o:Trace.op) : option (mid*cg_access_history_op) :=
   match o with
-  | Trace.ALLOC r => None
   | Trace.READ r d => Some (r, (READ, d))
   | Trace.WRITE r d => Some (r, (WRITE, d))
   | _ => None
@@ -1409,6 +1408,16 @@ Module T.
     trivial.
   Qed.
 
+  Lemma drf_check_inv_init:
+   forall cg ah ah',
+    DRF_Check cg ah Trace.INIT ah' ->
+    ah' = ah.
+  Proof.
+    intros.
+    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
+    trivial.
+  Qed.
+
   Lemma drf_check_inv_write:
     forall ah ah' d r n (vs:list tid) es,
     DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.WRITE r d) ah' ->
@@ -1435,6 +1444,8 @@ End Defs.
     apply drf_check_inv_future in H1; subst
   | [ H1: DRF_Check _ _ (Trace.FORCE _) _ |- _ ] =>
     apply drf_check_inv_force in H1; subst
+  | [ H1: DRF_Check _ _ (Trace.INIT) _ |- _ ] =>
+    apply drf_check_inv_init in H1; subst
   end.
 
 Section Props.

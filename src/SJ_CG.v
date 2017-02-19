@@ -34,7 +34,10 @@ Section Defs.
     Reduces k (x, CG.JOIN y) k'
   | reduces_continue:
     forall k x,
-    Reduces k (x, CG.CONTINUE) k.
+    Reduces k (x, CG.CONTINUE) k
+  | reduces_init:
+    forall k x,
+    Reduces k (x, CG.INIT) k.
 
   Inductive Run : list event -> known_set -> Prop :=
   | run_nil:
@@ -56,6 +59,8 @@ End Defs.
        inversion H1; subst; clear H1
      end
   | [ H: Reduces _ (_, CONTINUE) _ |- _ ] =>
+    inversion H; subst; clear H
+  | [ H: Reduces _ (_, INIT) _ |- _ ] =>
     inversion H; subst; clear H
   | [ H : Reduces _ (_, CG.FORK _) _ |- _ ] =>
      inversion H; subst; clear H;
@@ -134,7 +139,11 @@ Section Props.
     List.In x vs.
 End Props.
 
-  Inductive Reduces : cg_safe_joins -> computation_graph -> cg_safe_joins -> Prop :=
+  Inductive Reduces : cg_safe_joins -> event -> computation_graph -> cg_safe_joins -> Prop :=
+
+  | reduces_init:
+    forall x l vs es,
+    Reduces l (x, INIT) (x::vs, es) (Nil::l)
 
   (**
     Case Fork:
@@ -157,31 +166,33 @@ End Props.
 
   | reduces_fork:
 
-    forall x y x' ty l vs es,
-    Reduces l (ty::vs, F (x,y)::C (x,x')::es) (Copy x::Cons ty x::l)
+    forall x y x' ty l vs es a b,
+    Reduces l (a,CG.FORK b) (ty::vs, F (x,y)::C (x,x')::es) (Copy x::Cons ty x::l)
 
   | reduces_join:
-    forall x y x' ty l vs es,
+    forall x y x' ty l vs es a b,
     MapsTo ty y vs ->
     CanJoin x ty l -> (* check: ty \in x *)
-    Reduces l (vs, J (y,x') :: C (x,x')::es) (Append x y :: l)
+    Reduces l (a, CG.JOIN b) (vs, J (y,x') :: C (x,x')::es) (Append x y :: l)
 
   | reduces_continue:
-    forall x x' l es vs,
-    Reduces l (vs, C (x,x')::es) (Copy x :: l).
+    forall x x' a l es vs,
+    Reduces l (a, CG.CONTINUE) (vs, C (x,x')::es) (Copy x :: l).
 
   Ltac simpl_red :=
   repeat match goal with
-  | [ H : Reduces _ ?cg _, H0 : CG.Reduces _ (_, CG.FORK _) ?cg |- _ ] =>
+  | [ H : Reduces _ _ ?cg _, H0 : CG.Reduces _ (_, CG.FORK _) ?cg |- _ ] =>
     CG.simpl_red; inversion H; subst; clear H
-  | [ H : Reduces _ ?cg _, H0 : CG.Reduces _ (_, CG.JOIN _) ?cg |- _ ] =>
+  | [ H : Reduces _ _ ?cg _, H0 : CG.Reduces _ (_, CG.JOIN _) ?cg |- _ ] =>
     inversion H0; subst; clear H0;
     match goal with
     | [ H1: CG.Reduces _ (_, CG.CONTINUE) _ |- _ ] => inversion H1; subst; clear H1
     end;
     inversion H; subst; clear H;
     simpl_node
-  | [ H : Reduces _ ?cg _, H0 : CG.Reduces _ (_, CG.CONTINUE) ?cg |- _ ] =>
+  | [ H : Reduces _ _ ?cg _, H0 : CG.Reduces _ (_, CG.CONTINUE) ?cg |- _ ] =>
+    CG.simpl_red; inversion H; subst; clear H
+  | [ H : Reduces _ (_, CG.INIT) ?cg _, H0 : CG.Reduces _ (_, CG.INIT) ?cg |- _ ] =>
     CG.simpl_red; inversion H; subst; clear H
   end.
 
@@ -422,7 +433,7 @@ End Props.
   Let do_fork_1:
     forall x y z cg cg' sj sj',
     CG.Reduces cg (x, CG.FORK y) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.FORK y) cg' sj' ->
     Knows (fst cg) sj (x, z) ->
     length (fst cg) = length sj ->
     Knows (fst cg') sj' (y, z).
@@ -443,7 +454,7 @@ End Props.
 
   Let do_fork_2:
     forall sj sj' cg cg' x y,
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.FORK y) cg' sj' ->
     CG.Reduces cg (x, CG.FORK y) cg' ->
     length (fst cg) = length sj ->
     Knows (fst cg') sj' (x, y).
@@ -482,7 +493,7 @@ End Props.
 
   Let do_fork_3:
     forall cg x y cg' sj sj' a b,
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.FORK y) cg' sj' ->
     CG.Reduces cg (x, CG.FORK y) cg' ->
     Knows (fst cg) sj (a, b) ->
     FreeInGraph (fst cg) sj ->
@@ -513,7 +524,7 @@ End Props.
 
   Let do_join_1:
     forall sj cg cg' sj' x y z,
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.JOIN y) cg' sj' ->
     CG.Reduces cg (x, CG.JOIN y) cg' ->
     Knows (fst cg) sj (x, y) ->
     Knows (fst cg) sj (y, z) ->
@@ -530,7 +541,7 @@ End Props.
   Let do_join_2:
     forall sj cg' sj' x y a b cg,
     CG.Reduces cg (x, CG.JOIN y) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.JOIN y) cg' sj' ->
     Knows (fst cg) sj (x, y) ->
     Knows (fst cg) sj (a, b) ->
     length (fst cg) = length sj ->
@@ -564,7 +575,7 @@ End Props.
 
   Let do_continue_1:
     forall sj sj' cg cg' a b x,
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CONTINUE) cg' sj' ->
     length (fst cg) = length sj ->
     Knows (fst cg) sj (a, b) ->
     CG.Reduces cg (x, CONTINUE) cg' ->
@@ -576,12 +587,42 @@ End Props.
     auto.
   Qed.
 
+  Lemma knows_init:
+    forall a b sj vs x,
+    ~ List.In x vs ->
+    Knows vs sj (a, b) ->
+    Knows (x :: vs) (Nil :: sj) (a, b).
+  Proof.
+    intros.
+    inversion H0; subst; clear H0.
+    apply knows_def with (nx:=nx).
+    - apply maps_to_cons; auto.
+      unfold not; intros; subst.
+      apply maps_to_to_in in H3.
+      contradiction.
+    - auto using can_join_cons.
+  Qed.
+
+  Let do_init_1:
+    forall sj sj' cg cg' a b x,
+    Reduces sj (x, INIT) cg' sj' ->
+    length (fst cg) = length sj ->
+    Knows (fst cg) sj (a, b) ->
+    CG.Reduces cg (x, INIT) cg' ->
+    Knows (fst cg') sj' (a, b).
+  Proof.
+    intros.
+    simpl_red.
+    simpl in *.
+    auto using knows_init.
+  Qed.
+
   Lemma edge_to_knows_reduces:
     forall cg sj k k' cg' sj' e,
     EdgeToKnows (fst cg) sj k ->
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj e cg' sj' ->
     FreeInGraph (fst cg) sj ->
     length (fst cg) = length sj ->
     EdgeToKnows (fst cg') sj' k'.
@@ -609,6 +650,8 @@ End Props.
       + eapply do_join_2 with (sj:=sj); eauto.
     - destruct p as (a,b).
       eapply do_continue_1; eauto.
+    - destruct p as (a,b).
+      eapply do_init_1; eauto.
   Qed.
 
   Lemma edge_to_knows_nil:
@@ -630,7 +673,7 @@ Section LengthPreserves.
     forall cg sj cg' sj' e,
     length (fst cg) = length sj ->
     CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj e cg' sj' ->
     length (fst cg') = length sj'.
   Proof.
     intros.
@@ -672,12 +715,18 @@ Section FreeInGraph.
     forall cg sj cg' sj' e,
     FreeInGraph (fst cg) sj ->
     CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj e cg' sj' ->
     FreeInGraph (fst cg') sj'.
   Proof.
     unfold FreeInGraph.
     intros.
     inversion H0; subst; clear H0; simpl in *.
+    - inversion H1; subst; clear H1.
+      inversion H2; subst; clear H2.
+      inversion H0; subst; clear H0. {
+        inversion H1.
+      }
+      eauto using free_def, List.in_cons.
     - inversion H5; subst; clear H5.
       inversion H1; subst; clear H1.
       apply free_neq_copy in H2.
@@ -729,7 +778,7 @@ Section KnowsToEdge.
     KnowsToEdge (fst cg) sj k ->
     Events.Reduces k (x, CG.FORK y) k' ->
     CG.Reduces cg (x, CG.FORK y) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.FORK y) cg' sj' ->
     Knows (fst cg') sj' (a, b) ->
     length (fst cg) = length sj ->
     List.In (a, b) k'.
@@ -788,7 +837,7 @@ Section KnowsToEdge.
     KnowsToEdge (fst cg) sj k ->
     Events.Reduces k (x, CG.JOIN y) k' ->
     CG.Reduces cg (x, CG.JOIN y) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.JOIN y) cg' sj' ->
     Knows (fst cg') sj' (a, b) ->
     length (fst cg) = length sj ->
     List.In (a, b) k'.
@@ -819,7 +868,7 @@ Section KnowsToEdge.
     KnowsToEdge (fst cg) sj k ->
     Events.Reduces k (x, CG.CONTINUE) k' ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.CONTINUE) cg' sj' ->
     Knows (fst cg') sj' (a, b) ->
     length (fst cg) = length sj ->
     List.In (a, b) k'.
@@ -846,18 +895,47 @@ Section KnowsToEdge.
     eauto using knows_def, can_join_lt, maps_to_lt.
   Qed.
 
+  Let can_join_init:
+    forall cg cg' sj sj' k k' a b x,
+    KnowsToEdge (fst cg) sj k ->
+    Events.Reduces k (x, CG.INIT) k' ->
+    CG.Reduces cg (x, CG.INIT) cg' ->
+    Reduces sj (x, CG.INIT) cg' sj' ->
+    Knows (fst cg') sj' (a, b) ->
+    length (fst cg) = length sj ->
+    List.In (a, b) k'.
+  Proof.
+    intros.
+    rename H4 into Heq.
+    simpl_red; simpl in *.
+    Events.simpl_red.
+    inversion H3; subst; clear H3.
+    apply maps_to_inv in H2.
+    destruct H2 as [(?,?)|(?,?)]. {
+      subst.
+      inversion H4; subst; clear H4.
+      apply maps_to_length_rw in Heq.
+      rewrite Heq in *.
+      apply can_join_absurd_fresh in H3.
+      contradiction.
+    }
+    inversion H4; subst; clear H4.
+    eauto using knows_def.
+  Qed.
+
   Lemma knows_to_edge_reduces:
     forall cg sj cg' sj' e k' k,
     length (fst cg) = length sj ->
     KnowsToEdge (fst cg) sj k ->
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj e cg' sj' ->
     KnowsToEdge (fst cg') sj' k'.
   Proof.
     intros.
     unfold KnowsToEdge; intros; destruct p as (a,b).
-    destruct e as (x, [y|y|]).
+    destruct e as (x, []).
+    - eauto.
     - eapply can_join_fork; eauto.
     - eauto.
     - eauto.
@@ -907,7 +985,7 @@ Section Incl.
     Incl (snd cg) sj ->
     Events.Reduces k (a, CG.FORK b) k' ->
     CG.Reduces cg (a, CG.FORK b) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (a, CG.FORK b) cg' sj' ->
     List.In (n1, n2) (cg_edges (snd cg')) ->
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
@@ -963,7 +1041,7 @@ Section Incl.
     Incl (snd cg) sj ->
     Events.Reduces k (a, CG.JOIN b) k' ->
     CG.Reduces cg (a, CG.JOIN b) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (a, CG.JOIN b) cg' sj' ->
     List.In (n1, n2) (cg_edges (snd cg')) ->
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
@@ -1016,7 +1094,7 @@ Section Incl.
     Incl (snd cg) sj ->
     Events.Reduces k (a, CG.CONTINUE) k' ->
     CG.Reduces cg (a, CG.CONTINUE) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (a, CG.CONTINUE) cg' sj' ->
     List.In (n1, n2) (cg_edges (snd cg')) ->
     CanJoin n1 x sj' ->
     length (fst cg) = length sj ->
@@ -1041,12 +1119,31 @@ Section Incl.
       apply in_length_absurd in Hx; auto; contradiction.
   Qed.
 
+  Let incl_init:
+    forall cg cg' sj sj' k k' x n1 n2 a,
+    Incl (snd cg) sj ->
+    Events.Reduces k (a, CG.INIT) k' ->
+    CG.Reduces cg (a, CG.INIT) cg' ->
+    Reduces sj (a, CG.INIT) cg' sj' ->
+    List.In (n1, n2) (cg_edges (snd cg')) ->
+    CanJoin n1 x sj' ->
+    length (fst cg) = length sj ->
+    FreeInGraph (fst cg) sj ->
+    EdgeToNode cg ->
+    CanJoin n2 x sj'.
+  Proof.
+    intros.
+    Events.simpl_red; simpl_red; simpl in *.
+    inversion H4; subst; clear H4.
+    eauto using can_join_cons.
+  Qed.
+
   Lemma incl_reduces:
     forall sj cg k sj' cg' k' e,
     Incl (snd cg) sj ->
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj e cg' sj' ->
     length (fst cg) = length sj ->
     FreeInGraph (fst cg) sj ->
     EdgeToNode cg ->
@@ -1054,7 +1151,8 @@ Section Incl.
   Proof.
     intros.
     unfold Incl; intros.
-    destruct e as (a, [b|b|]).
+    destruct e as (a, []).
+    - eauto.
     - eauto.
     - eauto.
     - eauto.
@@ -1152,11 +1250,12 @@ Section SJ.
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
     EdgeToKnows (fst cg) sj k ->
-    exists sj', Reduces sj cg' sj'.
+    exists sj', Reduces sj e cg' sj'.
   Proof.
     intros.
     rename H1 into He.
     inversion H0; subst; clear H0; Events.simpl_red; CG.simpl_red.
+    - eauto using reduces_init.
     - eauto using reduces_fork.
     - assert (Hk: Knows vs sj (x, y)) by eauto.
       inversion Hk; subst; clear Hk.
@@ -1182,7 +1281,7 @@ Section SJ.
     SJ cg k sj ->
     Events.Reduces k e k' ->
     CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj e cg' sj' ->
     SJ cg' k' sj'.
   Proof.
     intros.
@@ -1195,11 +1294,14 @@ Section SJ.
     forall sj cg k sj' cg' e,
     SJ cg k sj ->
     CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj e cg' sj' ->
     exists k', Events.Reduces k e k'.
   Proof.
     intros.
     destruct e as (x,[]).
+    - exists k.
+      simpl_red.
+      auto using Events.reduces_init.
     - rename t into y.
       exists (fork x y k).
       simpl_red.
@@ -1230,7 +1332,7 @@ Section SJ.
     forall sj cg k sj' cg' e,
     SJ cg k sj ->
     CG.Reduces cg e cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj e cg' sj' ->
     exists k', SJ cg' k' sj'.
   Proof.
     intros.
@@ -1254,7 +1356,7 @@ Section SJ.
   Qed.
 
   (* -------------------------------------- *)
-
+(*
   Let sj_fresh_rw:
     forall vs es k sj,
     SJ (vs, es) k sj ->
@@ -1423,7 +1525,7 @@ Section SJ.
     length (fst cg) = length sj ->
     KnowsEquiv1 sj cg ->
     CG.Reduces cg (x, CG.FORK y) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.FORK y) cg' sj' ->
     CanJoin n z sj' ->
     HBCanJoin cg' n z.
   Proof.
@@ -1531,7 +1633,7 @@ Section SJ.
     length (fst cg) = length sj ->
     KnowsEquiv1 sj cg ->
     CG.Reduces cg (x, CG.JOIN y) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.JOIN y) cg' sj' ->
     CanJoin n z sj' ->
     HBCanJoin cg' n z.
   Proof.
@@ -1540,7 +1642,7 @@ Section SJ.
     rename prev into nz.
     rename H0 into Hind.
     rename H into Heq.
-    apply Hind in H17.
+    apply Hind in H19.
     apply maps_to_length_rw in Heq.
     inversion H3; subst; clear H3; simpl in *;
           try rewrite <- Heq; auto.
@@ -1551,7 +1653,7 @@ Section SJ.
     length (fst cg) = length sj ->
     KnowsEquiv1 sj cg ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj (x, CG.CONTINUE) cg' sj' ->
     CanJoin n z sj' ->
     HBCanJoin cg' n z.
   Proof.
@@ -1566,15 +1668,62 @@ Section SJ.
     try rewrite Heq; auto.
   Qed.
 
+  Let hb_can_join_cons_v:
+    forall vs es n x z,
+    ~ List.In x vs ->
+    HBCanJoin (vs, es) n z ->
+    HBCanJoin (x :: vs, es) n z.
+  Proof.
+    intros.
+    inversion H0; subst; clear H0; simpl in *. {
+      apply hb_can_join_hb with (ny:=ny); simpl; auto using spawn_point_init.
+    }
+    auto using spawn_point_init, hb_can_join_eq.
+  Qed.
+
+  Let can_join_pres_init:
+    forall n cg sj z sj' cg' x,
+    length (fst cg) = length sj ->
+    KnowsEquiv1 sj cg ->
+    CG.Reduces cg (x, CG.INIT) cg' ->
+    Reduces sj (x, CG.INIT) cg' sj' ->
+    CanJoin n z sj' ->
+    HBCanJoin cg' n z.
+  Proof.
+    intros.
+    simpl_red.
+    rename H0 into Hind.
+    rename H into Heq.
+    simpl in *.
+    apply maps_to_length_rw in Heq.
+    inversion H3; subst; clear H3; simpl in *.
+    apply Hind in H2.
+    try rewrite Heq; auto.
+  Qed.
+
+  Let spawn_point_absurd_nil:
+    forall vs x n,
+    ~ SpawnPoint x n (vs, nil).
+  Proof.
+    induction vs; unfold not; intros. {
+      inversion H.
+    }
+    inversion H; subst; clear H.
+    apply IHvs in H4.
+    contradiction.
+  Qed.
+
   Let spawn_point_to_edge:
     forall es x n vs,
     SpawnPoint x n (vs, es) ->
     exists n', List.In (C (n', n)) es.
   Proof.
     induction es; intros. {
-      inversion H.
+      inversion H; subst.
+      apply spawn_point_absurd_nil in H3; contradiction.
     }
     inversion H; subst; clear H.
+    - 
     - exists n'.
       auto using in_eq, in_cons.
     - apply IHes in H4.
@@ -1646,7 +1795,7 @@ Section SJ.
     (Hen: EdgeToNode cg)
     sj' cg' x y
     (Hcr: CG.Reduces cg (x, CG.FORK y) cg')
-    (Hr: Reduces sj cg' sj')
+    (Hr: Reduces sj (x, CG.FORK y) cg' sj')
     (Hd: DAG (FGraph.Edge (cg_edges (snd cg')))):
     forall n z,
     HBCanJoin cg' n z ->
@@ -1664,7 +1813,7 @@ Section SJ.
         eapply hb_absurd_fresh_lhs in H1; eauto.
         contradiction.
       }
-      inversion H10; subst; clear H10.
+      inversion H9; subst; clear H9. (* SpawnPoint *)
       assert (Hc: HBCanJoin (vs, es) nz z). {
         auto using hb_can_join_eq.
       }
@@ -1715,7 +1864,7 @@ Section SJ.
     (Hen: EdgeToNode cg)
     sj' cg' x y
     (Hcr: CG.Reduces cg (x, CG.JOIN y) cg')
-    (Hr: Reduces sj cg' sj')
+    (Hr: Reduces sj (x, CG.JOIN y) cg' sj')
     (Hd: DAG (FGraph.Edge (cg_edges (snd cg')))):
     forall n z,
     HBCanJoin cg' n z ->
@@ -1775,7 +1924,7 @@ Section SJ.
     (Hen: EdgeToNode cg)
     sj' cg' x
     (Hcr: CG.Reduces cg (x, CG.CONTINUE) cg')
-    (Hr: Reduces sj cg' sj')
+    (Hr: Reduces sj (x, CG.CONTINUE) cg' sj')
     (Hd: DAG (FGraph.Edge (cg_edges (snd cg')))):
     forall n z,
     HBCanJoin cg' n z ->
@@ -1831,7 +1980,7 @@ Section SJ.
     (Hlt: LtEdges (cg_edges (snd cg))):
     forall i sj' cg',
     CG.Reduces cg i cg' ->
-    Reduces sj cg' sj' ->
+    Reduces sj i cg' sj' ->
     KnowsEquiv sj' cg'.
   Proof.
     intros.
@@ -1843,6 +1992,7 @@ Section SJ.
     inversion Hsj.
     split; intros.
     + destruct o.
+      * 
       * eapply can_join_pres_fork; eauto.
       * eapply can_join_pres_join; eauto.
       * eapply can_join_pres_continue; eauto.
@@ -1894,7 +2044,7 @@ Section SJ.
     inversion H0; subst; clear H0.
     eapply IHt in H3; eauto.
     destruct H3 as (sj, (Hsj,Hk)).
-    assert (Hr: exists sj', Reduces sj cg sj'). {
+    assert (Hr: exists sj', Reduces sj a0 cg sj'). {
       inversion Hsj.
       eauto.
     }
@@ -1902,7 +2052,9 @@ Section SJ.
     apply CG.run_to_lt_edges in Hcg.
     eauto using sj_reduces, hb_can_join_preserves.
   Qed.
+  *)
 End SJ.
+
 (*
 Section Extra.
   Lemma build_cg:

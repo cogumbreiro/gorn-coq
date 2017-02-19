@@ -10,6 +10,7 @@ Section Defs.
   | d_any : datum.
 
   Inductive op :=
+  | INIT: op
   | ALLOC: mid -> op
   | READ: mid -> datum -> op
   | WRITE: mid -> datum -> op
@@ -18,5 +19,6 @@ Section Defs.
 
   Definition event := (tid * op) % type.
 
+  Definition trace := list event.
 
 End Defs.
