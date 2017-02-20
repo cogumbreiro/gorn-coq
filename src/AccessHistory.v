@@ -1342,8 +1342,8 @@ Module T.
 
   Definition op_to_ah (o:Trace.op) : option (mid*cg_access_history_op) :=
   match o with
-  | Trace.READ r d => Some (r, (READ, d))
-  | Trace.WRITE r d => Some (r, (WRITE, d))
+  | Trace.MEM r (Trace.READ d) => Some (r, (READ, d))
+  | Trace.MEM r (Trace.WRITE d) => Some (r, (WRITE, d))
   | _ => None
   end.
 
@@ -1366,7 +1366,7 @@ Module T.
 
   Lemma drf_check_inv_alloc:
     forall (vs:list tid) n es ah m ah',
-    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.ALLOC m) ah' ->
+    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.MEM m Trace.ALLOC) ah' ->
     ah = ah'.
   Proof.
     intros.
@@ -1376,7 +1376,7 @@ Module T.
 
   Lemma drf_check_inv_read:
     forall n (vs:list tid) es ah m d ah',
-    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.READ m d) ah' ->
+    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.MEM m (Trace.READ d)) ah' ->
     Add (CG.HB (CG.C (n, fresh vs) :: es)) ah
        (m, fresh vs, (READ, d)) ah'.
   Proof.
@@ -1420,7 +1420,7 @@ Module T.
 
   Lemma drf_check_inv_write:
     forall ah ah' d r n (vs:list tid) es,
-    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.WRITE r d) ah' ->
+    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.MEM r (Trace.WRITE d)) ah' ->
     Add (CG.HB (CG.C (n, fresh vs) :: es)) ah
        (r, fresh vs, (WRITE, d)) ah'.
   Proof.
@@ -1434,12 +1434,22 @@ End Defs.
 
   Ltac simpl_drf_check :=
   match goal with
-  | [ H1: DRF_Check _ _ (Trace.ALLOC _) _ |- _ ] =>
+  | [ H1: DRF_Check _ _ (Trace.MEM _ Trace.ALLOC) _ |- _ ] =>
     apply drf_check_inv_alloc in H1; inversion H1; subst; clear H1
-  | [ H1: DRF_Check _ _ (Trace.READ _ _) _ |- _ ] =>
+  | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.READ _)) _ |- _ ] =>
     apply drf_check_inv_read in H1; inversion H1; subst; clear H1
-  | [ H1: DRF_Check _ _ (Trace.WRITE _ _) _ |- _ ] =>
+  | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.WRITE _ )) _ |- _ ] =>
     apply drf_check_inv_write in H1; inversion H1; subst; clear H1
+  | [ H1: DRF_Check _ _ (Trace.MEM _ ?o) _ |- _ ] =>
+    destruct o;
+    match goal with
+    | [ H1: DRF_Check _ _ (Trace.MEM _ Trace.ALLOC) _ |- _ ] =>
+      apply drf_check_inv_alloc in H1; inversion H1; subst; clear H1
+    | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.READ _)) _ |- _ ] =>
+      apply drf_check_inv_read in H1; inversion H1; subst; clear H1
+    | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.WRITE _ )) _ |- _ ] =>
+      apply drf_check_inv_write in H1; inversion H1; subst; clear H1
+    end
   | [ H1: DRF_Check _ _ (Trace.FUTURE _) _ |- _ ] =>
     apply drf_check_inv_future in H1; subst
   | [ H1: DRF_Check _ _ (Trace.FORCE _) _ |- _ ] =>
@@ -1931,7 +1941,7 @@ Section Props.
     forall x n vs ah ah' d es r,
     WellFormed (vs,es) ah ->
     WellFormed (x :: vs,C (n, fresh vs) :: es) ah' ->
-    DRF_Check (C (n, fresh vs) :: es) ah (Trace.READ r d) ah' ->
+    DRF_Check (C (n, fresh vs) :: es) ah (Trace.MEM r (Trace.READ d)) ah' ->
     exists h a,
     MM.MapsTo r h ah /\ LastWrite (HB es) a h /\ a_what a = Some d
     /\ HB (C (n, fresh vs) :: es) (a_when a) (fresh vs).

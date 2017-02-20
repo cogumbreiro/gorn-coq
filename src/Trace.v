@@ -9,11 +9,14 @@ Section Defs.
   | d_mem : mid -> datum
   | d_any : datum.
 
+  Inductive mem_op :=
+  | ALLOC: mem_op
+  | READ: datum -> mem_op
+  | WRITE: datum -> mem_op.
+
   Inductive op :=
   | INIT: op
-  | ALLOC: mid -> op
-  | READ: mid -> datum -> op
-  | WRITE: mid -> datum -> op
+  | MEM: mid -> mem_op -> op
   | FUTURE: tid -> op
   | FORCE: tid -> op.
 

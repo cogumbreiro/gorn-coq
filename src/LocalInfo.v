@@ -105,7 +105,7 @@ Section Defs.
     Locals.MapsTo n d l ->
     (* add reference y to the locals of task x *)
     Locals.Reduces l (n', CONS (d_mem r) n) l' ->
-    Reduces l (ALLOC r) l'
+    Reduces l (MEM r ALLOC) l'
 
   | reduces_read:
     forall l d n n' r l' es,
@@ -114,7 +114,7 @@ Section Defs.
     Locals.MapsTo n (d_mem r) l ->
     (* add datum d to the locals of x *)
     Locals.Reduces l (n', CONS d n) l' ->
-    Reduces l (READ r d) l'
+    Reduces l (MEM r (READ d)) l'
 
   | reduces_write:
     forall l r d n n' es l',
@@ -125,7 +125,7 @@ Section Defs.
     (* the target reference is also in the locals of task x *)
     Locals.MapsTo n (d_mem r) l ->
     Locals.Reduces l (n', COPY datum n) l' ->
-    Reduces l (WRITE r d) l'
+    Reduces l (MEM r (WRITE d)) l'
 
   | reduces_future:
     forall x nx nx' ny ds l y l' l'' es,
@@ -171,11 +171,11 @@ End Defs.
   match goal with
     | [ H1: Reduces (_::_,_::_) _ CONTINUE _ |- _ ] =>
       inversion H1; subst; clear H1
-    | [ H1: Reduces (_::_,_::_) _ (ALLOC _) _ |- _ ] =>
+    | [ H1: Reduces (_::_,_::_) _ (MEM _ ALLOC) _ |- _ ] =>
       inversion H1; subst; clear H1
-    | [ H1: Reduces (_::_,_::_) _ (WRITE _ _) _ |- _ ] =>
+    | [ H1: Reduces (_::_,_::_) _ (MEM _ (WRITE _)) _ |- _ ] =>
       inversion H1; subst; clear H1
-    | [ H1: Reduces (_::_,_::_) _ (READ _ _) _ |- _ ] =>
+    | [ H1: Reduces (_::_,_::_) _ (MEM _ (READ _)) _ |- _ ] =>
       inversion H1; subst; clear H1
     | [ H1: Reduces (_::_::_,_::_::_) _ (FUTURE _) _ |- _ ] =>
       inversion H1; subst; clear H1
@@ -201,9 +201,7 @@ Section SR.
   Definition op_to_cg (o:op) : CG.op :=
   match o with
   | INIT => CG.INIT
-  | ALLOC _ => CG.CONTINUE
-  | WRITE _ _ => CG.CONTINUE
-  | READ _ _ => CG.CONTINUE
+  | MEM _ _ => CG.CONTINUE
   | FUTURE x => CG.FORK x
   | FORCE x => CG.JOIN x
   end.
@@ -279,6 +277,53 @@ Section SR.
     apply SJ_CG.knows_neq; auto.
   Qed.
 
+  Let dom_incl_reduces:
+    forall l l' cg cg' x o,
+    DomIncl l (fst cg) ->
+    T.TReduces cg (x,o) cg' ->
+    Reduces cg' l o l' ->
+    DomIncl l' (fst cg').
+  Proof.
+    intros.
+    unfold DomIncl.
+    intros.
+    destruct o; simpl in *; handle_all.
+    - rewrite MN_Facts.add_in_iff in *.
+      destruct H2. {
+        subst.
+        apply maps_to_to_in in H3.
+        contradiction.
+      }
+      eauto using node_cons, maps_to_to_node.
+    - destruct m0; handle_all.
+      + rewrite MN_Facts.add_in_iff in *.
+        destruct H2. {
+          subst.
+          auto using node_eq.
+        }
+        eauto using node_cons, maps_to_to_node.
+      + rewrite MN_Facts.add_in_iff in *.
+        destruct H2. {
+          subst.
+          auto using node_eq.
+        }
+        eauto using node_cons, maps_to_to_node.
+      + simpl in *.
+        rewrite MN_Facts.add_in_iff in *.
+        destruct H2. {
+          subst.
+          auto using node_eq.
+        }
+        eauto using node_cons, maps_to_to_node.
+    - eauto using node_cons, maps_to_to_node.
+    - rewrite MN_Facts.add_in_iff in *.
+      destruct H2. {
+        subst.
+        auto using node_eq.
+      }
+      eauto using node_cons, maps_to_to_node.
+  Qed.
+
   (**
     Show that the local-knowledge contains
     SIF (ALLOC).
@@ -288,7 +333,7 @@ Section SR.
     forall cg sj sj' cg' l l' a b x k y,
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces cg' l (ALLOC y) l' ->
+    Reduces cg' l (MEM y ALLOC) l' ->
     LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj (x, CG.CONTINUE) cg' sj' ->
     SJ_CG.SJ cg k sj ->
@@ -328,7 +373,7 @@ Section SR.
     forall cg sj sj' cg' l l' a b x k y d,
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces cg' l (WRITE y d) l' ->
+    Reduces cg' l (MEM y (WRITE d)) l' ->
     LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj (x, CG.CONTINUE) cg' sj' ->
     SJ_CG.SJ cg k sj ->
@@ -368,14 +413,14 @@ Section SR.
     forall cg sj sj' cg' l l' a b x k y k' d g g',
     LocalToKnows l cg sj ->
     CG.Reduces cg (x, CG.CONTINUE) cg' ->
-    Reduces cg' l (READ y d) l' ->
+    Reduces cg' l (MEM y (READ d)) l' ->
     LocalKnows cg' l' (a, b) ->
     SJ_CG.Reduces sj (x, CG.CONTINUE) cg' sj' ->
     SJ_CG.SJ cg k sj ->
     DomIncl l (fst cg) ->
     LastWriteCanJoin g (snd cg) sj ->
     SJ_CG.SJ cg' k' sj' ->
-    AccessHistory.T.DRF_Check (snd cg') g (READ y d) g' ->
+    AccessHistory.T.DRF_Check (snd cg') g (MEM y (READ d)) g' ->
     AccessHistory.T.WellFormed cg g ->
     AccessHistory.T.WellFormed cg' g' ->
     length (fst cg) = length sj ->
@@ -581,53 +626,7 @@ Section SR.
     intros.
     unfold LocalToKnows.
     intros (a,b); intros.
-    destruct o; simpl in *; eauto.
-  Qed.
-
-  Let dom_incl_reduces:
-    forall l l' cg cg' x o,
-    DomIncl l (fst cg) ->
-    T.TReduces cg (x,o) cg' ->
-    Reduces cg' l o l' ->
-    DomIncl l' (fst cg').
-  Proof.
-    intros.
-    unfold DomIncl.
-    intros.
-    destruct o; simpl in *; handle_all.
-    - rewrite MN_Facts.add_in_iff in *.
-      destruct H2. {
-        subst.
-        apply maps_to_to_in in H3.
-        contradiction.
-      }
-      eauto using node_cons, maps_to_to_node.
-    - rewrite MN_Facts.add_in_iff in *.
-      destruct H2. {
-        subst.
-        auto using node_eq.
-      }
-      eauto using node_cons, maps_to_to_node.
-    - rewrite MN_Facts.add_in_iff in *.
-      destruct H2. {
-        subst.
-        auto using node_eq.
-      }
-      eauto using node_cons, maps_to_to_node.
-    - simpl in *.
-      rewrite MN_Facts.add_in_iff in *.
-      destruct H2. {
-        subst.
-        auto using node_eq.
-      }
-      eauto using node_cons, maps_to_to_node.
-    - eauto using node_cons, maps_to_to_node.
-    - rewrite MN_Facts.add_in_iff in *.
-      destruct H2. {
-        subst.
-        auto using node_eq.
-      }
-      eauto using node_cons, maps_to_to_node.
+    destruct o as [?|? []|?|?]; simpl in *; eauto.
   Qed.
 
   Let local_knows_cons:
@@ -760,7 +759,7 @@ Section SR.
     intros.
     unfold LastWriteCanJoin.
     intros.
-    destruct o; simpl in *; handle_all; AccessHistory.T.simpl_drf_check; eauto;
+    destruct o as [?|? []|?|?]; simpl in *; handle_all; AccessHistory.T.simpl_drf_check; eauto;
     rename H9 into Hlw;
     rename H10 into Heq;
     try (
@@ -825,7 +824,7 @@ Section SR.
     SJ_CG.Reduces sj (x, op_to_cg o) cg' sj'.
   Proof.
     intros.
-    destruct o; simpl in *; handle_all; AccessHistory.T.simpl_drf_check;
+    destruct o as [?|? []|?|?]; simpl in *; handle_all; AccessHistory.T.simpl_drf_check;
     eauto using SJ_CG.reduces_continue, SJ_CG.reduces_fork, SJ_CG.reduces_init.
     exists (SJ_CG.Append nx0 ny0::sj).
     eapply SJ_CG.reduces_join;eauto using maps_to_cons.
@@ -857,4 +856,4 @@ Section SR.
     eauto using AccessHistory.T.wf_reduces, wf_reduces.
   Qed.
 
-End SR. 
+End SR.

@@ -1127,9 +1127,7 @@ Module T.
 
   Definition op_to_cg (o:Trace.op) : op :=
   match o with
-  | Trace.ALLOC _ => CONTINUE
-  | Trace.WRITE _ _ => CONTINUE
-  | Trace.READ _ _ => CONTINUE
+  | Trace.MEM _ _ => CONTINUE
   | Trace.FUTURE x => FORK x
   | Trace.FORCE x => JOIN x
   | Trace.INIT => INIT
