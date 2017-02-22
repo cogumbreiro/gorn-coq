@@ -6,6 +6,8 @@ Require Import Tid.
 Require Import Mid.
 Require Import Node.
 
+Require Trace.
+
 Import ListNotations.
 
 Set Implicit Arguments.
@@ -698,21 +700,7 @@ Module Examples.
 End Examples.
 
 Section Props.
-  Inductive datum :=
-  | d_task : tid -> datum
-  | d_mem : mid -> datum
-  | d_any : datum.
-
-  Inductive mem_op :=
-  | ALLOC: mem_op
-  | READ: datum -> mem_op
-  | WRITE: datum -> mem_op.
-
-  Inductive op :=
-  | INIT: op
-  | MEM: mid -> mem_op -> op
-  | FUTURE: tid -> op
-  | FORCE: tid -> op.
+  Import Trace.
 
   Definition action := (tid * op) % type.
 

@@ -39,15 +39,15 @@ Section Defs.
   | E_JOIN
   | E_CONTINUE.
 
-  Structure cg_edge := cg_e {
-    e_t: edge_type;
-    e_edge: (node * node)
-  }.
+  Definition cg_edge := (edge_type * (node * node)) % type.
+  Definition e_edge (e:cg_edge) := snd e.
+  Definition e_t (e:cg_edge) := fst e.
+
 End Defs.
 
-Notation F := (cg_e E_FORK).
-Notation J := (cg_e E_JOIN).
-Notation C := (cg_e E_CONTINUE).
+Notation F e := (E_FORK, e).
+Notation J e := (E_JOIN, e).
+Notation C e := (E_CONTINUE, e).
 
 Notation cg_edges es := (map e_edge es).
 
@@ -77,11 +77,11 @@ Section Edges.
 
   Lemma edge_eq:
     forall es t x y,
-     List.In {| e_t := t; e_edge := (x,y) |} es ->
+     List.In (t, (x,y)) es ->
      Edge es t (x, y).
   Proof.
     intros.
-    remember {| e_t := t; e_edge := (x, y) |} as e.
+    remember (t,(x, y)) as e.
     assert (R:(x, y) = e_edge e) by (subst; auto).
     rewrite R.
     assert (R2:t = e_t e) by (subst; auto).
@@ -97,42 +97,36 @@ Section Edges.
     eauto using hb_edge_def, edge_def.
   Qed.
 
-  Inductive Reduces: computation_graph -> event -> computation_graph -> Prop :=
-  | reduces_init:
-    forall vs es x,
+  Inductive CG: trace -> computation_graph -> Prop :=
+  | cg_nil:
+    CG nil (nil, nil)
+  | cg_init:
+    forall vs es x t,
+    CG t (vs, es) ->
     ~ List.In x vs ->
-    Reduces (vs,es) (x, INIT) (x::vs, es)
-  | reduces_fork:
-    forall vs es es' vs' y x nx ny,
-    x <> y ->
-    ~ List.In y vs -> 
-    Reduces (vs,es) (x, CONTINUE) (vs', es') ->
+    CG ((x, INIT)::t) (x::vs, es)
+  | cg_fork:
+    forall vs es y x nx nx' ny t,
+    CG t (vs, es) ->
+    ~ List.In y vs ->
     MapsTo x nx vs ->
-    MapsTo y ny (y::vs') ->
-    Reduces (vs,es) (x, FORK y) (y::vs', F (nx,ny) :: es')
-  | reduces_join:
-    forall vs es vs' es' x y nx ny,
+    MapsTo y ny (y::x::vs) ->
+    MapsTo x nx' (x::vs) ->
+    CG ((x, FORK y)::t) (y::x::vs, F (nx,ny) :: C (nx, nx') :: es)
+  | cg_join:
+    forall vs es x y nx ny nx' t,
+    CG t (vs, es) ->
     x <> y ->
-    Reduces (vs,es) (x, CONTINUE) (vs', es') ->
-    MapsTo x nx vs' ->
-    MapsTo y ny vs' ->
-    Reduces (vs,es) (x, JOIN y) (vs', J (ny, nx) :: es')
-  | reduces_continue:
-    forall vs (es:list cg_edge) x prev curr,
+    MapsTo x nx vs ->
+    MapsTo x nx' (x::vs) ->
+    MapsTo y ny (x::vs) ->
+    CG ((x, JOIN y)::t) (x::vs, J (ny, nx') :: C (nx, nx') :: es)
+  | cg_continue:
+    forall vs (es:list cg_edge) x prev curr t,
+    CG t (vs, es) ->
     MapsTo x prev vs ->
     MapsTo x curr (x::vs) ->
-    Reduces (vs,es) (x, CONTINUE) (x::vs, C (prev, curr) :: es).
-
-  Definition make_cg x : computation_graph := (x::nil, nil).
-
-  Inductive Run: trace -> computation_graph -> Prop :=
-  | run_nil:
-    Run nil (nil,nil)
-  | run_cons:
-    forall cg o t cg',
-    Run t cg ->
-    Reduces cg o cg' ->
-    Run (o::t) cg'.
+    CG ((x, CONTINUE)::t) (x::vs, C (prev, curr) :: es).
 
   Definition cg_nodes (cg:computation_graph) := fst cg.
 
@@ -169,14 +163,6 @@ Section Edges.
 End Edges.
 
 Section Props.
-
-  Lemma in_make:
-    forall t,
-    List.In t (cg_nodes (make_cg t)).
-  Proof.
-    intros.
-    simpl; auto.
-  Qed.
 
   Inductive Prec : (node * node) -> cg_edge -> Prop :=
   | prec_def:
@@ -288,23 +274,7 @@ Section HB.
       simpl in *.
       eauto using hb_edge_in.
   Qed.
-(*
-  Lemma hb_edge_spec:
-    forall e cg,
-    HB_Edge (snd cg) e <-> List.In e (cg_edges cg).
-  Proof.
-    split; intros.
-    - destruct H.
-      inversion H; subst; clear H.
-      unfold cg_edges.
-      simpl.
-      auto using in_map.
-    - unfold cg_edges in *; rewrite in_map_iff in *.
-      destruct H as (?,(?,?)); subst.
-      simpl in *.
-      eauto using hb_edge_in.
-  Qed.
-*)
+
   Lemma node_lt_length_left:
     forall n1 n2 vs es,
     EdgeToNode (vs,es) ->
@@ -336,25 +306,6 @@ Section HB.
     intuition.
     inversion H.
     apply walk2_edge_false in H0; auto.
-  Qed.
-
-  Lemma hb_make_cg_absurd:
-    forall a x y,
-    ~ HB (snd (make_cg a)) x y.
-  Proof.
-    intros.
-    intuition.
-    inversion H.
-    inversion H0; subst.
-    destruct w. {
-      apply starts_with_inv_nil in H1; contradiction.
-    }
-    assert (HB_Edge (snd (make_cg a)) p). {
-      eapply walk_to_edge; eauto using List.in_eq.
-    }
-    rewrite hb_edge_spec in H4.
-    simpl in H4.
-    contradiction.
   Qed.
 
   Lemma hb_to_fgraph:
@@ -403,7 +354,7 @@ Section HB.
 
   Lemma edge_to_hb:
     forall x y t es,
-    HB ( {| e_t := t; e_edge := (x,y) |} :: es) x y.
+    HB ( (t, (x,y)) :: es) x y.
   Proof.
     intros.
     rewrite hb_fgraph_spec.
@@ -416,21 +367,14 @@ End HB.
 
   Ltac simpl_red :=
   repeat match goal with
-  | [ H: Reduces _ (_, FORK _) _ |- _ ] =>
-      inversion H; subst; clear H;
-      match goal with
-      | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_node
-      end
-  | [ H: Reduces _ (_, JOIN _) _ |- _ ] =>
-      inversion H; subst; clear H;
-      match goal with
-      | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_node
-      end
-  | [ H: Reduces _ (_, CONTINUE) _ |- _ ] => inversion H; subst; clear H; simpl_node
-  | [ H: Reduces _ (_, INIT) _ |- _ ] => inversion H; subst; clear H; simpl_node
+  | [ H: CG ((_, FORK _)::_) _   |- _ ] => inversion H; subst; clear H; simpl_node
+  | [ H: CG ((_, JOIN _)::_) _   |- _ ] => inversion H; subst; clear H; simpl_node
+  | [ H: CG ((_, CONTINUE)::_) _ |- _ ] => inversion H; subst; clear H; simpl_node
+  | [ H: CG ((_, INIT)::_) _     |- _ ] => inversion H; subst; clear H; simpl_node
   end.
 
 Section PropsEx.
+(*
   Lemma make_edge_to_node:
     forall x,
     EdgeToNode (make_cg x).
@@ -442,6 +386,81 @@ Section PropsEx.
     rewrite hb_edge_spec in H.
     simpl in *.
     contradiction.
+  Qed.
+*)
+  Lemma edge_to_node_nil:
+    EdgeToNode (nil, nil).
+  Proof.
+    unfold EdgeToNode; intros.
+    simpl in *.
+    rewrite hb_edge_spec in H.
+    inversion H.
+  Qed.
+
+  Lemma edge_to_node_init:
+    forall vs es x,
+    EdgeToNode (vs, es) ->
+    ~ List.In x vs ->
+    EdgeToNode (x :: vs, es).
+  Proof.
+    unfold EdgeToNode; intros.
+    assert (Hx: HB_Edge (snd (vs, es)) (x0, y)). {
+      simpl in *; auto.
+    }
+    apply H in Hx.
+    destruct Hx; simpl in *.
+    split; auto using node_cons.
+  Qed.
+
+  Lemma edge_to_node_fork:
+    forall vs es y x n,
+    EdgeToNode (vs, es) ->
+    ~ List.In y vs ->
+    MapsTo x n vs ->
+    EdgeToNode (y :: x :: vs, F (n, fresh (x :: vs)) :: C (n, fresh vs) :: es).
+  Proof.
+    unfold EdgeToNode; intros; simpl in *.
+    apply hb_edge_spec in H2; simpl in *.
+    destruct H2 as [Heq|[Heq|Hi]];
+    try (inversion Heq; subst;
+      split; eauto using maps_to_to_node, node_cons, node_eq).
+    apply hb_edge_spec in Hi.
+    apply H in Hi.
+    destruct Hi; split; auto using node_cons.
+  Qed.
+
+  Lemma edge_to_node_join:
+    forall vs es x y nx ny,
+    EdgeToNode (vs, es) ->
+    x <> y ->
+    MapsTo x nx vs ->
+    MapsTo y ny vs ->
+    EdgeToNode (x :: vs, J (ny, fresh vs) :: C (nx, fresh vs) :: es).
+  Proof.
+    unfold EdgeToNode; intros.
+    apply hb_edge_spec in H3; simpl in *.
+    destruct H3 as [Heq|[Heq|Hi]];
+    try (inversion Heq; subst;
+      split; eauto using maps_to_to_node, node_cons, node_eq).
+    apply hb_edge_spec in Hi.
+    apply H in Hi.
+    destruct Hi; split; auto using node_cons.
+  Qed.
+
+  Lemma edge_to_node_continue:
+    forall x n vs es,
+    EdgeToNode (vs, es) ->
+    MapsTo x n vs ->
+    EdgeToNode (x :: vs, C (n, fresh vs) :: es).
+  Proof.
+    unfold EdgeToNode; intros.
+    apply hb_edge_spec in H1; simpl in *.
+    destruct H1 as [Heq|Hi];
+    try (inversion Heq; subst;
+      split; eauto using maps_to_to_node, node_cons, node_eq).
+    apply hb_edge_spec in Hi.
+    apply H in Hi.
+    destruct Hi; split; auto using node_cons.
   Qed.
 
   Let edge_to_node_in:
@@ -483,43 +502,21 @@ Section PropsEx.
     destruct He; auto.
   Qed.
 
-  Lemma reduces_edge_to_node:
-    forall cg e cg',
-    EdgeToNode cg ->
-    Reduces cg e cg' ->
-    EdgeToNode cg'.
-  Proof.
-    intros.
-    unfold EdgeToNode; intros a b; intros.
-    destruct H1 as (et, He).
-    destruct e as (?,[]); simpl_red; simpl in *;
-    inversion He as (?,e,Hi,Hx,Hy,Heq); subst; clear He;
-    try (destruct Hi as [Hx|Hx]; subst; simpl in *; inversion Heq; subst;
-    eauto 8 using maps_to_lt, lt_to_node, node_cons, maps_to_eq;
-    destruct Hx; subst; simpl in *; inversion Heq;subst;
-      split; eauto using maps_to_lt, lt_to_node, node_cons, maps_to_eq).
-    split;
-    eauto using node_cons, edge_to_node_in_fst, edge_to_node_in_snd.
-  Qed.
-
-  Lemma edge_to_node_nil:
-    EdgeToNode (nil, nil).
-  Proof.
-    unfold EdgeToNode; intros.
-    simpl in *.
-    rewrite hb_edge_spec in H.
-    inversion H.
-  Qed.
-
-  Lemma run_to_edge_to_node:
+  Lemma cg_edge_to_node:
     forall t cg,
-    Run t cg ->
+    CG t cg ->
     EdgeToNode cg.
   Proof.
-    intros.
-    induction H.
-    - auto using edge_to_node_nil.
-    - eauto using run_cons, reduces_edge_to_node.
+    induction t; intros. {
+      inversion H; subst; clear H.
+      auto using edge_to_node_nil.
+    }
+    inversion H; subst; clear H;
+    apply IHt in H2; auto; simpl_node.
+    - auto using edge_to_node_init.
+    - auto using edge_to_node_fork.
+    - eauto using edge_to_node_join.
+    - auto using edge_to_node_continue.
   Qed.
 
   Lemma f_edge_to_hb_edge:
@@ -620,15 +617,33 @@ Section PropsEx.
     eauto using FGraph.reaches_impl_cons.
   Qed.
 
+  Lemma cg_fun:
+    forall t cg cg',
+    CG t cg ->
+    CG t cg' ->
+    cg' = cg.
+  Proof.
+    induction t; intros. {
+      inversion H; inversion H0; subst; auto.
+    }
+    inversion H; subst; clear H; simpl_node;
+    inversion H0; subst; clear H0;
+    assert (Heq: (vs0, es0) = (vs,es)) by auto;
+    inversion Heq; subst; clear Heq; simpl_node; trivial.
+  Qed.
+
   Lemma hb_impl:
-    forall e cg cg',
-    Reduces cg e cg' ->
+    forall a t cg cg',
+    CG t cg ->
+    CG (a::t) cg' -> 
     forall x y,
     HB (snd cg) x y ->
     HB (snd cg') x y.
   Proof.
     intros.
-    inversion H; subst; simpl_red;
+    destruct a as (?,[]);
+    inversion H0; subst; clear H0; simpl_node; simpl in *;
+    assert (cg = (vs,es)) by eauto using cg_fun; subst;
     eauto using hb_impl_cons.
   Qed.
 
@@ -738,7 +753,7 @@ Section DAG.
     eauto.
   Qed.
 
-  Lemma cg_dag:
+  Lemma lt_edges_to_dag:
     forall (es:list (node*node)),
     LtEdges es ->
     DAG (FGraph.Edge es).
@@ -776,15 +791,19 @@ Section DAG.
     omega.
   Qed.
 
-  Lemma lt_edges_reduces:
-    forall (cg cg':computation_graph) e,
-    LtEdges (map e_edge (snd cg)) ->
-    Reduces cg e cg' ->
-    LtEdges (map e_edge (snd cg')).
+  Lemma cg_to_lt_edges:
+    forall t (cg:computation_graph),
+    CG t cg ->
+    LtEdges (map e_edge (snd cg)).
   Proof.
-    intros.
-    destruct e as (?,[]); simpl_red; simpl in *; auto;
-    apply List.Forall_cons; eauto.
+    induction t; intros. {
+      inversion H; subst; simpl.
+      unfold LtEdges.
+      auto using List.Forall_nil.
+    }
+    inversion H; subst; clear H; simpl_node; simpl in *; auto;
+    apply IHt in H2; simpl in *; unfold LtEdges in *; auto;
+    eauto using List.Forall_cons.
   Qed.
 
   Lemma hb_irrefl:
@@ -793,7 +812,7 @@ Section DAG.
     ~ HB es x x.
   Proof.
     intros.
-    apply cg_dag in H.
+    apply lt_edges_to_dag in H.
     unfold DAG in *.
     unfold not; intros.
     apply hb_fgraph_spec in H0.
@@ -845,31 +864,49 @@ Section DAG.
     eauto using NODE.lt_trans.
   Qed.
 
-  Lemma has_sup_reduces:
-    forall cg cg' e,
-    HasSup cg ->
-    Reduces cg e cg' ->
-    HasSup cg'.
+  Lemma cg_to_has_sup:
+    forall t cg,
+    CG t cg ->
+    HasSup cg.
   Proof.
-    intros.
-    destruct e as (?,[]); simpl_red;
-      unfold HasSup in *; simpl in *; try (
-      apply List.Forall_cons; eauto;
-      try (apply List.Forall_cons; eauto);
-      rewrite List.Forall_forall in *;
-      intros (a,b); intros;
-      apply H in H0;
-      unfold Sup in *;
-      simpl in *;
-      eauto using NODE.lt_trans).
+    induction t; intros. {
+      inversion H; subst; clear H.
+      unfold HasSup; simpl; intros; auto using List.Forall_nil.
+    }
+    inversion H; subst; clear H;
+    apply IHt in H2; clear IHt;
+    unfold HasSup in *; simpl in *; simpl_node;
     rewrite List.Forall_forall in *; intros.
-    auto.
+    - auto.
+    - inversion H; subst; clear H. {
+        unfold Sup; simpl.
+        eauto using NODE.lt_trans.
+      }
+      inversion H0; subst; clear H0. {
+        unfold Sup; simpl.
+        eauto using NODE.lt_trans.
+      }
+      auto.
+    - inversion H; subst; clear H. {
+        unfold Sup; simpl.
+        eauto using NODE.lt_trans.
+      }
+      inversion H0; subst; clear H0. {
+        unfold Sup; simpl.
+        eauto using NODE.lt_trans.
+      }
+      auto.
+    - inversion H; subst; clear H. {
+        unfold Sup; simpl.
+        eauto using NODE.lt_trans.
+      }
+      auto.
   Qed.
 
   Let walk2_to_hb:
     forall es a b w n1 n2 t,
     Walk2 (FGraph.Edge ((n1, n2) :: map e_edge es)) a b w ->
-    HB ({| e_t := t; e_edge := (n1,n2) |} :: es) a b.
+    HB ((t, (n1,n2)) :: es) a b.
   Proof.
     intros.
     apply fgraph_to_hb.
@@ -901,7 +938,7 @@ Section DAG.
 
   Lemma hb_edge_eq:
     forall es x y t,
-    HB_Edge ({| e_t := t; e_edge := (x, y) |} :: es) (x, y).
+    HB_Edge ((t,(x, y)) :: es) (x, y).
   Proof.
     intros.
     rewrite hb_edge_spec in *.
@@ -922,7 +959,7 @@ Section DAG.
 
   Lemma edge_to_node_inv_cons_edge:
     forall vs es x y t,
-    EdgeToNode (vs, {|e_t := t; e_edge:=(x,y)|}::es) ->
+    EdgeToNode (vs, (t, (x,y))::es) ->
     EdgeToNode (vs, es) /\ Node x vs /\ Node y vs.
   Proof.
     intros.
@@ -936,7 +973,7 @@ Section DAG.
     EdgeToNode (vs, es) ->
     Node x vs ->
     Node y vs ->
-    EdgeToNode (vs, {|e_t := t; e_edge:=(x,y)|}::es).
+    EdgeToNode (vs, (t,(x,y))::es).
   Proof.
     intros.
     unfold EdgeToNode; intros a b; intros.
@@ -952,7 +989,7 @@ Section DAG.
 
   Lemma lt_edges_inv_cons_edge:
     forall es x y t,
-    LtEdges (map e_edge ({|e_t := t; e_edge:=(x,y)|}::es)) ->
+    LtEdges (map e_edge ((t,(x,y))::es)) ->
     LtEdges (map e_edge es) /\ LtEdge (x,y).
   Proof.
     intros.
@@ -965,7 +1002,7 @@ Section DAG.
     forall es x y t,
     LtEdges (map e_edge es) ->
     LtEdge (x,y) ->
-    LtEdges (map e_edge ({|e_t := t; e_edge:=(x,y)|}::es)).
+    LtEdges (map e_edge ((t,(x,y))::es)).
   Proof.
     intros.
     unfold LtEdges in *.
@@ -974,9 +1011,9 @@ Section DAG.
 
   Lemma hb_inv_cons_c:
     forall a b vs x n es t,
-    EdgeToNode (x::vs, {| e_t := t; e_edge := (n,fresh vs) |} :: es) ->
-    LtEdges (map e_edge ({| e_t := t; e_edge := (n,fresh vs) |} :: es)) ->
-    HB ({| e_t := t; e_edge := (n,fresh vs) |} :: es) a b ->
+    EdgeToNode (x::vs, (t, (n,fresh vs)) :: es) ->
+    LtEdges (map e_edge ((t, (n,fresh vs)) :: es)) ->
+    HB ((t,(n,fresh vs)) :: es) a b ->
     HB es a b \/ b = fresh vs.
   Proof.
     intros.
@@ -1029,8 +1066,8 @@ Section DAG.
 
   Lemma hb_inv_cons:
     forall x y n1 n2 t es,
-    DAG (FGraph.Edge (cg_edges ({| e_t:=t; e_edge:=(n1, n2) |}::es))) ->
-    HB ({| e_t:=t; e_edge:=(n1, n2) |}::es) x y ->
+    DAG (FGraph.Edge (cg_edges ((t, (n1, n2))::es))) ->
+    HB ((t, (n1, n2))::es) x y ->
     HB es x y \/
     (n2 = y /\ (n1 = x \/ HB es x n1)) \/
     (n2 <> y /\ HB es n2 y) \/
@@ -1047,80 +1084,14 @@ Section DAG.
     apply FGraph.walk2_inv_not_in_walk in H1; eauto using reaches_def.
   Qed.
 
-  Lemma run_to_lt_edges:
+  Lemma cg_to_dag:
     forall t cg,
-    Run t cg ->
-    LtEdges (cg_edges (snd cg)).
-  Proof.
-    intros.
-    induction H. {
-      simpl.
-      apply Forall_nil.
-    }
-    eauto using lt_edges_reduces.
-  Qed.
-
-  Lemma run_to_dag:
-    forall t cg,
-    Run t cg ->
+    CG t cg ->
     DAG (FGraph.Edge (cg_edges (snd cg))).
   Proof.
-    intros.
-    apply run_to_lt_edges in H.
-    auto using cg_dag.
+    eauto using cg_to_lt_edges, lt_edges_to_dag.
   Qed.
 
-  Let reduces_continue_fun:
-    forall cg x cg1 cg2,
-    Reduces cg (x, CONTINUE) cg1 ->
-    Reduces cg (x, CONTINUE) cg2 ->
-    cg1 = cg2.
-  Proof.
-    intros.
-    inversion H; inversion H0; subst.
-    simpl_node.
-    inversion H8; subst; clear H8.
-    simpl_node.
-    trivial.
-  Qed.
-
-  Let reduces_fun:
-    forall cg a cg1 cg2,
-    Reduces cg a cg1 ->
-    Reduces cg a cg2 ->
-    cg1 = cg2.
-  Proof.
-    intros.
-    inversion H; subst; clear H;
-    inversion H0; subst; clear H0.
-    - trivial.
-    - assert (Heq: (vs'0, es'0) = (vs',es')) by eauto.
-      inversion Heq; subst.
-      simpl_node.
-      trivial.
-    - assert (Heq: (vs'0, es'0) = (vs',es')) by eauto.
-      inversion Heq; subst.
-      simpl_node.
-      trivial.
-    - simpl_node.
-      trivial.
-  Qed.
-
-  Lemma run_fun:
-    forall t cg cg',
-    Run t cg ->
-    Run t cg' ->
-    cg' = cg.
-  Proof.
-    induction t; intros. {
-      inversion H; inversion H0; subst; auto.
-    }
-    inversion H; subst; clear H.
-    inversion H0; subst; clear H0.
-    assert (cg0 = cg1) by auto.
-    subst.
-    eauto.
-  Qed.
 End DAG.
 
 Module T.
@@ -1136,5 +1107,5 @@ Module T.
   Definition event_to_cg (e:Trace.event) :=
   let (x,o) := e in (x, op_to_cg o).
 
-  Notation TReduces cg e cg' := (Reduces cg (event_to_cg e) cg').
+  Definition CG t (cg:computation_graph) := (CG (map event_to_cg t)).
 End T.
