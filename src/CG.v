@@ -545,6 +545,32 @@ Section PropsEx.
     - apply node_absurd_fresh in Hb; contradiction.
   Qed.
 
+  Lemma in_edge_to_hb_edge:
+    forall p es,
+    List.In p (cg_edges es) ->
+    HB_Edge es p.
+  Proof.
+    intros.
+    apply in_map_iff in H.
+    destruct H as (e, (?,He)); subst.
+    auto using hb_edge_in.
+  Qed.
+
+  Lemma cg_edge_to_node_l:
+    forall t vs es x y,
+    CG t (vs, es) ->
+    List.In (x, y) (map e_edge es) ->
+    Node x vs.
+  Proof.
+    intros.
+    assert (Hen: EdgeToNode (vs, es)) by eauto using cg_edge_to_node.
+    assert (He: HB_Edge (snd (vs,es)) (x, y)). {
+      auto using in_edge_to_hb_edge.
+    }
+    apply Hen in He.
+    destruct He; auto.
+  Qed.
+
   Lemma edge_to_node_hb:
     forall vs es x y,
     EdgeToNode (vs, es) ->

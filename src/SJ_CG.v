@@ -20,32 +20,32 @@ Module Events.
 
   (** Reduces the known-set interpreting events of type [CG.event]. *)
 
-Section Defs.
-  Notation known_set := (list (tid * tid)).
+  Section Defs.
+    Notation known_set := (list (tid * tid)).
 
-  Inductive SJ: CG.trace -> known_set -> Prop :=
-  | sj_nil:
-    SJ nil nil
-  | reduces_init:
-    forall k x t,
-    SJ t k ->
-    SJ ((x, CG.INIT)::t) k
-  | sj_fork:
-    forall k k' x y t,
-    SJ t k ->
-    SafeJoins.CheckOp k {| op_t := FORK; op_src := x; op_dst := y |} k' ->
-    SJ ((x, CG.FORK y)::t) k'
-  | reduces_join:
-    forall k k' x y t,
-    SJ t k ->
-    SafeJoins.CheckOp k {| op_t := JOIN; op_src := x; op_dst := y |} k' ->
-    SJ ((x, CG.JOIN y)::t) k'
-  | sj_continue:
-    forall k x t,
-    SJ t k ->
-    SJ ((x, CG.CONTINUE)::t) k.
+    Inductive SJ: CG.trace -> known_set -> Prop :=
+    | sj_nil:
+      SJ nil nil
+    | sj_init:
+      forall k x t,
+      SJ t k ->
+      SJ ((x, CG.INIT)::t) k
+    | sj_fork:
+      forall k k' x y t,
+      SJ t k ->
+      SafeJoins.CheckOp k {| op_t := FORK; op_src := x; op_dst := y |} k' ->
+      SJ ((x, CG.FORK y)::t) k'
+    | sj_join:
+      forall k k' x y t,
+      SJ t k ->
+      SafeJoins.CheckOp k {| op_t := JOIN; op_src := x; op_dst := y |} k' ->
+      SJ ((x, CG.JOIN y)::t) k'
+    | sj_continue:
+      forall k x t,
+      SJ t k ->
+      SJ ((x, CG.CONTINUE)::t) k.
 
-End Defs.
+  End Defs.
 (*
   Ltac simpl_red :=
   repeat match goal with
@@ -172,7 +172,7 @@ End Props.
     CG.CG ((a, CG.FORK b)::t) (ty::vs, CG.F (x,y)::CG.C (x,x')::es) ->
     SJ ((a, CG.FORK b)::t) (ty::vs, CG.F (x,y)::CG.C (x,x')::es) (Copy x::Cons ty x::sj)
 
-  | reduces_join:
+  | sj_join:
     forall x y x' ty vs es a b t sj cg,
     SJ t cg sj ->
     CG.CG ((a, CG.JOIN b)::t) (vs, CG.J (y,x') :: CG.C (x,x')::es) ->
@@ -999,6 +999,19 @@ Section KnowsToEdge.
         eauto using knows_def.
       + eauto.
   Qed.
+
+  Lemma sj_to_knows_to_edge_0:
+    forall t vs es k sj p,
+    Events.SJ t k ->
+    SJ t (vs, es) sj ->
+    Knows vs sj p ->
+    List.In p k.
+  Proof.
+    intros.
+    assert (Hk: KnowsToEdge (fst (vs,es)) sj k)
+    by eauto using sj_to_knows_to_edge.
+    auto.
+  Qed.
 End KnowsToEdge.
 
 Section Incl.
@@ -1202,26 +1215,112 @@ Section Incl.
     - eauto.
   Qed.
 *)
-  Lemma incl_run:
-    forall t sj k cg,
-    Events.Run t k ->
-    CG.Run t cg ->
-    Run t cg sj ->
+
+  Lemma sj_to_incl:
+    forall t cg k sj,
+    Events.SJ t k ->
+    SJ t cg sj ->
     Incl (snd cg) sj.
   Proof.
     induction t; intros. {
       inversion H; subst; clear H.
-      inversion H1; subst; clear H1.
+      inversion H0; subst; clear H0.
       simpl; unfold Incl; intros.
-      inversion H1.
+      inversion H.
     }
-    inversion H; subst; clear H.
-    inversion H0; subst; clear H0.
-    inversion H1; subst; clear H1.
-    inversion H5; subst; clear H5.
-    assert (cg2 = cg0) by eauto using CG.run_fun; subst.
-    assert (cg1 = cg0) by eauto using cg_run_fun; subst.
-    eapply incl_reduces; eauto using length_run, free_in_graph_run, CG.run_to_edge_to_node.
+    inversion H0; subst; clear H0; simpl_red;
+    inversion H;subst; clear H; simpl in *;
+    rename sj0 into sj;
+    try (rename vs0 into vs);
+    try (rename k0 into k_; rename k into k'; rename k_ into k);
+    unfold Incl in *; intros.
+    - inversion H0; subst; clear H0.
+      eauto using can_join_cons.
+    - inversion H6; subst; clear H6; simpl_node.
+      simpl in *.
+      assert (R: fresh (a0::vs) = fresh (Cons ty x :: sj)). {
+        assert (length (a0::vs) = length (Cons ty x :: sj)). {
+          simpl.
+          erewrite sj_to_length_0; eauto.
+        }
+        auto using maps_to_length_rw.
+      }
+      assert (R2: fresh vs = fresh sj) by eauto using sj_to_length_0, maps_to_length_rw.
+      destruct H as [Heq|[Heq|?]];
+      try (inversion Heq; subst; clear Heq).
+      + rewrite R. apply can_join_copy.
+        apply can_join_inv_copy_2 in H0.
+        apply can_join_inv_cons_2 in H0.
+        destruct H0 as [(?,?)|[(?,?)|(?,?)]]; subst;
+        auto using can_join_cons.
+        rewrite <- R2 in *.
+        simpl_node.
+      + rewrite R2.
+        apply can_join_cons.
+        apply can_join_inv_copy_2 in H0.
+        apply can_join_inv_cons_2 in H0.
+        destruct H0 as [(?,?)|[(?,?)|(?,?)]]; subst;
+        auto using can_join_eq, can_join_neq.
+      + inversion H0; subst; clear H0. {
+          inversion H7; subst; clear H7.
+          - eapply IHt in H6; eauto.
+            auto using can_join_cons.
+          - rewrite <- R2 in *.
+            eapply CG.cg_edge_to_node_l in H; eauto using sj_to_cg.
+            simpl_node.
+          - rewrite <- R2 in *.
+            eapply CG.cg_edge_to_node_l in H; eauto using sj_to_cg.
+            simpl_node.
+        }
+        rewrite <- R in *.
+        eapply CG.cg_edge_to_node_l in H; eauto using sj_to_cg.
+        simpl_node.
+    - simpl in *.
+      assert (R: fresh (a0::vs) = fresh (Append x y :: sj)). {
+        assert (length (a0::vs) = length (Append x y :: sj)). {
+          simpl.
+          erewrite sj_to_length_0; eauto.
+        }
+        auto using maps_to_length_rw.
+      }
+      assert (R2: fresh vs = fresh sj) by eauto using sj_to_length_0, maps_to_length_rw.
+      inversion H7; subst; clear H7.
+      destruct H as [He|[He|Hi]];
+      try (inversion He; subst; clear He);
+      try (rewrite R2).
+      + inversion H0; subst; clear H0;
+        eauto using can_join_append_right, can_join_append_left.
+      + inversion H0; subst; clear H0;
+        eauto using can_join_append_right, can_join_append_left.
+      + apply can_join_cons.
+        inversion H0; subst; clear H0.
+        * eauto.
+        * rewrite <- R2 in *.
+          eapply CG.cg_edge_to_node_l in Hi; eauto using sj_to_cg.
+          simpl_node.
+        * rewrite <- R2 in *.
+          eapply CG.cg_edge_to_node_l in Hi; eauto using sj_to_cg.
+          simpl_node.
+    - simpl in *.
+      assert (R: fresh (a0::vs) = fresh (Copy x :: sj)). {
+        assert (length (a0::vs) = length (Copy x :: sj)). {
+          simpl.
+          erewrite sj_to_length_0; eauto.
+        }
+        auto using maps_to_length_rw.
+      }
+      assert (R2: fresh vs = fresh sj) by eauto using sj_to_length_0, maps_to_length_rw.
+      destruct H as [He|Hi]. {
+        inversion He; subst; clear He.
+        rewrite R2.
+        auto using can_join_copy, can_join_inv_copy_2.
+      }
+      inversion H0; subst; clear H0. {
+        eauto using can_join_cons.
+      }
+      rewrite <- R2 in *.
+      eapply CG.cg_edge_to_node_l in Hi; eauto using sj_to_cg.
+      simpl_node.
   Qed.
 
   Let hb_edge_in:
@@ -1297,193 +1396,126 @@ Section Incl.
     auto.
   Qed.
 
-  Lemma incl_nil:
-    Incl nil (Nil :: nil).
-  Proof.
-    intros.
-    unfold Incl.
-    intros.
-    simpl in *.
-    contradiction.
-  Qed.
-
 End Incl.
 
 Section SJ.
 
-  Let cg_reduces_to_reduces:
-    forall k k' cg e cg' sj,
-    Events.Reduces k e k' ->
-    CG.Reduces cg e cg' ->
-    EdgeToKnows (fst cg) sj k ->
-    exists sj', Reduces sj e cg' sj'.
-  Proof.
-    intros.
-    rename H1 into He.
-    inversion H0; subst; clear H0; Events.simpl_red; CG.simpl_red.
-    - eauto using reduces_init.
-    - eauto using reduces_fork.
-    - assert (Hk: Knows vs sj (x, y)) by eauto.
-      inversion Hk; subst; clear Hk.
-      simpl_node.
-      eauto using reduces_join, maps_to_cons.
-    - eauto using reduces_continue.
-  Qed.
+  (** Main theorem part 1:
+   Shows that we can build an annotated CG with SJ information
+   from a SJ trace and a CG. *)
 
-  Lemma cg_run_to_run:
+  Theorem events_sj_to_sj:
     forall t k cg,
-    Events.Run t k ->
-    CG.Run t cg ->
-    exists sj, Run t cg sj.
+    Events.SJ t k ->
+    CG.CG t cg ->
+    exists sj, SJ t cg sj.
   Proof.
     induction t; intros. {
       inversion H; subst; clear H.
       inversion H0; subst; clear H0.
-      eauto using run_nil.
+      eauto using sj_nil.
     }
-    inversion H0; inversion H; subst; clear H.
-    assert (Hr: exists sj, Run t cg0 sj) by eauto.
-    destruct Hr as (sj, Hr).
-    assert (exists sj', Reduces sj a cg sj'). {
-      eapply cg_reduces_to_reduces; eauto.
-      eapply edge_to_knows_run; eauto.
-    }
-    destruct H as (sj', Hr1).
-    exists sj'.
-    eapply run_step; eauto.
+    inversion H0; subst; clear H0;
+    inversion H; subst; clear H; simpl_red;
+    try (
+      assert (Hsj: exists sj, SJ t (vs,es) sj) by eauto;
+      destruct Hsj as (sj, Hsj)
+    ).
+    - eapply CG.cg_init in H3; eauto.
+      exists (Nil ::  sj).
+      eauto using sj_init.
+    - eapply CG.cg_fork in H3; eauto.
+      exists (Copy nx :: Cons y nx :: sj).
+      eauto using sj_fork.
+    - eapply CG.cg_join in H3; eauto.
+      exists (Append nx ny :: sj).
+      eapply sj_join; eauto.
+      inversion H10; subst.
+      unfold FGraph.Edge in *.
+      eapply sj_edge_to_knows_0 in H2; eauto.
+      inversion H2; subst.
+      simpl_node.
+    - eapply CG.cg_continue in H3; eauto.
+      exists (Copy prev :: sj).
+      eauto using sj_continue.
   Qed.
 
-  Inductive SJ cg k sj: Prop :=
-  | sj_def:
-    length (fst cg) = length sj ->
-    FreeInGraph (fst cg) sj ->
-    KnowsToEdge (fst cg) sj k ->
-    EdgeToKnows (fst cg) sj k ->
-    Incl (snd cg) sj ->
-    CG.EdgeToNode cg ->
-    SJ cg k sj.
+  (** Main theorem part 2: from an annotated CG+SJ we can build a
+  trace-valid SJ. *)
 
-  (** Main theorem of SJ *)
-
-  Lemma sj_reduces:
-    forall sj cg k sj' cg' k' e,
-    SJ cg k sj ->
-    Events.Reduces k e k' ->
-    CG.Reduces cg e cg' ->
-    Reduces sj e cg' sj' ->
-    SJ cg' k' sj'.
-  Proof.
-    intros.
-    inversion H.
-    apply sj_def; eauto 2 using CG.reduces_edge_to_node, length_reduces,
-    free_in_graph_reduces, knows_to_edge_reduces, edge_to_knows_reduces, incl_reduces.
-  Qed.
-
-  Lemma run_to_sj:
-    forall t k cg sj,
-    Events.Run t k ->
-    CG.Run t cg ->
-    Run t cg sj ->
-    SJ cg k sj.
-  Proof.
-    intros.
-    apply sj_def;
-    eauto using length_run,
-      free_in_graph_run,
-      knows_to_edge_run,
-      edge_to_knows_run,
-      incl_run, CG.run_to_edge_to_node.
-  Qed.
-
-  Lemma cg_sj_reduces_to_sj_reduces:
-    forall sj cg k sj' cg' e,
-    SJ cg k sj ->
-    CG.Reduces cg e cg' ->
-    Reduces sj e cg' sj' ->
-    exists k', Events.Reduces k e k'.
-  Proof.
-    intros.
-    destruct e as (x,[]).
-    - exists k.
-      simpl_red.
-      auto using Events.reduces_init.
-    - rename t into y.
-      exists (fork x y k).
-      simpl_red.
-      apply Events.reduces_fork.
-      apply SafeJoins.check_fork; auto.
-      unfold not; intros.
-      contradiction H5.
-      destruct H0 as ((v1,v2), (He,Hp)).
-      inversion H.
-      apply H3 in He.
-      simpl in *.
-      destruct Hp; subst; simpl in *.
-      + eauto using knows_to_in.
-      + apply knows_to_free in He.
-        auto.
-    - simpl_red.
-      exists (join x t k).
-      apply Events.reduces_join.
-      apply SafeJoins.check_join; auto.
-      inversion H; simpl in *.
-      apply H2.
-      eauto using knows_def.
-    - simpl_red.
-      eauto using Events.reduces_continue.
-  Qed.
-
-  Lemma run_to_events_run:
+  Let sj_to_events_sj_0:
     forall t sj cg,
-    CG.Run t cg ->
-    Run t cg sj ->
-    exists k, Events.Run t k.
+    CG.CG t cg ->
+    SJ t cg sj ->
+    exists k, Events.SJ t k.
   Proof.
     induction t; intros. {
       inversion H; subst; clear H.
       inversion H0; subst; clear H0.
-      eauto using Events.run_nil.
+      eauto using Events.sj_nil.
     }
-    inversion H; subst; clear H.
-    inversion H0; subst; clear H0.
-    inversion H4; subst; clear H4.
-    assert (cg2 = cg0) by eauto using CG.run_fun; subst.
-    assert (cg1 = cg0) by eauto using cg_run_fun; subst.
-    assert (R1: exists k, Events.Run t k) by eauto.
-    destruct R1 as (k, R1).
-    assert (R2: exists k', Events.Reduces k a k'). {
-      eapply cg_sj_reduces_to_sj_reduces; eauto using run_to_sj.
-    }
-    destruct R2 as (k', R2).
-    exists k'.
-    eauto using Events.run_step.
+    inversion H; subst; clear H;
+    inversion H0; subst; clear H0; simpl_red.
+    - apply IHt in H2; eauto using sj_to_cg; destruct H2 as (k, Hk).
+      eauto using Events.sj_init.
+    - assert (Hsj := H16).
+      apply IHt in H16; eauto using sj_to_cg; destruct H16 as (k, Hk).
+      assert (exists k', CheckOp k (SJ_Notations.F x y) k'). {
+        exists (fork x y k).
+        apply check_fork.
+        - unfold not; intros; subst.
+          apply maps_to_to_in in H5.
+          contradiction.
+        - unfold not; intros N.
+          destruct N as (e, (?,He)).
+          unfold FGraph.Edge in *.
+          destruct e as (a,b).
+          inversion He; simpl in *; subst.
+          + eapply sj_edge_to_knows_0 in H0; eauto.
+            apply knows_to_in_l in H0.
+            contradiction.
+          + eapply sj_edge_to_knows_0 in H0; eauto.
+            eapply knows_to_in_r in H0; eauto.
+      }
+      destruct H0 as (k', ?).
+      eauto using Events.sj_fork.
+    - assert (Hsj := H15).
+      apply IHt in Hsj; eauto using sj_to_cg.
+      destruct Hsj as (k, ?); auto.
+      assert (Hk: exists k', CheckOp k (SJ_Notations.J x ty) k'). {
+        exists (join x ty k).
+        apply check_join.
+        assert (Hk: Knows vs sj0 (x, ty)) by eauto using knows_def.
+        eapply sj_to_knows_to_edge_0 in Hk; eauto.
+      }
+      destruct Hk as (k', Hk).
+      eauto using Events.sj_join.
+    - apply IHt in H10; eauto using sj_to_cg; destruct H10 as (k, Hk).
+      eauto using Events.sj_continue.
   Qed.
 
-  Lemma sj_reduces_alt:
-    forall sj cg k sj' cg' e,
-    SJ cg k sj ->
-    CG.Reduces cg e cg' ->
-    Reduces sj e cg' sj' ->
-    exists k', SJ cg' k' sj'.
+  Theorem sj_to_events_sj:
+    forall t sj cg,
+    SJ t cg sj ->
+    exists k, Events.SJ t k.
   Proof.
-    intros.
-    assert (Hx: exists k', Events.Reduces k e k'). {
-      eauto using cg_sj_reduces_to_sj_reduces.
-    }
-    destruct Hx as (k', Hx).
-    exists k'.
-    eauto using sj_reduces.
+    eauto using sj_to_cg.
   Qed.
 
   Theorem hb_spec:
-    forall cg k n1 n2 x sj,
-    SJ cg k sj ->
+    forall t cg n1 n2 x sj,
+    SJ t cg sj ->
     CanJoin n1 x sj ->
     CG.HB (snd cg) n1 n2 ->
     CanJoin n2 x sj.
   Proof.
     intros.
-    inversion H; eauto using incl_hb.
+    eapply incl_hb; eauto.
+    assert (Hsj: exists k, Events.SJ t k). {
+      eapply sj_to_events_sj; eauto.
+    }
+    destruct Hsj as (k, Hsj).
+    eauto using sj_to_incl.
   Qed.
 (*
   (* -------------------------------------- *)
