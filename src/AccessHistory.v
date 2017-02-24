@@ -1840,41 +1840,46 @@ Section AccessFun.
     eauto using last_write_cons.
   Qed.
 
-  Let last_write_def_check:
-    forall ah ah' a o cg cg',
-    LastWriteDef (HB (snd cg)) ah ->
-    TReduces cg (a,o) cg' ->
-    DRF_Check (snd cg') ah o ah' ->
-    LastWriteDef (HB (snd cg')) ah'.
+  Let drf_reduces_write_def:
+    forall ah ah' o n vs es x t,
+    LastWriteDef (HB es) ah ->
+    DRF_Reduces (C (n, fresh vs) :: es) ah o ah' ->
+    DRF t (vs, es) ah ->
+    MapsTo x n vs ->
+    LastWriteDef (HB (C (n, fresh vs) :: es)) ah'.
   Proof.
     intros.
-    destruct o; simpl in *; CG.simpl_red; simpl_drf_check; simpl in *; eauto.
+    inversion H0; subst; clear H0.
+    inversion H3; subst; clear H3.
+    inversion H4; subst; clear H4; eauto.
   Qed.
 
-  Structure WellFormed cg ah := {
-    wf_lt_edges_prop: LtEdges (map e_edge (snd cg));
-    wf_edge_to_node_prop: EdgeToNode cg;
-    wf_node_def_prop: NodeDef (fst cg) ah;
-    wf_access_fun_prop: AccessFun ah;
-    wf_last_write_fun_prop: LastWriteFun (HB (snd cg)) ah;
-    wf_ordered_access_history_prop: OrderedAccessHistory (HB (snd cg)) ah;
-    wf_last_write_def_prop: LastWriteDef (HB (snd cg)) ah
-  }.
-
-  Lemma wf_reduces:
-    forall cg ah ah' a o cg',
-    WellFormed cg ah ->
-    TReduces cg (a,o) cg' ->
-    DRF_Check (snd cg') ah o ah' ->
-    WellFormed cg' ah'.
+  Lemma drf_to_last_write_def:
+    forall t cg ah,
+    DRF t cg ah ->
+    LastWriteDef (HB (snd cg)) ah.
   Proof.
-    intros.
-    apply Build_WellFormed;
-    eauto using wf_lt_edges_prop, wf_node_def_prop, wf_access_fun_prop, wf_last_write_fun_prop,
-          lt_edges_reduces, wf_ordered_access_history_prop, wf_last_write_def_prop,
-          wf_edge_to_node_prop, reduces_edge_to_node.
-    apply access_to_last_write_fun; eauto using wf_node_def_prop, wf_access_fun_prop,
-    hb_trans, hb_irrefl, lt_edges_reduces, wf_lt_edges_prop.
+    induction t; intros. {
+      inversion H; subst; clear H.
+      unfold LastWriteDef, empty in *; intros.
+      apply MM_Facts.empty_mapsto_iff in H.
+      contradiction.
+    }
+    inversion H; subst; clear H. {
+      destruct o; simpl in *; inversion H4; subst; clear H4.
+      inversion H3; subst; clear H3.
+      assert (cg0 = (vs0, es0)) by eauto using drf_to_cg, cg_fun; subst.
+      simpl_node.
+      assert (Hx:=H2).
+      apply IHt in H2.
+      simpl in *.
+      eauto using drf_reduces_write_def.
+    }
+    apply last_write_def_impl with (P:=HB (snd cg0)).
+    + simpl in H3.
+      eapply hb_impl; eauto;
+      eauto using drf_to_cg.
+    + eauto.
   Qed.
 
   Lemma wf_race_free_access:
