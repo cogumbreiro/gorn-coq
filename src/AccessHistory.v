@@ -1532,11 +1532,9 @@ Section Props.
         inversion H7; subst; clear H7;
         inversion H1; subst; clear H1;
         apply ordered_access_history_add in H4;
-        unfold CG in *;
         simpl in *;
         eauto using ordered_access_history_impl, CG.hb_impl_0.
     }
-    unfold CG in *;
     simpl in *;
     assert (Hx:=H2); apply IHt in Hx.
     apply drf_to_cg0 in H2.
@@ -1682,21 +1680,81 @@ Section NodeDef.
       assert (cg0 = (vs0, es)) by eauto using drf_to_cg, cg_fun; subst;
       eauto using node_cons.
   Qed.
+
+  Lemma drf_to_node:
+    forall t vs es ah r h a,
+    DRF t (vs, es) ah ->
+    MM.MapsTo r h ah ->
+    List.In a h ->
+    Node (a_when a) vs.
+  Proof.
+    intros.
+    assert (R: vs = (fst (vs,es))) by auto; rewrite R.
+    apply drf_to_node_def in H.
+    eauto.
+  Qed.
 End NodeDef.
 
 Section AccessFun.
-  Let access_fun_cg_reduces:
-    forall cg ah a o cg' ah',
-    NodeDef (fst cg) ah ->
+
+  Let drf_reduces_access_fun:
+    forall ah x ah' o vs n t es,
     AccessFun ah ->
-    TReduces cg (a,o) cg' ->
-    DRF_Check (snd cg') ah o ah' ->
+    DRF_Reduces (C (n, fresh vs) :: es) ah o ah' ->
+    DRF t (vs, es) ah ->
+    MapsTo x n vs ->
     AccessFun ah'.
   Proof.
     intros.
-    destruct o; simpl in *; CG.simpl_red; simpl_drf_check; eauto.
+    inversion H0; subst; clear H0.
+    inversion H3; subst; clear H3.
+    inversion H4; subst; clear H4;
+    unfold AccessFun in *; intros;
+    rewrite MM_Facts.add_mapsto_iff in H0;
+    destruct H0 as [(?,?)|(?,mt)]; eauto; subst;
+    simpl in *.
+    - destruct H4; try contradiction.
+      destruct H3; try contradiction.
+      subst.
+      trivial.
+    - destruct H4, H3; subst; eauto; simpl in *.
+      + eapply drf_to_node in H3; eauto.
+        rewrite H5 in *.
+        simpl_node.
+      + eapply drf_to_node in H0; eauto.
+        rewrite <- H5 in *.
+        simpl_node.
+    - destruct H4, H3; subst; eauto; simpl in *.
+      + eapply drf_to_node in H3; eauto.
+        rewrite H5 in *.
+        simpl_node.
+      + eapply drf_to_node in H0; eauto.
+        rewrite <- H5 in *.
+        simpl_node.
   Qed.
 
+  Lemma drf_access_fun:
+    forall t cg ah,
+    DRF t cg ah ->
+    AccessFun ah.
+  Proof.
+    induction t; intros. {
+      unfold AccessFun; intros.
+      inversion H; subst; clear H.
+      unfold empty in *.
+      rewrite MM_Facts.empty_mapsto_iff in *.
+      contradiction.
+    }
+    inversion H; subst; clear H; eauto.
+    destruct o;
+    simpl in *;
+    inversion H4; subst; clear H4;
+    inversion H3; subst; clear H3;
+    try (rename vs0 into vs);
+    try (rename es0 into es);
+    assert (cg0 = (vs, es)) by eauto using drf_to_cg, cg_fun; subst;
+    simpl_node; eauto.
+  Qed.
 
   Let last_write_def_cons:
     forall es e ah,
