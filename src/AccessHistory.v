@@ -82,6 +82,10 @@ Section Defs.
 
   Definition access_history := MM.t (list access).
 
+  (** An empty access history. *)
+
+  Definition empty : access_history := MM.empty (list access).
+
   (** The standard definition of a race: the events are concurrent
   and there is at least one write. *)
 
@@ -1347,23 +1351,29 @@ Module T.
   | _ => None
   end.
 
-  Inductive DRF_Check es (ah:cg_access_history) : Trace.op -> cg_access_history -> Prop :=
-  | drf_check_some:
-    forall o o' ah',
+  Inductive DRF: Trace.trace -> CG.computation_graph -> cg_access_history -> Prop :=
+  | drf_nil:
+    DRF nil (nil, nil) (empty Trace.datum node)
+  | drf_some:
+    forall o o' ah' vs es cg x t ah,
+    DRF t cg ah ->
+    CG.T.CG ((x,o)::t) (vs, es) ->
     op_to_ah o = Some o' ->
     DRF_Reduces es ah o' ah' ->
-    DRF_Check es ah o ah'
-  | drf_check_none:
-    forall o,
+    DRF ((x,o)::t) (vs,es) ah'
+  | drf_none:
+    forall o vs es cg x t ah,
+    DRF t cg ah ->
+    CG.T.CG ((x,o)::t) (vs, es) ->
     op_to_ah o = None ->
-    DRF_Check es ah o ah.
+    DRF ((x,o)::t) (vs,es) ah.
 
   Definition NodeDef (vs:list tid) (g:cg_access_history) :=
     forall a r h,
     MM.MapsTo r h g ->
     List.In a h ->
     Node (a_when a) vs.
-
+(*
   Lemma drf_check_inv_alloc:
     forall (vs:list tid) n es ah m ah',
     DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.MEM m Trace.ALLOC) ah' ->
@@ -1429,9 +1439,9 @@ Module T.
     inversion H1; subst; clear H1.
     simpl in *; inversion H2; subst.
     auto.
-  Qed.
+  Qed.*)
 End Defs.
-
+(*
   Ltac simpl_drf_check :=
   match goal with
   | [ H1: DRF_Check _ _ (Trace.MEM _ Trace.ALLOC) _ |- _ ] =>
@@ -1457,32 +1467,92 @@ End Defs.
   | [ H1: DRF_Check _ _ (Trace.INIT) _ |- _ ] =>
     apply drf_check_inv_init in H1; subst
   end.
-
+*)
 Section Props.
 
-  Let ordered_access_history_cg:
-    forall cg e cg' (ah:cg_access_history),
-    OrderedAccessHistory (HB (snd cg)) ah ->
-    CG.Reduces cg e cg' ->
-    OrderedAccessHistory (HB (snd cg')) ah.
+  Let drf_to_cg0:
+    forall t cg ah,
+    DRF t cg ah ->
+    CG.CG (map event_to_cg t) cg.
+  Proof.
+    induction t; intros. {
+      inversion H; subst; clear H.
+      auto using CG.cg_nil.
+    }
+    inversion H; subst; clear H. {
+      apply IHt in H2.
+      simpl.
+      destruct o; simpl in *;
+      try (inversion H4; fail).
+      inversion H3; subst; clear H3.
+      assert ((vs0,es0) = cg0) by eauto using cg_fun.
+      subst.
+      auto using CG.cg_continue.
+    }
+    destruct o; inversion H6; simpl in *;
+    inversion H3; subst; clear H3;
+    try (rename es0 into es);
+    try (rename vs0 into vs);
+    assert ((vs,es) = cg0) by eauto using cg_fun; subst;
+    auto using CG.cg_init, CG.cg_continue, CG.cg_fork, CG.cg_join.
+  Qed.
+
+  Lemma drf_to_cg:
+    forall t cg ah,
+    DRF t cg ah ->
+    CG t cg.
   Proof.
     intros.
-    apply ordered_access_history_impl with (P:=CG.HB (snd cg));
+    eapply drf_to_cg0; eauto.
+  Qed.
+
+  Lemma drf_to_ordered_access_history:
+    forall t cg (ah:cg_access_history),
+    DRF t cg ah ->
+    OrderedAccessHistory (HB (snd cg)) ah.
+  Proof.
+    induction t; intros. {
+      inversion H; subst; clear H; simpl.
+      unfold OrderedAccessHistory; intros.
+      unfold empty in *.
+      apply MM_Facts.empty_mapsto_iff in H.
+      contradiction.
+    }
+    inversion H; subst; clear H. {
+      assert (Hcg:=H3).
+      destruct o; simpl in *;
+      try (inversion H4; fail);
+      destruct m0; inversion H4; subst; clear H4;
+      inversion H3; subst; clear H3; simpl_node;
+      assert (Hx:=H2); apply IHt in Hx;
+        assert ((vs0, es0) = cg0) by (
+          apply drf_to_cg0 in H2;
+          eauto using cg_fun);
+        subst;
+        inversion H7; subst; clear H7;
+        inversion H1; subst; clear H1;
+        apply ordered_access_history_add in H4;
+        unfold CG in *;
+        simpl in *;
+        eauto using ordered_access_history_impl, CG.hb_impl_0.
+    }
+    unfold CG in *;
+    simpl in *;
+    assert (Hx:=H2); apply IHt in Hx.
+    apply drf_to_cg0 in H2.
+    eapply ordered_access_history_impl with (P:=HB (snd cg0)); auto;
+    assert (R: es = snd (vs,es)) by auto; rewrite R;
     eauto using CG.hb_impl.
   Qed.
 
-  Let ordered_access_history_drf_check:
-    forall cg a o cg' ah ah',
-    OrderedAccessHistory (HB (snd cg)) ah ->
-    TReduces cg (a,o) cg' ->
-    DRF_Check (snd cg') ah o ah' ->
-    OrderedAccessHistory (HB (snd cg')) ah'.
+  Lemma drf_to_race_free_history:
+    forall t cg ah,
+    DRF t cg ah ->
+    RaceFreeHistory (HB (snd cg)) ah.
   Proof.
-    intros.
-    inversion H1; subst; clear H1.
-    - inversion H3; subst; clear H3.
-      apply ordered_access_history_add in H4; eauto using CG.hb_trans.
-    - eauto using ordered_access_history_cg.
+    eauto using
+      ordered_access_history_to_race_free_history,
+      drf_to_ordered_access_history.
   Qed.
 
   Let access_fun_alloc:
@@ -1525,19 +1595,9 @@ Section Props.
     }
     eauto.
   Qed.
+End Props.
 
-  Let access_fun_cg_reduces:
-    forall cg ah a o cg' ah',
-    NodeDef (fst cg) ah ->
-    AccessFun ah ->
-    TReduces cg (a,o) cg' ->
-    DRF_Check (snd cg') ah o ah' ->
-    AccessFun ah'.
-  Proof.
-    intros.
-    destruct o; simpl in *; CG.simpl_red; simpl_drf_check; eauto.
-  Qed.
-
+Section NodeDef.
   Let node_def_cons:
     forall vs a ah,
     NodeDef vs ah ->
@@ -1591,16 +1651,52 @@ Section Props.
     eauto using node_cons.
   Qed.
 
-  Let node_def_cg_reduces:
+  Lemma drf_to_node_def:
+    forall t cg ah,
+    DRF t cg ah ->
+    NodeDef (fst cg) ah.
+  Proof.
+    induction t; intros; inversion H; subst; clear H.
+    - (* nil trace *)
+      unfold NodeDef, empty in *; intros.
+      apply MM_Facts.empty_mapsto_iff in H.
+      contradiction.
+    - (* read/write *)
+      assert (Hx:=H2).
+      apply drf_to_cg in Hx.
+      apply IHt in H2; simpl in *;
+      destruct o; simpl in *; try (inversion H4; clear H4);
+      destruct m0; inversion H0; subst; clear H0;
+      inversion H7; subst; clear H7;
+      inversion H5; subst; clear H5; simpl in *;
+      try (rename es' into es);
+      inversion H3; subst; clear H3; subst; eauto; simpl_node;
+        assert (cg0 = (vs0, es)) by eauto using CG.cg_fun; subst;
+        eauto.
+    - assert (Hx:=H2).
+      apply IHt in H2.
+      unfold NodeDef in *; intros; simpl in *.
+      destruct o; inversion H6; subst; clear H6;
+      inversion H3; subst; clear H3;
+      try (rename es0 into es);
+      assert (cg0 = (vs0, es)) by eauto using drf_to_cg, cg_fun; subst;
+      eauto using node_cons.
+  Qed.
+End NodeDef.
+
+Section AccessFun.
+  Let access_fun_cg_reduces:
     forall cg ah a o cg' ah',
     NodeDef (fst cg) ah ->
+    AccessFun ah ->
     TReduces cg (a,o) cg' ->
     DRF_Check (snd cg') ah o ah' ->
-    NodeDef (fst cg') ah'.
+    AccessFun ah'.
   Proof.
     intros.
-    destruct o; simpl in *; CG.simpl_red; simpl_drf_check; simpl in *; eauto.
+    destruct o; simpl in *; CG.simpl_red; simpl_drf_check; eauto.
   Qed.
+
 
   Let last_write_def_cons:
     forall es e ah,

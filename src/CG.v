@@ -673,6 +673,22 @@ Section PropsEx.
     eauto using hb_impl_cons.
   Qed.
 
+  Lemma hb_impl_0:
+    forall a t vs es vs' es',
+    CG t (vs,es) ->
+    CG (a::t) (vs', es') -> 
+    forall x y,
+    HB es x y ->
+    HB es' x y.
+  Proof.
+    intros.
+    assert (R1: es = snd (vs,es)) by auto.
+    assert (R2: es' = snd (vs',es')) by auto.
+    rewrite R1 in H1.
+    rewrite R2.
+    eauto using hb_impl.
+  Qed.
+
   Lemma hb_absurd_node:
     forall vs es n,
     EdgeToNode (vs, es) ->
@@ -1133,5 +1149,5 @@ Module T.
   Definition event_to_cg (e:Trace.event) :=
   let (x,o) := e in (x, op_to_cg o).
 
-  Definition CG t (cg:computation_graph) := (CG (map event_to_cg t)).
+  Notation CG t := (CG (map event_to_cg t)).
 End T.
