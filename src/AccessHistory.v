@@ -2,6 +2,7 @@ Require Tid.
 Require Trace.
 Require Node.
 Require CG.
+Require SJ_CG.
 
 Require Import Coq.Lists.List.
 Require Import Coq.Relations.Relation_Definitions.
@@ -13,7 +14,6 @@ Require Import Aniceto.Graphs.Graph.
 Require Import Aniceto.Graphs.FGraph.
 
 Require Import HJ.Mid.
-
 
 (* ----- end of boiler-plate code ---- *)
 
@@ -926,6 +926,25 @@ Section LastWrites.
     + auto using race_free_access_hbe, race_free_access_symm.
   Qed.
 
+  Lemma add_fun:
+    forall ah o ah1 ah2,
+    Add ah o ah1 ->
+    Add ah o ah2 ->
+    ah1 = ah2.
+  Proof.
+    intros.
+    inversion H; subst; clear H;
+    inversion H0; subst; clear H0.
+    + auto.
+    + contradiction H1.
+      eauto using MM_Extra.mapsto_to_in.
+    + assert (l0 = l) by eauto using MM_Facts.MapsTo_fun; subst.
+      trivial.
+    + contradiction H8.
+      eauto using MM_Extra.mapsto_to_in.
+    + assert (l0 = l) by eauto using MM_Facts.MapsTo_fun; subst.
+      trivial.
+  Qed.
 End LastWrites.
 
 
@@ -1693,6 +1712,7 @@ Section NodeDef.
     apply drf_to_node_def in H.
     eauto.
   Qed.
+
 End NodeDef.
 
 Section AccessFun.
@@ -1882,45 +1902,50 @@ Section AccessFun.
     + eauto.
   Qed.
 
+  Lemma drf_ref_to_last_write:
+    forall t cg ah,
+    DRF t cg ah ->
+    forall r h,
+    MM.MapsTo r h ah ->
+    exists a, LastWrite (HB (snd cg)) a h.
+  Proof.
+    intros.
+    apply drf_to_last_write_def in H.
+    unfold LastWriteDef in *.
+    eauto.
+  Qed.
+
   Lemma wf_race_free_access:
-    forall a b r h cg ah,
-    WellFormed cg ah ->
+    forall a b r h t cg ah,
+    DRF t cg ah ->
     MM.MapsTo r h ah ->
     List.In a h ->
     List.In b h ->
     RaceFreeAccess (HB (snd cg)) a b.
   Proof.
     intros.
-    assert (RaceFreeHistory (HB (snd cg)) ah) by 
-    eauto using ordered_access_history_to_race_free_history, wf_ordered_access_history_prop, hb_trans.
+    apply drf_to_race_free_history in H.
+    unfold RaceFreeHistory in *.
     eauto.
   Qed.
 
-  Lemma wf_last_write_fun:
-    forall cg ah h r a b,
-    WellFormed cg ah ->
+  Lemma drf_last_write_fun:
+    forall t cg ah h r a b,
+    DRF t cg ah ->
     MM.MapsTo r h ah ->
     LastWrite (HB (snd cg)) a h ->
     LastWrite (HB (snd cg)) b h ->
     a = b.
   Proof.
     intros.
-    assert (Hx := wf_last_write_fun_prop H).
-    eauto.
+    assert (Hx:=H).
+    apply drf_to_cg in Hx.
+    apply drf_access_fun in H.
+    eapply access_to_last_write_fun in H; eauto using
+    hb_trans, cg_irrefl.
   Qed.
 
-  Lemma wf_node:
-    forall vs es ah h r a,
-    WellFormed (vs,es) ah ->
-    MM.MapsTo r h ah ->
-    List.In a h ->
-    Node (a_when a) vs.
-  Proof.
-    intros.
-    assert (NodeDef (fst (vs,es)) ah) by eauto using wf_node_def_prop.
-    eauto.
-  Qed.
-
+(*
   Lemma wf_access_fun:
     forall cg ah h r a b,
     WellFormed cg ah ->
@@ -1934,7 +1959,8 @@ Section AccessFun.
     assert (AccessFun ah) by eauto using wf_access_fun_prop.
     eauto.
   Qed.
-
+*)
+(*
   Lemma wf_access_def:
     forall cg ah h r,
     WellFormed cg ah ->
@@ -1945,22 +1971,23 @@ Section AccessFun.
     assert (LastWriteDef (HB (snd cg)) ah) by eauto using wf_last_write_def_prop.
     eauto.
   Qed.
-
+*)
+(*
   Let wf_hb_inv_cons_c:
-    forall vs es g r h a b t n,
-    WellFormed (vs, es) g ->
-    MM.MapsTo r h g ->
+    forall vs es t ah r h a b k n,
+    DRF t (vs, es) ah ->
+    MM.MapsTo r h ah ->
     Node n vs ->
     List.In a h ->
     List.In b h ->
-    HB ({| e_t := t; e_edge := (n, fresh vs) |} :: es) (a_when a) (a_when b) ->
+    HB ((k, (n, fresh vs)) :: es) (a_when a) (a_when b) ->
     HB es (a_when a) (a_when b).
   Proof.
     intros.
     eapply wf_node in H2; eauto.
     eapply wf_node in H3; eauto.
-    inversion H1.
-    apply hb_inv_cons_c with (x:=x) in H4; eauto.
+(*    inversion H1.*)
+    eapply hb_inv_cons_c in H4; eauto.
     - destruct H4; auto.
       rewrite H4 in *.
       simpl_node.
@@ -1972,7 +1999,8 @@ Section AccessFun.
       + simpl.
         auto using node_lt.
   Qed.
-
+*)
+(*
   Lemma wf_continue:
     forall x n vs es g t,
     MapsTo x n vs ->
@@ -2031,11 +2059,12 @@ Section AccessFun.
        exists a.
        eauto using last_write_impl, hb_impl_cons.
   Qed.
-
+*)
+(*
   Let hb_inv_cons_c_0:
-    forall vs es x n ah a b t,
-    WellFormed (x :: vs,{| e_t := t; e_edge := (n,fresh vs) |} :: es) ah ->
-    HB ({| e_t := t; e_edge := (n,fresh vs) |} :: es) (a_when (A:=Trace.datum) a) (a_when (A:=Trace.datum) b) ->
+    forall vs es x n ah a b t k o,
+    DRF ((x,o)::t) (x :: vs,(k, (n,fresh vs) ) :: es) ah ->
+    HB ((k, (n,fresh vs)) :: es) (a_when (A:=Trace.datum) a) (a_when (A:=Trace.datum) b) ->
     HB es (a_when a) (a_when b) \/ a_when b = fresh vs.
   Proof.
     intros.
@@ -2043,13 +2072,13 @@ Section AccessFun.
     - apply wf_edge_to_node_prop in H ; auto.
     - apply wf_lt_edges_prop in H; auto.
   Qed.
-
+*)
   Lemma last_write_inv_c:
-    forall x n vs ah ah' h es a r t,
-    WellFormed (vs,es) ah ->
-    WellFormed (x :: vs,{| e_t := t; e_edge := (n,fresh vs) |} :: es) ah' ->
+    forall x n vs ah ah' h es a r t k o,
+    DRF t (vs,es) ah ->
+    DRF ((x, o)::t) (x :: vs, (k, (n,fresh vs)) :: es) ah' ->
     MM.MapsTo r h ah ->
-    LastWrite (A:=Trace.datum) (HB ({| e_t := t; e_edge := (n,fresh vs) |} :: es)) a h ->
+    LastWrite (A:=Trace.datum) (HB ((k, (n,fresh vs)) :: es)) a h ->
     LastWrite (HB es) a h.
   Proof.
     intros.
@@ -2058,20 +2087,21 @@ Section AccessFun.
     unfold ForallWrites in *; intros b Hin Hwb.
     apply Hfw in Hin; auto.
     destruct Hin as [Hin|?]; auto.
-    apply hb_inv_cons_c_0 with (ah:=ah') (x:=x) in Hin; repeat auto.
-    destruct Hin as [?|R]; auto.
+    assert (Hx:=drf_to_cg H0).
+    apply hb_inv_cons_c with (x:=x) (a:=a_when b) (b:= a_when a) in Hx; repeat auto.
+    destruct Hx as [?|R]; auto.
     subst.
-    assert (Hn: Node (a_when a) vs) by eauto using wf_node.
+    assert (Hn: Node (a_when a) vs) by eauto using drf_to_node.
     rewrite R in *.
     simpl_node.
   Qed.
 
   Lemma last_write_inv_j:
-    forall x n vs ah ah' h es a r t e,
-    WellFormed (vs,es) ah ->
-    WellFormed (x :: vs,{| e_t := t; e_edge := (n,fresh vs) |} :: e :: es) ah' ->
+    forall x n vs ah ah' h es a r t e k o,
+    DRF t (vs,es) ah ->
+    DRF ((x,o)::t) (x :: vs,(k, (n,fresh vs)) :: e :: es) ah' ->
     MM.MapsTo r h ah ->
-    LastWrite (A:=Trace.datum) (HB ({| e_t := t; e_edge := (n,fresh vs) |} :: e :: es)) a h ->
+    LastWrite (A:=Trace.datum) (HB ((k, (n,fresh vs) ) :: e :: es)) a h ->
     LastWrite (HB (e::es)) a h.
   Proof.
     intros.
@@ -2080,15 +2110,69 @@ Section AccessFun.
     unfold ForallWrites in *; intros b Hin Hwb.
     apply Hfw in Hin; auto.
     destruct Hin as [Hin|?]; auto.
-    apply hb_inv_cons_c with (x:=x) in Hin.
-    - destruct Hin as [?|R]; auto.
-      subst.
-      assert (Hn: Node (a_when a) vs) by eauto using wf_node.
-      rewrite R in *.
-      simpl_node.
-    - eauto using wf_edge_to_node_prop.
-    - apply wf_lt_edges_prop in H0.
-      auto.
+    assert (Hx:=drf_to_cg H0).
+    apply hb_inv_cons_c with (x:=x) (a:=a_when b) (b:= a_when a) in Hx; repeat auto.
+    destruct Hx as [?|R]; auto.
+    subst.
+    assert (Hn: Node (a_when a) vs) by eauto using drf_to_node.
+    rewrite R in *.
+    simpl_node.
+  Qed.
+
+  Let drf_reduces_fun:
+    forall es ah o ah1 ah2,
+    DRF_Reduces es ah o ah1 ->
+    DRF_Reduces es ah o ah2 ->
+    ah1 = ah2.
+  Proof.
+    intros.
+    inversion H; subst; clear H.
+    inversion H0; subst; clear H0.
+    symmetry in H3.
+    inversion H3; subst; clear H3.
+    eauto using add_fun.
+  Qed.
+
+  Lemma drf_cg_fun:
+    forall t cg cg' ah ah',
+    DRF t cg ah ->
+    DRF t cg' ah' ->
+    cg' = cg.
+  Proof.
+    intros.
+    apply drf_to_cg in H.
+    apply drf_to_cg in H0.
+    eauto using cg_fun.
+  Qed.
+
+  Lemma drf_fun:
+    forall t cg ah ah',
+    DRF t cg ah ->
+    DRF t cg ah' ->
+    ah' = ah.
+  Proof.
+    induction t; intros. {
+      inversion H; subst; clear H.
+      inversion H0; subst; clear H0.
+      trivial.
+    }
+    inversion H; subst; clear H. {
+      inversion H0; subst; clear H0. {
+        rewrite H12 in *.
+        inversion H5; subst; clear H5.
+        assert (cg0 = cg) by eauto using drf_cg_fun; subst.
+        assert (ah0 = ah1) by eauto; subst.
+        eauto.
+      }
+      rewrite H5 in *.
+      inversion H12.
+    }
+    inversion H0; subst; clear H0. {
+      rewrite H7 in *.
+      inversion H11.
+    }
+    assert (cg0 = cg) by eauto using drf_cg_fun; subst.
+    eauto.
   Qed.
 
   (**
@@ -2097,10 +2181,9 @@ Section AccessFun.
    *)
 
   Theorem drf_check_inv_read_last_write:
-    forall x n vs ah ah' d es r,
-    WellFormed (vs,es) ah ->
-    WellFormed (x :: vs,C (n, fresh vs) :: es) ah' ->
-    DRF_Check (C (n, fresh vs) :: es) ah (Trace.MEM r (Trace.READ d)) ah' ->
+    forall x n vs ah ah' d es r t,
+    DRF t (vs,es) ah ->
+    DRF ((x, Trace.MEM r (Trace.READ d))::t) (x :: vs,C (n, fresh vs) :: es) ah' ->
     exists h a,
     MM.MapsTo r h ah /\ LastWrite (HB es) a h /\ a_what a = Some d
     /\ HB (C (n, fresh vs) :: es) (a_when a) (fresh vs).
@@ -2108,22 +2191,113 @@ Section AccessFun.
     intros.
     rename H into Hwf.
     rename H0 into Hwf'.
-    simpl_drf_check.
-    assert (Hlw := H6).
-    simpl in *.
-    exists l; exists (n', Some d).
-    split; auto.
-    split; eauto using last_write_inv_c, wf_node, last_write_to_in.
-    simpl; split; auto.
-    inversion H7; subst; clear H7.
-    apply Hlw in H; subst; auto; simpl in *.
-    destruct H; simpl in *; auto. {
+    (* -- *)
+    inversion Hwf'; subst. {
+      assert (cg = (vs, es)) by eauto using drf_cg_fun; subst.
+      assert (ah0 = ah) by eauto using drf_fun; subst; clear Hwf.
+      inversion H8; subst; clear H8. (* DRF_Reduces *)
+      symmetry in H; (* C _ :: es = C _ :: es' *)
+      inversion H; subst; clear H.
+      simpl in *; subst; inversion H7; subst; clear H7. (* op_to_ah _ = Some _ *)
+      inversion H0; subst; clear H0. (* Add *)
+      assert (Hlw := H9). (* LastWrite *)
+      exists l; exists (n', Some d).
+      split; auto.
+      split; eauto using last_write_inv_c, last_write_to_in.
+      simpl; split; auto.
+      inversion H9; subst; clear H9. (* LastWrite *)
+      apply H8 in H; subst; auto; simpl in *. (* H8: WriteSafe _, H: Write *)
+      destruct H; simpl in *; auto. (* HB \/ eq *)
       subst.
-      apply wf_node_def_prop in Hwf.
-      eapply Hwf in H0; eauto; simpl in *; simpl_node.
+      eapply drf_to_node in H0; eauto; simpl in *. (* In (fresh vs) *)
+      simpl_node.
     }
+    simpl in *.
+    inversion H7.
   Qed.
 
+  Section LastWriteCanJoin.
+
+    Let LastWriteCanJoin (cg:computation_graph) sj (ah:cg_access_history) :=
+      forall x a h r,
+      MM.MapsTo r h ah ->
+      LastWrite (HB (snd cg)) a h ->
+      a_what a = Some (Trace.d_task x) ->
+      SJ_CG.CanJoin (a_when a) x sj.
+
+    Lemma mem_last_write_can_join:
+      forall t cg ah sj,
+      DRF t cg ah ->
+      SJ_CG.SJ (map CG.T.event_to_cg t) cg sj ->
+      LastWriteCanJoin cg sj ah.
+    Proof.
+      induction t; intros. {
+        inversion H0; subst; clear H0.
+        inversion H; subst; clear H.
+        unfold LastWriteCanJoin.
+        intros.
+        unfold empty in *.
+        rewrite MM_Facts.empty_mapsto_iff in *.
+        contradiction.
+      }
+      unfold LastWriteCanJoin; intros.
+      rename H2 into Hlw.
+      inversion H; subst; rename H into Hdrf. {
+        (* op_to_ah _ = Some _ *)
+        destruct o; simpl in *; inversion H7; subst; clear H7.
+        inversion H6; subst; clear H6; simpl_node. (* CG *)
+        assert (cg0 = (vs0, es0)) by
+          eauto using drf_to_cg, cg_fun; subst.
+        inversion H0; subst; clear H0. (* SJ *)
+        clear H15 (* CG *).
+        rename sj0 into sj.
+        rename vs0 into vs.
+        rename es0 into es.
+        assert (cg = (vs,es)) by eauto using SJ_CG.sj_to_cg, cg_fun; subst.
+        assert (Hlwcj: LastWriteCanJoin (vs,es) sj ah0) by eauto.
+        unfold LastWriteCanJoin in Hlwcj.
+        destruct m0; simpl in *; inversion H2; subst; clear H2. { (* match _ with *)
+          inversion H10; subst; clear H10. (* DRF_Reduces *)
+          inversion H2; subst; clear H2. (* C _ :: _ = C _ :: _ *)
+          inversion H6; subst; clear H6. (* Add *)
+          rewrite MM_Facts.add_mapsto_iff in *.
+          destruct H1 as [(?,?)|(?,?)]. {
+            subst.
+            apply last_write_inv_cons_read in Hlw.
+            eapply last_write_inv_c in Hlw; eauto.
+            eapply Hlwcj with (x:=x) in Hlw; eauto.
+            eauto using SJ_CG.can_join_cons.
+          }
+          eapply last_write_inv_c in Hlw; eauto.
+          eapply Hlwcj with (x:=x) in Hlw; eauto.
+          eauto using SJ_CG.can_join_cons.
+        }
+        inversion H10; subst; clear H10. (* DRF_Reduces *)
+        inversion H2; subst; clear H2. (* C _ :: _ = C _ :: _ *)
+        inversion H6; subst; clear H6; (* Add *)
+        rewrite MM_Facts.add_mapsto_iff in *;
+        destruct H1 as [(?,?)|(?,?)]; subst.
+        - apply last_write_inv_cons_nil in Hlw.
+          subst; simpl in *; subst.
+          inversion H3; subst; clear H3.
+          assert (R: fresh vs = fresh sj). {
+            eauto using SJ_CG.sj_to_length_0, maps_to_length_rw.
+          }
+          rewrite R; clear R.
+          clear H9.
+          apply SJ_CG.can_join_copy.
+          
+        -
+        
+
+        eapply last_write_inv_c with (r:=r) in Hlw; eauto.
+        eapply Hlwcj with (x:=x) in Hlw; eauto.
+        eauto using SJ_CG.can_join_cons.
+      }
+    Qed.
+  End LastWriteCanJoin.
+
+(*
   Lemma wf_last_write_inv_cons_write:
     forall cg ah cg' ah' r h a b,
     WellFormed cg ah ->
@@ -2144,6 +2318,6 @@ Section AccessFun.
     apply wf_access_fun with (ah:=ah') (cg:=cg') (r:=r) (h:=(n,Some x)::h) in H3; auto using in_eq.
     eapply last_write_to_in; eauto. 
   Qed.
-
-End Props.
+*)
+End AccessFun.
 End T.

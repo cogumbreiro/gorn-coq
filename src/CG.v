@@ -138,28 +138,28 @@ Section Edges.
     Node x (fst cg) /\ Node y (fst cg).
 
 
-  Inductive SpawnPoint x n : computation_graph -> Prop :=
+  Inductive SpawnPoint (x:tid) (n:node) : trace -> computation_graph -> Prop :=
   | spawn_point_init:
-    forall vs es y,
+    forall vs es y t,
     ~ List.In y vs ->
-    SpawnPoint x n (vs, es) ->
-    SpawnPoint x n (y::vs, es)
+    SpawnPoint x n t (vs, es) ->
+    SpawnPoint x n ((y, INIT)::t) (y::vs, es)
   | spawn_point_eq:
-    forall vs es n' n'',
-    SpawnPoint x n (x::vs, F (n', n'') :: C(n', n) :: es)
+    forall vs es n' n'' t y,
+    SpawnPoint x n ((y, FORK x)::t) (x::vs, F (n', n'') :: C(n', n) :: es)
   | spawn_point_neq:
-    forall vs es e y,
+    forall vs es e y z t e',
     x <> y ->
-    SpawnPoint x n (vs, es) ->
-    SpawnPoint x n (y::vs, (F e) :: es)
+    SpawnPoint x n t (vs, es) ->
+    SpawnPoint x n ((z, FORK y)::t) (y::z::vs, (F e) :: (C e') :: es)
   | spawn_point_continue:
-    forall vs es e y,
-    SpawnPoint x n (vs, es) ->
-    SpawnPoint x n (y::vs, (C e) :: es)
+    forall vs es e y t,
+    SpawnPoint x n t (vs, es) ->
+    SpawnPoint x n ((y,CONTINUE)::t) (y::vs, (C e) :: es)
   | spawn_point_join:
-    forall vs es e y,
-    SpawnPoint x n (y::vs, es) ->
-    SpawnPoint x n (y::vs, (J e) :: es).
+    forall vs es e y z t e',
+    SpawnPoint x n t (vs, es) ->
+    SpawnPoint x n ((y,JOIN z)::t) (y::vs, (J e) :: (C e') :: es).
 End Edges.
 
 Section Props.
@@ -502,7 +502,7 @@ Section PropsEx.
     destruct He; auto.
   Qed.
 
-  Lemma cg_edge_to_node:
+  Lemma cg_to_edge_to_node:
     forall t cg,
     CG t cg ->
     EdgeToNode cg.
@@ -563,7 +563,37 @@ Section PropsEx.
     Node x vs.
   Proof.
     intros.
-    assert (Hen: EdgeToNode (vs, es)) by eauto using cg_edge_to_node.
+    assert (Hen: EdgeToNode (vs, es)) by eauto using cg_to_edge_to_node.
+    assert (He: HB_Edge (snd (vs,es)) (x, y)). {
+      auto using in_edge_to_hb_edge.
+    }
+    apply Hen in He.
+    destruct He; auto.
+  Qed.
+
+  Lemma cg_edge_to_node_r:
+    forall t vs es x y,
+    CG t (vs, es) ->
+    List.In (x, y) (map e_edge es) ->
+    Node y vs.
+  Proof.
+    intros.
+    assert (Hen: EdgeToNode (vs, es)) by eauto using cg_to_edge_to_node.
+    assert (He: HB_Edge (snd (vs,es)) (x, y)). {
+      auto using in_edge_to_hb_edge.
+    }
+    apply Hen in He.
+    destruct He; auto.
+  Qed.
+
+  Lemma cg_hb_edge_to_node_r:
+    forall t vs es x y,
+    CG t (vs, es) ->
+    HB_Edge es (x, y) ->
+    Node y vs.
+  Proof.
+    intros.
+    assert (Hen: EdgeToNode (vs, es)) by eauto using cg_to_edge_to_node.
     assert (He: HB_Edge (snd (vs,es)) (x, y)). {
       auto using in_edge_to_hb_edge.
     }
@@ -848,6 +878,16 @@ Section DAG.
     eauto using List.Forall_cons.
   Qed.
 
+  Lemma cg_to_lt_edges_0:
+    forall t vs es,
+    CG t (vs, es) ->
+    LtEdges (map e_edge es).
+  Proof.
+    intros.
+    assert (R: es = snd (vs,es)) by auto; rewrite R.
+    eauto using cg_to_lt_edges.
+  Qed.
+
   Lemma hb_irrefl:
     forall x es,
     LtEdges (map e_edge es) ->
@@ -861,6 +901,16 @@ Section DAG.
     simpl in *.
     apply H in H0.
     contradiction.
+  Qed.
+
+  Lemma cg_irrefl:
+    forall t cg,
+    CG t cg ->
+    forall x, ~ HB (snd cg) x x.
+  Proof.
+    intros.
+    apply cg_to_lt_edges in H.
+    auto using hb_irrefl.
   Qed.
 
   Let sub_fresh_cons_lhs:
@@ -1051,7 +1101,7 @@ Section DAG.
     apply List.Forall_cons; auto.
   Qed.
 
-  Lemma hb_inv_cons_c:
+  Let hb_inv_cons_c_0:
     forall a b vs x n es t,
     EdgeToNode (x::vs, (t, (n,fresh vs)) :: es) ->
     LtEdges (map e_edge ((t, (n,fresh vs)) :: es)) ->
@@ -1104,6 +1154,16 @@ Section DAG.
     }
     left; 
     eauto using FGraph.walk2_inv_not_in_walk, reaches_def.
+  Qed.
+
+  Lemma hb_inv_cons_c:
+    forall a b vs x n es t k,
+    CG t (x::vs, (k, (n,fresh vs)) :: es) ->
+    HB ((k,(n,fresh vs)) :: es) a b ->
+    HB es a b \/ b = fresh vs.
+  Proof.
+    intros.
+    eapply hb_inv_cons_c_0; eauto using cg_to_edge_to_node, cg_to_lt_edges_0.
   Qed.
 
   Lemma hb_inv_cons:

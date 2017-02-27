@@ -185,24 +185,15 @@ End Props.
     SJ t cg sj ->
     CG.CG ((a, CG.CONTINUE)::t) (vs, CG.C (x,x')::es) ->
     SJ ((a, CG.CONTINUE)::t) (vs, CG.C (x,x')::es) (Copy x :: sj).
-(*
-  Ltac simpl_red :=
-  repeat match goal with
-  | [ H : Reduces _ _ ?cg _, H0 : CG.Reduces _ (_, CG.FORK _) ?cg |- _ ] =>
-    CG.simpl_red; inversion H; subst; clear H
-  | [ H : Reduces _ _ ?cg _, H0 : CG.Reduces _ (_, CG.JOIN _) ?cg |- _ ] =>
-    inversion H0; subst; clear H0;
-    match goal with
-    | [ H1: CG.Reduces _ (_, CG.CONTINUE) _ |- _ ] => inversion H1; subst; clear H1
-    end;
-    inversion H; subst; clear H;
-    simpl_node
-  | [ H : Reduces _ _ ?cg _, H0 : CG.Reduces _ (_, CG.CONTINUE) ?cg |- _ ] =>
-    CG.simpl_red; inversion H; subst; clear H
-  | [ H : Reduces _ (_, CG.INIT) ?cg _, H0 : CG.Reduces _ (_, CG.INIT) ?cg |- _ ] =>
-    CG.simpl_red; inversion H; subst; clear H
+
+
+  Ltac do_simpl :=
+  match goal with
+  | [ H: SJ ((_,CG.INIT) :: _) _ _ |- _ ] => inversion H; subst; clear H
+  | [ H: SJ ((_,CG.FORK _) :: _) _ _ |- _ ] => inversion H; subst; clear H
+  | [ H: SJ ((_,CG.JOIN _) :: _) _ _ |- _ ] => inversion H; subst; clear H
+  | [ H: SJ ((_,CG.CONTINUE) :: _) _ _ |- _ ] => inversion H; subst; clear H
   end.
-*)
 
 Section SJ_TO_CG.
   Lemma sj_to_cg:
@@ -1036,185 +1027,6 @@ Section Incl.
     unfold NODE.lt in *.
     omega.
   Qed.
-(*
-  Let incl_fork:
-    forall cg cg' sj sj' k k' x n1 n2 a b,
-    Incl (snd cg) sj ->
-    Events.Reduces k (a, CG.FORK b) k' ->
-    CG.Reduces cg (a, CG.FORK b) cg' ->
-    Reduces sj (a, CG.FORK b) cg' sj' ->
-    List.In (n1, n2) (CG.cg_edges (snd cg')) ->
-    CanJoin n1 x sj' ->
-    length (fst cg) = length sj ->
-    FreeInGraph (fst cg) sj ->
-    CG.EdgeToNode cg ->
-    CanJoin n2 x sj'.
-  Proof.
-    intros.
-    rename H5 into Heq.
-    rename H6 into Hdom.
-    rename H7 into Hlt.
-    Events.simpl_red; simpl_red; simpl in *.
-    assert (Rw: fresh (a::vs) = fresh (Cons b n1 :: sj)). {
-      apply maps_to_length_rw.
-      simpl; auto.
-    }
-    apply maps_to_length_rw in Heq.
-    destruct H3 as [R|[R|?]]; try (inversion R; subst; clear R).
-    - rewrite Rw.
-      apply can_join_inv_copy_2 in H4.
-      apply can_join_inv_cons_2 in H4; destruct H4 as [(?,?)|[(?,?)|(?,?)]]; subst.
-      + auto using can_join_copy, can_join_cons.
-      + auto using can_join_copy, can_join_cons.
-      + rewrite <- Heq in *.
-        apply maps_to_absurd_fresh in H12; contradiction.
-    - rewrite Heq.
-      apply can_join_inv_copy_2 in H4.
-      apply can_join_inv_cons_2 in H4.
-      destruct H4 as [(?,?)|[(?,?)|(?,?)]]; subst.
-      + auto using can_join_cons, can_join_eq.
-      + auto using can_join_cons, can_join_neq.
-      + rewrite <- Heq in *.
-        apply maps_to_absurd_fresh in H12; contradiction.
-    - inversion H4; subst; clear H4. {
-        inversion H5; subst; clear H5.
-        - eauto using can_join_cons.
-        - rewrite <- Heq in *.
-          apply in_length_absurd in H0; auto; contradiction.
-        - rewrite <- Heq in *.
-          apply in_length_absurd in H0; auto; contradiction.
-      }
-      simpl in *.
-      assert (Hx:List.In (fresh (Cons b prev :: sj), n2) (CG.cg_edges es)) by auto.
-      eapply CG.node_lt_length_left in Hx; eauto.
-      simpl in Hx.
-      unfold NODE.lt, fresh in *; simpl in *.
-      inversion Heq.
-      omega.
-  Qed.
-
-  Let incl_join:
-    forall cg cg' sj sj' k k' x n1 n2 a b,
-    Incl (snd cg) sj ->
-    Events.Reduces k (a, CG.JOIN b) k' ->
-    CG.Reduces cg (a, CG.JOIN b) cg' ->
-    Reduces sj (a, CG.JOIN b) cg' sj' ->
-    List.In (n1, n2) (CG.cg_edges (snd cg')) ->
-    CanJoin n1 x sj' ->
-    length (fst cg) = length sj ->
-    FreeInGraph (fst cg) sj ->
-    CG.EdgeToNode cg ->
-    CanJoin n2 x sj'.
-  Proof.
-    intros.
-    rename H5 into Heq.
-    rename H6 into Hdom.
-    rename H7 into Hlt.
-    Events.simpl_red; simpl_red; simpl in *.
-    rename prev into na.
-    rename ny into nb.
-    apply maps_to_length_rw in Heq.
-    destruct H3 as [R|[R|?]]; try (inversion R; subst; clear R).
-    - assert (CanJoin n1 x sj). {
-        inversion H4; subst; clear H4.
-        - assumption.
-        - rewrite <- Heq in *.
-          apply maps_to_absurd_fresh in H12; contradiction.
-        - rewrite <- Heq in *.
-          apply maps_to_absurd_fresh in H12; contradiction.
-      } clear H4.
-      rewrite Heq.
-      auto using can_join_append_right.
-    - assert (CanJoin n1 x sj). {
-        inversion H4; subst; clear H4.
-        - assumption.
-        - rewrite <- Heq in *.
-          apply maps_to_absurd_fresh in H11; contradiction.
-        - rewrite <- Heq in *.
-          apply maps_to_absurd_fresh in H11; contradiction.
-      } clear H4.
-      rewrite Heq.
-      auto using can_join_append_left.
-    - assert (CanJoin n1 x sj). {
-        inversion H4; subst; clear H4.
-        - assumption.
-        - rewrite <- Heq in *.
-          apply in_length_absurd in H0; auto; contradiction.
-        - rewrite <- Heq in *.
-          apply in_length_absurd in H0; auto; contradiction.
-      } clear H4.
-      eauto using can_join_cons.
-  Qed.
-
-  Let incl_continue:
-    forall cg cg' sj sj' k k' x n1 n2 a,
-    Incl (snd cg) sj ->
-    Events.Reduces k (a, CG.CONTINUE) k' ->
-    CG.Reduces cg (a, CG.CONTINUE) cg' ->
-    Reduces sj (a, CG.CONTINUE) cg' sj' ->
-    List.In (n1, n2) (CG.cg_edges (snd cg')) ->
-    CanJoin n1 x sj' ->
-    length (fst cg) = length sj ->
-    FreeInGraph (fst cg) sj ->
-    CG.EdgeToNode cg ->
-    CanJoin n2 x sj'.
-  Proof.
-    intros.
-    rename H5 into Heq.
-    rename H6 into Hdom.
-    rename H7 into Hlt.
-    Events.simpl_red; simpl_red; simpl in *.
-    apply maps_to_length_rw in Heq.
-    destruct H3 as [Hx|Hx].
-    - inversion Hx; subst; clear Hx.
-      rewrite Heq.
-      auto using can_join_copy, can_join_inv_copy_2.
-    - inversion H4; subst; clear H4. {
-        eauto using can_join_cons.
-      }
-      rewrite <- Heq in *.
-      apply in_length_absurd in Hx; auto; contradiction.
-  Qed.
-
-  Let incl_init:
-    forall cg cg' sj sj' k k' x n1 n2 a,
-    Incl (snd cg) sj ->
-    Events.Reduces k (a, CG.INIT) k' ->
-    CG.Reduces cg (a, CG.INIT) cg' ->
-    Reduces sj (a, CG.INIT) cg' sj' ->
-    List.In (n1, n2) (CG.cg_edges (snd cg')) ->
-    CanJoin n1 x sj' ->
-    length (fst cg) = length sj ->
-    FreeInGraph (fst cg) sj ->
-    CG.EdgeToNode cg ->
-    CanJoin n2 x sj'.
-  Proof.
-    intros.
-    Events.simpl_red; simpl_red; simpl in *.
-    inversion H4; subst; clear H4.
-    eauto using can_join_cons.
-  Qed.
-
-  Lemma incl_reduces:
-    forall sj cg k sj' cg' k' e,
-    Incl (snd cg) sj ->
-    Events.Reduces k e k' ->
-    CG.Reduces cg e cg' ->
-    Reduces sj e cg' sj' ->
-    length (fst cg) = length sj ->
-    FreeInGraph (fst cg) sj ->
-    CG.EdgeToNode cg ->
-    Incl (snd cg') sj'.
-  Proof.
-    intros.
-    unfold Incl; intros.
-    destruct e as (a, []).
-    - eauto.
-    - eauto.
-    - eauto.
-    - eauto.
-  Qed.
-*)
 
   Lemma sj_to_incl:
     forall t cg k sj,
@@ -1517,9 +1329,11 @@ Section SJ.
     destruct Hsj as (k, Hsj).
     eauto using sj_to_incl.
   Qed.
-(*
-  (* -------------------------------------- *)
+  
+End SJ.
 
+Section Alt.
+(*
   Let sj_fresh_rw:
     forall vs es k sj,
     SJ (vs, es) k sj ->
@@ -1530,19 +1344,7 @@ Section SJ.
     simpl in *.
     auto using maps_to_length_rw.
   Qed.
-
-  Let can_join_to_node:
-    forall vs es sj x k n,
-    SJ (vs,es) k sj ->
-    CanJoin n x sj ->
-    Node n vs.
-  Proof.
-    intros.
-    apply can_join_to_node_0 in H0.
-    inversion H.
-    eauto using node_tr.
-  Qed.
-
+*)
 
   Let can_join_to_node_0:
     forall n x sj,
@@ -1551,6 +1353,19 @@ Section SJ.
   Proof.
     intros.
     induction H; auto using node_cons, node_eq.
+  Qed.
+
+  Lemma sj_can_join_to_node:
+    forall t vs es sj x n,
+    SJ t (vs,es) sj ->
+    CanJoin n x sj ->
+    Node n vs.
+  Proof.
+    intros.
+    apply can_join_to_node_0 in H0.
+    apply node_tr with (a:=sj); auto.
+    symmetry.
+    eauto using sj_to_length_0.
   Qed.
 
   Let fresh_absurd_eq:
@@ -1568,22 +1383,22 @@ Section SJ.
     omega.
   Qed.
 
-  Inductive HBCanJoin (cg:CG.computation_graph) : node -> tid -> Prop :=
+  Inductive HBCanJoin t (cg:CG.computation_graph) : node -> tid -> Prop :=
   | hb_can_join_hb:
     forall y nx ny,
-    CG.SpawnPoint y ny cg ->
+    CG.SpawnPoint y ny t cg ->
     CG.HB (snd cg) ny nx ->
-    HBCanJoin cg nx y
+    HBCanJoin t cg nx y
   | hb_can_join_eq:
     forall y n,
-    CG.SpawnPoint y n cg ->
-    HBCanJoin cg n y.
+    CG.SpawnPoint y n t cg ->
+    HBCanJoin t cg n y.
 
   Let hb_can_join_neq:
-    forall vs es n x y e,
+    forall vs es n x y e e' z t,
     x <> y ->
-    HBCanJoin (vs, es) n x ->
-    HBCanJoin (y :: vs, CG.F e :: es) n x.
+    HBCanJoin t (vs, es) n x ->
+    HBCanJoin ((z, CG.FORK y)::t) (y :: z:: vs, CG.F e :: CG.C e' :: es) n x.
   Proof.
     intros.
     inversion H0; subst; clear H0;
@@ -1592,9 +1407,9 @@ Section SJ.
   Qed.
 
   Let hb_can_join_continue:
-    forall vs es n z y e,
-    HBCanJoin (vs, es) n z ->
-    HBCanJoin (y :: vs, CG.C e :: es) n z.
+    forall vs es n z y e t,
+    HBCanJoin t (vs, es) n z ->
+    HBCanJoin ((y,CG.CONTINUE)::t) (y :: vs, CG.C e :: es) n z.
   Proof.
     intros.
     inversion H; subst; clear H;
@@ -1603,9 +1418,9 @@ Section SJ.
   Qed.
 
   Let hb_can_join_join:
-    forall vs es n y z e,
-    HBCanJoin (y :: vs, es) n z ->
-    HBCanJoin (y :: vs, CG.J e :: es) n z.
+    forall vs es n x y z e e' t,
+    HBCanJoin t (vs, es) n z ->
+    HBCanJoin ((x,CG.JOIN y)::t) (x :: vs, CG.J e :: CG.C e' :: es) n z.
   Proof.
     intros.
     inversion H; subst; clear H;
@@ -1614,19 +1429,19 @@ Section SJ.
   Qed.
 
   Let hb_can_join_spawn:
-    forall n x y vs es,
+    forall n x y vs es t,
     ~ List.In y vs ->
     MapsTo x n vs ->
-    HBCanJoin (y :: x :: vs, CG.F (n, fresh (x :: vs)) :: CG.C (n, fresh vs) :: es) (fresh vs) y.
+    HBCanJoin ((x, CG.FORK y)::t) (y :: x :: vs, CG.F (n, fresh (x :: vs)) :: CG.C (n, fresh vs) :: es) (fresh vs) y.
   Proof.
     auto using CG.spawn_point_eq, CG.spawn_point_eq, CG.spawn_point_continue, hb_can_join_eq.
   Qed.
 
   Let hb_can_join_trans:
-    forall cg n n' x,
-    HBCanJoin cg n x ->
+    forall t cg n n' x,
+    HBCanJoin t cg n x ->
     CG.HB (snd cg) n n' ->
-    HBCanJoin cg n' x.
+    HBCanJoin t cg n' x.
   Proof.
     intros.
     inversion H; subst; clear H;
@@ -1634,29 +1449,26 @@ Section SJ.
   Qed.
 
   Let spawn_point_absurd_nil:
-    forall vs x n,
-    ~ CG.SpawnPoint x n (vs, nil).
+    forall x n cg,
+    ~ CG.SpawnPoint x n nil cg.
   Proof.
-    induction vs; unfold not; intros. {
-      inversion H.
-    }
-    inversion H; subst; clear H.
-    apply IHvs in H4.
-    contradiction.
+    unfold not; intros.
+    inversion H.
   Qed.
-
+(*
   Let spawn_point_cons:
-    forall x n vs es y e' e,
-    CG.SpawnPoint x n (vs, es) ->
-    CG.SpawnPoint x n (y :: vs, CG.J e' :: CG.C e :: es).
+    forall x n vs es y e' e z t,
+    CG.SpawnPoint x n t (vs, es) ->
+    CG.SpawnPoint x n ((y, CG.JOIN z)::t) (y :: vs, CG.J e' :: CG.C e :: es).
   Proof.
-    auto using CG.spawn_point_join, CG.spawn_point_continue.
+    auto using CG.spawn_point_join.
   Qed.
-
+*)
+(*
   Let hb_can_join_cons:
-    forall vs es n x e' e y,
-    HBCanJoin (vs, es) n x ->
-    HBCanJoin (y :: vs, CG.J e' :: CG.C e :: es) n x.
+    forall vs es n x e' e y t z,
+    HBCanJoin t (vs, es) n x ->
+    HBCanJoin ((y, CG.JOIN z)::t) (y :: vs, CG.J e' :: CG.C e :: es) n x.
   Proof.
     intros.
     inversion H; subst; clear H; simpl in *. {
@@ -1664,11 +1476,12 @@ Section SJ.
     }
     auto using hb_can_join_eq.
   Qed.
-
+*)
+(*
   Let hb_can_join_cons_c:
     forall vs es a b y x,
-    HBCanJoin (vs, es) a x ->
-    HBCanJoin (y :: vs, CG.C (a, b) :: es) b x.
+    HBCanJoin t (vs, es) a x ->
+    HBCanJoin ((y, CONTINUE)::t) (y :: vs, CG.C (a, b) :: es) b x.
   Proof.
     intros.
     inversion H; subst; clear H. {
@@ -1676,7 +1489,7 @@ Section SJ.
       apply hb_can_join_hb with (ny:=ny).
       + eauto using CG.spawn_point_continue.
       + simpl in *.
-        remember (_::es) as es'.
+        remember ((_,_)::es) as es'.
         assert (CG.HB es' ny a) by (subst; auto using CG.hb_cons).
         assert (CG.HB es' a b) by (subst;auto using CG.edge_to_hb).
         eauto using CG.hb_trans.
@@ -1684,7 +1497,8 @@ Section SJ.
     apply hb_can_join_hb with (ny:=a); simpl;
     auto using CG.spawn_point_continue, CG.edge_to_hb.
   Qed.
-
+*)
+(*
   Let hb_can_join_cons_j:
     forall vs es a b y x,
     HBCanJoin (y :: vs, es) a x ->
@@ -1696,7 +1510,7 @@ Section SJ.
       apply hb_can_join_hb with (ny:=ny).
       + eauto using CG.spawn_point_join.
       + simpl in *.
-        remember (_::es) as es'.
+        remember ((_,_)::es) as es'.
         assert (CG.HB es' ny a) by (subst; auto using CG.hb_cons).
         assert (CG.HB es' a b) by (subst;auto using CG.edge_to_hb).
         eauto using CG.hb_trans.
@@ -1704,12 +1518,13 @@ Section SJ.
     apply hb_can_join_hb with (ny:=a); simpl;
     auto using CG.spawn_point_join, CG.edge_to_hb.
   Qed.
+*)
 
   Let hb_can_join_cons_v:
-    forall vs es n x z,
+    forall vs es n x z t,
     ~ List.In x vs ->
-    HBCanJoin (vs, es) n z ->
-    HBCanJoin (x :: vs, es) n z.
+    HBCanJoin t (vs, es) n z ->
+    HBCanJoin ((x,CG.INIT)::t) (x :: vs, es) n z.
   Proof.
     intros.
     inversion H0; subst; clear H0; simpl in *. {
@@ -1719,45 +1534,49 @@ Section SJ.
   Qed.
 
   Let spawn_point_to_edge:
-    forall es x n vs,
-    CG.SpawnPoint x n (vs, es) ->
+    forall t es x n vs,
+    CG.SpawnPoint x n t (vs, es) ->
     exists n', List.In (CG.C (n', n)) es.
   Proof.
-    induction es; intros. {
+    induction t; intros. {
       inversion H; subst.
-      apply spawn_point_absurd_nil in H3; contradiction.
     }
     inversion H; subst; clear H.
-    - 
+    - eauto.
     - exists n'.
       auto using in_eq, in_cons.
-    - apply IHes in H4.
-      destruct H4 as (nx, Hi).
+    - apply IHt in H5.
+      destruct H5 as (nx, Hi).
       eauto using in_cons.
-    - apply IHes in H1.
+    - apply IHt in H1.
       destruct H1 as (nx, Hi).
       eauto using in_cons.
-    - apply IHes in H1.
+    - apply IHt in H1.
       destruct H1 as (nx, Hi).
       eauto using in_cons.
   Qed.
 
   Let spawn_point_to_node:
-    forall es x n vs,
-    EdgeToNode (vs, es) ->
-    SpawnPoint x n (vs, es) ->
+    forall es x n vs t,
+    CG.CG t (vs, es) ->
+    CG.SpawnPoint x n t (vs, es) ->
     Node n vs.
   Proof.
     intros.
     apply spawn_point_to_edge in H0.
-    destruct H0 as  (n0, He).
-    assert (Hx: HB_Edge es (n0, n)). {
-      eauto using hb_edge_def, edge_eq.
+    destruct H0 as (n0, He).
+    assert (Hx: CG.HB_Edge es (n0, n)). {
+      eauto using CG.hb_edge_def, CG.edge_eq.
     }
-    apply H in Hx.
-    destruct Hx.
-    auto.
+    eauto using CG.cg_hb_edge_to_node_r.
   Qed.
+
+(*
+  (* -------------------------------------- *)
+
+
+
+
 
   Let hb_can_join_to_node:
     forall vs es n x,
@@ -2177,10 +1996,10 @@ Section SJ.
 
   (** Build a SJ from a CG *)
 
-  Theorem sj_spec:
+  Let sj_spec:
     forall a t cg k,
-    CG.Run a t cg ->
-    Events.Run t k ->
+    CG.CG t cg ->
+    Events.SJ t k ->
     exists sj, SJ cg k sj /\ KnowsEquiv sj cg.
   Proof.
     induction t; intros. {
@@ -2202,7 +2021,7 @@ Section SJ.
     eauto using sj_reduces, hb_can_join_preserves.
   Qed.
   *)
-End SJ.
+End Alt.
 
 (*
 Section Extra.
