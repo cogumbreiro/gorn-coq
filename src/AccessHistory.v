@@ -1392,101 +1392,8 @@ Module T.
     MM.MapsTo r h g ->
     List.In a h ->
     Node (a_when a) vs.
-(*
-  Lemma drf_check_inv_alloc:
-    forall (vs:list tid) n es ah m ah',
-    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.MEM m Trace.ALLOC) ah' ->
-    ah = ah'.
-  Proof.
-    intros.
-    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0;
-    auto.
-  Qed.
-
-  Lemma drf_check_inv_read:
-    forall n (vs:list tid) es ah m d ah',
-    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.MEM m (Trace.READ d)) ah' ->
-    Add (CG.HB (CG.C (n, fresh vs) :: es)) ah
-       (m, fresh vs, (READ, d)) ah'.
-  Proof.
-    intros.
-    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
-    inversion H1; subst; clear H1.
-    simpl in *.
-    inversion H2; subst.
-    auto.
-  Qed.
-
-  Lemma drf_check_inv_future:
-   forall cg ah ah' t,
-    DRF_Check cg ah (Trace.FUTURE t) ah' ->
-    ah' = ah.
-  Proof.
-    intros.
-    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
-    trivial.
-  Qed.
-
-  Lemma drf_check_inv_force:
-   forall cg ah ah' t,
-    DRF_Check cg ah (Trace.FORCE t) ah' ->
-    ah' = ah.
-  Proof.
-    intros.
-    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
-    trivial.
-  Qed.
-
-  Lemma drf_check_inv_init:
-   forall cg ah ah',
-    DRF_Check cg ah Trace.INIT ah' ->
-    ah' = ah.
-  Proof.
-    intros.
-    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
-    trivial.
-  Qed.
-
-  Lemma drf_check_inv_write:
-    forall ah ah' d r n (vs:list tid) es,
-    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.MEM r (Trace.WRITE d)) ah' ->
-    Add (CG.HB (CG.C (n, fresh vs) :: es)) ah
-       (r, fresh vs, (WRITE, d)) ah'.
-  Proof.
-    intros.
-    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
-    inversion H1; subst; clear H1.
-    simpl in *; inversion H2; subst.
-    auto.
-  Qed.*)
 End Defs.
-(*
-  Ltac simpl_drf_check :=
-  match goal with
-  | [ H1: DRF_Check _ _ (Trace.MEM _ Trace.ALLOC) _ |- _ ] =>
-    apply drf_check_inv_alloc in H1; inversion H1; subst; clear H1
-  | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.READ _)) _ |- _ ] =>
-    apply drf_check_inv_read in H1; inversion H1; subst; clear H1
-  | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.WRITE _ )) _ |- _ ] =>
-    apply drf_check_inv_write in H1; inversion H1; subst; clear H1
-  | [ H1: DRF_Check _ _ (Trace.MEM _ ?o) _ |- _ ] =>
-    destruct o;
-    match goal with
-    | [ H1: DRF_Check _ _ (Trace.MEM _ Trace.ALLOC) _ |- _ ] =>
-      apply drf_check_inv_alloc in H1; inversion H1; subst; clear H1
-    | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.READ _)) _ |- _ ] =>
-      apply drf_check_inv_read in H1; inversion H1; subst; clear H1
-    | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.WRITE _ )) _ |- _ ] =>
-      apply drf_check_inv_write in H1; inversion H1; subst; clear H1
-    end
-  | [ H1: DRF_Check _ _ (Trace.FUTURE _) _ |- _ ] =>
-    apply drf_check_inv_future in H1; subst
-  | [ H1: DRF_Check _ _ (Trace.FORCE _) _ |- _ ] =>
-    apply drf_check_inv_force in H1; subst
-  | [ H1: DRF_Check _ _ (Trace.INIT) _ |- _ ] =>
-    apply drf_check_inv_init in H1; subst
-  end.
-*)
+
 Section Props.
 
   Let drf_to_cg0:
@@ -2119,6 +2026,28 @@ Section AccessFun.
     simpl_node.
   Qed.
 
+  Lemma last_write_inv_hb:
+    forall t vs es ah r h a n x e,
+    CG.T.CG (e::t) (x::vs, C (n, fresh vs) :: es) ->
+    DRF t (vs, es) ah ->
+    MM.MapsTo r h ah ->
+    LastWrite (HB (C (n, fresh vs) :: es)) a h ->
+    LastWrite (HB es) a h.
+  Proof.
+    intros.
+    inversion H2; subst; clear H2.
+    apply last_write_def; auto.
+    unfold ForallWrites in *.
+    intros b; intros.
+    apply H5 in H2; auto.
+    destruct H2; auto.
+    apply hb_inv_cons_c with (x:=x) (t:=map event_to_cg (e::t)) in H2; auto.
+    destruct H2; auto.
+    eapply drf_to_node with (t:=t) (vs:=vs) (es:=es) (ah:=ah) (r:=r) in H4; auto.
+    rewrite H2 in *.
+    simpl_node.
+  Qed.
+
   Let drf_reduces_fun:
     forall es ah o ah1 ah2,
     DRF_Reduces es ah o ah1 ->
@@ -2215,7 +2144,7 @@ Section AccessFun.
     simpl in *.
     inversion H7.
   Qed.
-
+(*
   Section LastWriteCanJoin.
 
     Let LastWriteCanJoin (cg:computation_graph) sj (ah:cg_access_history) :=
@@ -2296,7 +2225,7 @@ Section AccessFun.
       }
     Qed.
   End LastWriteCanJoin.
-
+*)
 (*
   Lemma wf_last_write_inv_cons_write:
     forall cg ah cg' ah' r h a b,
@@ -2320,4 +2249,137 @@ Section AccessFun.
   Qed.
 *)
 End AccessFun.
+
+  Lemma drf_inv_alloc:
+    forall (vs:list tid) e es ah m t x,
+    DRF ((x,Trace.MEM m Trace.ALLOC)::t) (x::vs, CG.C e :: es) ah  ->
+    DRF t (vs,es) ah.
+  Proof.
+    intros.
+    inversion H; subst; clear H;
+    simpl in *; inversion H8.
+    inversion H7; subst; clear H7.
+    assert ((vs,es) = cg). {
+      eapply drf_to_cg in H6.
+      eauto using cg_fun.
+    }
+    subst.
+    assumption.
+  Qed.
+
+  Lemma drf_inv_init:
+    forall (vs:list tid) es ah t x,
+    DRF ((x,Trace.INIT)::t) (x::vs, es) ah  ->
+    DRF t (vs,es) ah.
+  Proof.
+    intros.
+    inversion H; subst; clear H;
+    simpl in *; inversion H8.
+    inversion H7; subst; clear H7.
+    assert ((vs,es) = cg). {
+      eapply drf_to_cg in H6.
+      eauto using cg_fun.
+    }
+    subst.
+    assumption.
+  Qed.
+
+  Lemma drf_inv_future:
+    forall (vs:list tid) es ah t x y e e',
+    DRF ((x,Trace.FUTURE y)::t) (y::x::vs, F e:: C e' :: es) ah  ->
+    DRF t (vs,es) ah.
+  Proof.
+    intros.
+    inversion H; subst; clear H;
+    simpl in *; inversion H8.
+    inversion H7; subst; clear H7.
+    assert ((vs,es) = cg). {
+      eapply drf_to_cg in H6.
+      eauto using cg_fun.
+    }
+    subst.
+    assumption.
+  Qed.
+
+  Lemma drf_inv_force:
+    forall (vs:list tid) es ah t x y e e',
+    DRF ((x,Trace.FORCE y)::t) (x::vs, J e:: C e' :: es) ah  ->
+    DRF t (vs,es) ah.
+  Proof.
+    intros.
+    inversion H; subst; clear H;
+    simpl in *; inversion H8.
+    inversion H7; subst; clear H7.
+    assert ((vs,es) = cg). {
+      eapply drf_to_cg in H6.
+      eauto using cg_fun.
+    }
+    subst.
+    assumption.
+  Qed.
+
+  Lemma drf_inv_read:
+    forall (vs:list tid) es ah t x r d n,
+    DRF ((x,Trace.MEM r (Trace.READ d))::t) (x::vs, C (n, fresh vs) :: es) ah  ->
+    exists ah',
+    DRF t (vs,es) ah' /\ 
+    Add (HB (C (n, fresh vs) :: es)) ah' (r, fresh vs, (READ, d)) ah.
+  Proof.
+    intros.
+    inversion H; subst; clear H;
+    simpl in *; inversion H8; subst; clear H8.
+    assert ((vs,es) = cg). {
+      eapply drf_to_cg in H5.
+      inversion H7; subst; clear H7.
+      eauto using cg_fun.
+    }
+    subst.
+    exists ah0.
+    inversion H9; subst; clear H9.
+    inversion H1; subst; clear H1.
+    auto.
+  Qed.
+
+(*
+  Lemma drf_check_inv_write:
+    forall ah ah' d r n (vs:list tid) es,
+    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.MEM r (Trace.WRITE d)) ah' ->
+    Add (CG.HB (CG.C (n, fresh vs) :: es)) ah
+       (r, fresh vs, (WRITE, d)) ah'.
+  Proof.
+    intros.
+    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
+    inversion H1; subst; clear H1.
+    simpl in *; inversion H2; subst.
+    auto.
+  Qed.*)
+
+(*
+  Ltac simpl_drf :=
+  match goal with
+  | [ H1: DRF_Check _ _ (Trace.MEM _ Trace.ALLOC) _ |- _ ] =>
+    apply drf_check_inv_alloc in H1; inversion H1; subst; clear H1
+  | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.READ _)) _ |- _ ] =>
+    apply drf_check_inv_read in H1; inversion H1; subst; clear H1
+  | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.WRITE _ )) _ |- _ ] =>
+    apply drf_check_inv_write in H1; inversion H1; subst; clear H1
+  | [ H1: DRF_Check _ _ (Trace.MEM _ ?o) _ |- _ ] =>
+    destruct o;
+    match goal with
+    | [ H1: DRF_Check _ _ (Trace.MEM _ Trace.ALLOC) _ |- _ ] =>
+      apply drf_check_inv_alloc in H1; inversion H1; subst; clear H1
+    | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.READ _)) _ |- _ ] =>
+      apply drf_check_inv_read in H1; inversion H1; subst; clear H1
+    | [ H1: DRF_Check _ _ (Trace.MEM _ (Trace.WRITE _ )) _ |- _ ] =>
+      apply drf_check_inv_write in H1; inversion H1; subst; clear H1
+    end
+  | [ H1: DRF_Check _ _ (Trace.FUTURE _) _ |- _ ] =>
+    apply drf_check_inv_future in H1; subst
+  | [ H1: DRF_Check _ _ (Trace.FORCE _) _ |- _ ] =>
+    apply drf_check_inv_force in H1; subst
+  | [ H1: DRF_Check _ _ (Trace.INIT) _ |- _ ] =>
+    apply drf_check_inv_init in H1; subst
+  end.
+*)
+
 End T.

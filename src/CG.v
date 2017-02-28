@@ -1194,6 +1194,24 @@ Section DAG.
     eauto using cg_to_lt_edges, lt_edges_to_dag.
   Qed.
 
+  Lemma hb_inv_continue_1:
+    forall a vs x n es t,
+    CG ((x,CONTINUE)::t) (x::vs, (C (n,fresh vs)) :: es) ->
+    HB (C (n,fresh vs) :: es) a (fresh vs) ->
+    a = n \/ HB es a n.
+  Proof.
+    intros.
+    assert (Hx:=H).
+    apply cg_to_dag in H.
+    apply hb_inv_cons in H0; auto.
+    destruct H0 as [?|[(?,[?|?])|[(N,_)|(?,_)]]]; auto.
+    - apply edge_to_node_hb_snd with (vs:=vs) in H0.
+      + simpl_node.
+      + inversion Hx; subst; clear Hx.
+        eauto using cg_to_edge_to_node.
+    - contradiction.
+  Qed.
+
 End DAG.
 
 Module T.
