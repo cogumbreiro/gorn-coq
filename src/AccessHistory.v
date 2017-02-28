@@ -2340,19 +2340,27 @@ End AccessFun.
     auto.
   Qed.
 
-(*
-  Lemma drf_check_inv_write:
-    forall ah ah' d r n (vs:list tid) es,
-    DRF_Check (CG.C (n, fresh vs) :: es) ah (Trace.MEM r (Trace.WRITE d)) ah' ->
-    Add (CG.HB (CG.C (n, fresh vs) :: es)) ah
-       (r, fresh vs, (WRITE, d)) ah'.
+  Lemma drf_inv_write:
+    forall (vs:list tid) es ah t x r d n,
+    DRF ((x,Trace.MEM r (Trace.WRITE d))::t) (x::vs, C (n, fresh vs) :: es) ah  ->
+    exists ah',
+    DRF t (vs,es) ah' /\ 
+    Add (HB (C (n, fresh vs) :: es)) ah' (r, fresh vs, (WRITE, d)) ah.
   Proof.
     intros.
-    inversion H; subst; clear H; simpl in *; inversion H0; subst; clear H0.
+    inversion H; subst; clear H;
+    simpl in *; inversion H8; subst; clear H8.
+    assert ((vs,es) = cg). {
+      eapply drf_to_cg in H5.
+      inversion H7; subst; clear H7.
+      eauto using cg_fun.
+    }
+    subst.
+    exists ah0.
+    inversion H9; subst; clear H9.
     inversion H1; subst; clear H1.
-    simpl in *; inversion H2; subst.
     auto.
-  Qed.*)
+  Qed.
 
 (*
   Ltac simpl_drf :=

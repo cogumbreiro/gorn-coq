@@ -913,6 +913,15 @@ Section DAG.
     auto using hb_irrefl.
   Qed.
 
+  Lemma cg_irrefl_0:
+    forall t vs es,
+    CG t (vs, es) ->
+    forall x, ~ HB es x x.
+  Proof.
+    intros.
+    eapply cg_irrefl in H; simpl; eauto.
+  Qed.
+
   Let sub_fresh_cons_lhs:
     forall {A:Type} (x:A) vs n,
     Sup (fresh (x :: vs)) (n, fresh vs).
