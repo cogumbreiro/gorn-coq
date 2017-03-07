@@ -719,7 +719,7 @@ Section PropsEx.
     eauto using hb_impl.
   Qed.
 
-  Lemma hb_absurd_node:
+  Lemma hb_absurd_node_l:
     forall vs es n,
     EdgeToNode (vs, es) ->
      ~ HB es (fresh vs) n.
@@ -729,7 +729,17 @@ Section PropsEx.
     apply edge_to_node_hb_fst with (vs:=vs) in N; eauto; simpl_node.
   Qed.
 
-  Lemma hb_absurd_node_next:
+  Lemma hb_absurd_node_r:
+    forall vs es n,
+    EdgeToNode (vs, es) ->
+     ~ HB es n (fresh vs).
+  Proof.
+    intros.
+    unfold not; intros N.
+    apply edge_to_node_hb_snd with (vs:=vs) in N; eauto; simpl_node.
+  Qed.
+
+  Lemma hb_absurd_node_next_l:
     forall vs es n,
     EdgeToNode (vs, es) ->
      ~ HB es (node_next (fresh vs)) n.
@@ -739,14 +749,24 @@ Section PropsEx.
     apply edge_to_node_hb_fst with (vs:=vs) in N; eauto; simpl_node.
   Qed.
 
+  Lemma hb_absurd_node_next_r:
+    forall vs es n,
+    EdgeToNode (vs, es) ->
+     ~ HB es n (node_next (fresh vs)).
+  Proof.
+    intros.
+    unfold not; intros N.
+    apply edge_to_node_hb_snd with (vs:=vs) in N; eauto; simpl_node.
+  Qed.
+
 End PropsEx.
 
   Ltac hb_simpl :=
   repeat match goal with
   | [ H1:HB ?es (fresh ?vs) _,H2: EdgeToNode (?vs, ?es) |- _] =>
-    apply hb_absurd_node in H1; auto; contradiction
+    apply hb_absurd_node_l in H1; auto; contradiction
   | [ H1:HB ?es (node_next (fresh ?vs) )_,H2: EdgeToNode (?vs, ?es) |- _] =>
-    apply hb_absurd_node_next in H1; auto; contradiction
+    apply hb_absurd_node_next_l in H1; auto; contradiction
   end.
 
 Section DAG.
@@ -1203,6 +1223,155 @@ Section DAG.
     eauto using cg_to_lt_edges, lt_edges_to_dag.
   Qed.
 
+  Lemma cg_hb_absurd_node_l:
+    forall t vs es n,
+    CG t (vs, es) ->
+    ~ HB es (fresh vs) n.
+  Proof.
+    eauto using cg_to_edge_to_node, hb_absurd_node_l.
+  Qed.
+
+  Lemma cg_hb_absurd_node_r:
+    forall t vs es n,
+    CG t (vs, es) ->
+    ~ HB es n (fresh vs).
+  Proof.
+    eauto using cg_to_edge_to_node, hb_absurd_node_r.
+  Qed.
+
+  Lemma cg_hb_absurd_node_next_l:
+    forall vs es n t,
+    CG t (vs, es) ->
+     ~ HB es (node_next (fresh vs)) n.
+  Proof.
+    eauto using cg_to_edge_to_node, hb_absurd_node_next_l.
+  Qed.
+
+  Lemma cg_hb_absurd_node_next_r:
+    forall vs es n t,
+    CG t (vs, es) ->
+     ~ HB es n (node_next (fresh vs)).
+  Proof.
+    eauto using cg_to_edge_to_node, hb_absurd_node_next_r.
+  Qed.
+
+  Lemma hb_inv_cons_fork:
+    forall x y a b t es n vs,
+    CG ((x, FORK y)::t) (y::x::vs, F (n, fresh (x::vs)) :: C (n, fresh vs):: es) ->
+    HB (F (n, fresh (x::vs)) :: C (n, fresh vs)::es) a b ->
+    HB es a b \/
+    (fresh vs = b /\ n = a) \/
+    (fresh vs = b /\ HB es a n) \/
+    (fresh (x :: vs) = b /\ n = a) \/
+    (fresh (x :: vs) = b /\ HB es a n) \/
+    (fresh (x :: vs) = b /\ fresh vs = n /\ HB es a n) \/
+    (fresh (x :: vs) <> b /\ fresh vs = b /\ n = fresh (x :: vs)).
+  Proof.
+    intros.
+    inversion H; subst; simpl_node.
+    apply cg_to_dag in H; simpl in *.
+    rename H into Hy.
+    assert (Hx:DAG (FGraph.Edge ((n, fresh vs) :: cg_edges es))). {
+      eauto using f_dag_inv_cons.
+    }
+    apply hb_inv_cons in H0; auto.
+    destruct H0 as [Hc|[(?,[?|Hc])|[(?,Hc)|(Ha,Hc)]]].
+    - apply hb_inv_cons in Hc; auto.
+      destruct Hc as [?|[(?,[?|?])|[(_,N)|(_,N)]]]; auto;
+      try (eapply cg_hb_absurd_node_l in N; eauto; contradiction).
+    - intuition.
+    - apply hb_inv_cons in Hc; auto.
+      destruct Hc as [?|[(?,[?|Hc])|[(_,N)|(_,N)]]];
+      try (eapply cg_hb_absurd_node_l in N; eauto; contradiction);
+      intuition.
+    - apply hb_inv_cons in Hc; auto.
+      destruct Hc as [N|[(?,[?|N])|[(?,N)|(_,N)]]].
+      + rewrite fresh_cons_rw_next in *.
+        eapply cg_hb_absurd_node_next_l in N; eauto; contradiction.
+      + intuition.
+      + rewrite fresh_cons_rw_next in *.
+        eapply cg_hb_absurd_node_next_l in N; eauto; contradiction.
+      + eapply cg_hb_absurd_node_l in N; eauto; contradiction.
+      + eapply cg_hb_absurd_node_l in N; eauto; contradiction.
+    - apply hb_inv_cons in Hc; auto.
+      destruct Hc as [N|[(?,[?|Hc])|[(?,Hc)|(Hb,Hc)]]].
+      + rewrite fresh_cons_rw_next in *.
+        eapply cg_hb_absurd_node_next_l in N; eauto; contradiction.
+      + apply hb_inv_cons in Ha; auto.
+        destruct Ha as [N|[(?,[?|N])|[(?,N)|(Hb,N)]]].
+        * subst.
+          rewrite fresh_cons_rw_next in *.
+          eapply cg_hb_absurd_node_next_r in N; eauto; contradiction.
+        * subst.
+          simpl_node.
+        * subst.
+          eapply cg_hb_absurd_node_r in N; eauto; contradiction.
+        * subst.
+          eapply cg_hb_absurd_node_l in N; eauto; contradiction.
+        * eapply cg_hb_absurd_node_l in N; eauto; contradiction.
+      + rewrite fresh_cons_rw_next in *.
+        eapply cg_hb_absurd_node_next_l in Hc; eauto; contradiction.
+      + eapply cg_hb_absurd_node_l in Hc; eauto; contradiction.
+      + eapply cg_hb_absurd_node_l in Hc; eauto; contradiction.
+  Qed.
+
+  Lemma hb_inv_cons_join:
+    forall x y a b t es vs nx ny,
+    CG ((x, JOIN y)::t) (x::vs, J (ny, fresh vs) :: C (nx, fresh vs):: es) ->
+    HB (J (ny, fresh vs) :: C (nx, fresh vs)::es) a b ->
+    HB es a b \/
+    (fresh vs = b /\ nx = a) \/
+    (fresh vs = b /\ HB es a nx) \/
+    (fresh vs = b /\ ny = a) \/
+    (fresh vs = b /\ HB es a ny).
+  Proof.
+    intros.
+    inversion H; subst; simpl_node.
+    apply cg_to_dag in H; simpl in *.
+    rename H into Hdag.
+    assert (Hx:DAG (FGraph.Edge ((nx, fresh vs) :: cg_edges es))). {
+      eauto using f_dag_inv_cons.
+    }
+    apply hb_inv_cons in H0; auto. (* HB *)
+    destruct H0 as [Hc|[(?,[?|Hc])|[(?,Hc)|(Ha,Hc)]]].
+    - apply hb_inv_cons in Hc; auto. (* HB *)
+      destruct Hc as [?|[(?,[?|Hc])|[(?,N)|(Ha,N)]]]; auto;
+      eapply cg_hb_absurd_node_l in N; eauto; contradiction.
+    - intuition.
+    - apply hb_inv_cons in Hc; auto. (* HB *)
+      destruct Hc as [?|[(?,[?|Hc])|[(?,N)|(Ha,N)]]]; auto.
+      + intuition.
+      + eapply cg_hb_absurd_node_l in N; eauto; contradiction.
+    - apply hb_inv_cons in Hc; auto. (* HB *)
+      destruct Hc as [N|[(?,[?|N])|[(?,N)|(Ha,N)]]]; auto;
+      try (eapply cg_hb_absurd_node_l in N; eauto; contradiction).
+      + contradiction.
+    - apply hb_inv_cons in Hc; auto. (* HB *)
+      destruct Hc as [N|[(?,[?|N])|[(?,N)|(Hb,N)]]]; auto;
+      try (eapply cg_hb_absurd_node_l in N; eauto; contradiction).
+      apply hb_inv_cons in Ha; auto. (* HB *)
+      destruct Ha as [N|[(?,[?|N])|[(?,N)|(Hb,N)]]]; auto;
+      try (eapply cg_hb_absurd_node_l in N; eauto; contradiction).
+      intuition.
+  Qed.
+
+  Lemma hb_inv_cons_continue:
+    forall x a b t es vs n,
+    CG ((x, CONTINUE)::t) (x::vs, C (n, fresh vs):: es) ->
+    HB (C (n, fresh vs)::es) a b ->
+    HB es a b \/
+    (fresh vs = b /\ n = a) \/
+    (fresh vs = b /\ HB es a n).
+  Proof.
+    intros.
+    inversion H; subst; simpl_node.
+    apply cg_to_dag in H; simpl in *.
+    rename H into Hy.
+    apply hb_inv_cons in H0; auto.
+    destruct H0 as [Hc|[(?,[?|Hc])|[(?,N)|(Ha,N)]]];
+    auto; eapply cg_hb_absurd_node_l in N; eauto; contradiction.
+  Qed.
+
   Lemma hb_inv_continue_1:
     forall a vs x n es t,
     CG ((x,CONTINUE)::t) (x::vs, (C (n,fresh vs)) :: es) ->
@@ -1219,6 +1388,22 @@ Section DAG.
       + inversion Hx; subst; clear Hx.
         eauto using cg_to_edge_to_node.
     - contradiction.
+  Qed.
+
+  Lemma hb_absurd_cons_c:
+    forall n (vs:list tid) es b t x,
+    CG ((x,CONTINUE)::t) (x::vs, C (n, fresh vs) :: es) ->
+    ~ HB (C (n, fresh vs) :: es) (fresh vs) b.
+  Proof.
+    unfold not; intros.
+    assert (Hx:=H).
+    apply cg_to_dag in H.
+    apply hb_inv_cons in H0; auto.
+    inversion Hx; subst; clear Hx; simpl_node.
+    destruct H0 as [Hx|[(?,[?|Hx])|[(N,Hx)|(Hx,_)]]]; auto;
+    try (eapply cg_hb_absurd_node_l in Hx; eauto).
+    subst.
+    simpl_node.
   Qed.
 
 End DAG.
