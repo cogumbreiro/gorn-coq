@@ -816,50 +816,13 @@ Section SR.
       rename H4 into Hlk.
       rename H5 into Hr.
       rename H6 into Hmt.
-      inversion H2; subst; clear H2. {
-        simpl in *.
-        unfold LastWriteCanJoin; intros.
-        rewrite MM_Facts.add_mapsto_iff in *.
-        destruct H2 as [(?,Hi)|(?,?)];
-        unfold LastWriteCanJoin in *.
-        - simpl in *.
-          (** Crucial part of the proof *)
-          subst.
-          apply AccessHistory.last_write_inv_cons_nil in H3; subst.
-          simpl in *.
-          inversion H4; subst; clear H4.
-          assert (R: fresh vs = fresh sj). {
-            inversion Hsj; subst.
-            inversion H11; subst; clear H11.
-            assert (cg = (vs, es)) by eauto using SJ_CG.sj_to_cg, cg_fun.
-            subst.
-            eauto using SJ_CG.sj_to_length_0, maps_to_length_rw.
-          }
-          rewrite R.
-          apply SJ_CG.can_join_copy.
-          unfold LocalToKnows in *.
-          assert (Hlk': LocalKnows (vs,es) l (x, x0)). {
-            apply local_knows_def with (n:=n); auto using maps_to_to_task_of.
-          }
-          apply Hlk in Hlk'.
-          inversion Hlk'; subst; simpl in *; simpl_node.
-          assumption.
-        - simpl in *.
-          apply AccessHistory.T.drf_to_cg in H0.
-          eapply AccessHistory.T.last_write_inv_hb in H3; eauto.
-          eauto using SJ_CG.can_join_cons.
-      }
-      simpl in *.
       unfold LastWriteCanJoin; intros.
-      rewrite MM_Facts.add_mapsto_iff in *.
-      destruct H2 as [(?,Hi)|(?,?)];
-      unfold LastWriteCanJoin in *.
-      - simpl in *.
-        (** Crucial part of the proof *)
-        subst.
-        apply AccessHistory.last_write_inv_cons_write in H3;
-        eauto using SJ_CG.sj_to_cg, hb_trans, cg_irrefl_0.
-        destruct a as (?,?); simpl in *; subst.
+      eapply AccessHistory.T.last_write_inv_write in H4; eauto.
+      destruct H4 as [(?,(?,(?,?)))|[(?,(?,?))|(?,(?,(l',(?,?))))]];
+      subst; simpl in *;
+      eauto using SJ_CG.can_join_cons. (* take care of the inductive case *)
+      - (* first write *)
+        inversion H5; subst; clear H5. (* Some _ = Some (d_task _ ) *)
         assert (R: fresh vs = fresh sj). {
           inversion Hsj; subst.
           inversion H13; subst; clear H13. (* CG *)
@@ -868,20 +831,45 @@ Section SR.
           eauto using SJ_CG.sj_to_length_0, maps_to_length_rw.
         }
         rewrite R.
+        (* Task x is writing x0, and we know from this rule that x0 is in
+           the local info. But from the local-to-knows property, then
+           x knows x0. *)
         apply SJ_CG.can_join_copy.
         unfold LocalToKnows in *.
         assert (Hlk': LocalKnows (vs,es) l (x, x0)). {
           apply local_knows_def with (n:=n); auto using maps_to_to_task_of.
         }
         apply Hlk in Hlk'.
+        (* If x knows x0 and x mapsto n, then n can join with x0. *)
         inversion Hlk'; subst; simpl in *; simpl_node.
         assumption.
-      - simpl in *.
-        apply AccessHistory.T.drf_to_cg in H0.
-        eapply AccessHistory.T.last_write_inv_hb in H3; eauto.
-        eauto using SJ_CG.can_join_cons.
+      - (* update write *)
+        subst.
+        simpl in *.
+        (* a_what _ = Some (d_task _) *)
+        inversion H5; subst; clear H5.
+        assert (R: fresh vs = fresh sj). {
+          inversion Hsj; subst.
+          inversion H13; subst; clear H13. (* CG *)
+          assert (cg = (vs, es)) by eauto using SJ_CG.sj_to_cg, cg_fun.
+          subst.
+          eauto using SJ_CG.sj_to_length_0, maps_to_length_rw.
+        }
+        rewrite R.
+        (* Task x is writing x0, and we know from this rule that x0 is in
+           the local info. But from the local-to-knows property, then
+           x knows x0. *)
+        apply SJ_CG.can_join_copy.
+        unfold LocalToKnows in *.
+        assert (Hlk': LocalKnows (vs,es) l (x, x0)). {
+          apply local_knows_def with (n:=n); auto using maps_to_to_task_of.
+        }
+        apply Hlk in Hlk'.
+        (* If x knows x0 and x mapsto n, then n can join with x0. *)
+        inversion Hlk'; subst; simpl in *; simpl_node.
+        assumption.
     Qed.
-*)
+
     Let mem_local_to_knows:
       forall t l cg sj ah,
       Mem t cg l ->
@@ -935,9 +923,9 @@ Section SR.
         destruct H0 as (ah', (Hdrf',Ha)).
         assert (Hx:=IHt _ _ _ _ H4 Hdrf' H13 (* SJ_CG.SJ (vs,es) *)).
         destruct Hx as (?,?).
-        split. {
+        split;
           eauto using local_to_knows_write.
-        }
+      - 
     Qed.
 (*
 
