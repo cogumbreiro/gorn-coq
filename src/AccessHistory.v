@@ -784,6 +784,18 @@ Section LastWrites.
     auto.
   Qed.
 
+  Lemma last_write_inv_cons:
+    forall l (a b:access A E),
+    LastWrite a (b::l) ->
+    a = b \/ ((Write b -> HBE b a) /\ LastWrite a l).
+  Proof.
+    induction l; intros. {
+      auto using last_write_inv_cons_nil.
+    }
+    apply last_write_inv in H.
+    destruct H as [(?,?)|(?,?)]; auto.
+  Qed.
+
   Lemma last_write_cons_read:
     forall (a:access A E) n l,
     LastWrite a l ->
@@ -2144,6 +2156,7 @@ Section AccessFun.
     simpl in *.
     inversion H7.
   Qed.
+
 (*
   Section LastWriteCanJoin.
 
@@ -2362,6 +2375,331 @@ End AccessFun.
     auto.
   Qed.
 
+  Lemma last_write_inv_future:
+    forall x n vs ah h es a r t e k y,
+    DRF ((x,Trace.FUTURE y)::t) (y::x::vs,(k, (n,fresh (x::vs))) :: e :: es) ah ->
+    MM.MapsTo r h ah ->
+    LastWrite (A:=Trace.datum) (HB ((k, (n,fresh (x::vs)) ) :: e :: es)) a h ->
+    LastWrite (HB es) a h.
+  Proof.
+    intros.
+    destruct H1 as (X,Y,Hfw). (* LastWrite *)
+    apply last_write_def; eauto.
+    unfold ForallWrites in *; intros b Hin Hwb.
+    apply Hfw in Hin; auto.
+    destruct Hin as [Hin|?]; auto.
+    assert (Hx:=drf_to_cg H). (* DRF *)
+    inversion Hx; subst; simpl_node.
+    eapply hb_inv_cons_fork in Hin; eauto.
+    apply drf_inv_future in H. (* DRF *)
+    destruct Hin as [?|[(R1,R2)|[(R1,?)|[(R1,?)|[(R1,?)|[(R1,?)|(?,(R1,?))]]]]]];
+    auto; subst; try (
+      assert (Node (a_when a) vs) by eauto using drf_to_node;
+      rewrite <- R1 in *;
+      simpl_node
+    ).
+  Qed.
+
+  Lemma last_write_inv_force:
+    forall x vs ah h es a r t e1 e2 y,
+    DRF ((x,Trace.FORCE y)::t) (x::vs, e1 :: e2 :: es) ah ->
+    MM.MapsTo r h ah ->
+    LastWrite (A:=Trace.datum) (HB (e1 :: e2 :: es)) a h ->
+    LastWrite (HB es) a h.
+  Proof.
+    intros.
+    destruct H1 as (X,Y,Hfw). (* LastWrite *)
+    apply last_write_def; eauto.
+    unfold ForallWrites in *; intros b Hin Hwb.
+    apply Hfw in Hin; auto.
+    destruct Hin as [Hin|?]; auto.
+    assert (Hx:=drf_to_cg H). (* DRF *)
+    inversion Hx; subst; simpl_node.
+    eapply hb_inv_cons_join in Hin; eauto.
+    apply drf_inv_force in H. (* DRF *)
+    destruct Hin as [?|[(R1,?)|[(R1,?)|[(R1,?)|(R1,?)]]]]; auto;
+    try (
+      assert (Node (a_when a) vs) by eauto using drf_to_node;
+      rewrite <- R1 in *;
+      simpl_node
+    ).
+  Qed.
+
+  Lemma last_write_inv_alloc:
+    forall x vs ah h es a r t e m,
+    DRF ((x,Trace.MEM m Trace.ALLOC)::t) (x::vs, e :: es) ah ->
+    MM.MapsTo r h ah ->
+    LastWrite (A:=Trace.datum) (HB (e :: es)) a h ->
+    LastWrite (HB es) a h.
+  Proof.
+    intros.
+    assert (Hx:=drf_to_cg H). (* DRF *)
+    inversion Hx; subst; simpl_node.
+    apply drf_inv_alloc in H.
+    eapply last_write_inv_hb in H1; eauto using drf_to_cg.
+  Qed.
+
+
+  Lemma last_write_inv_read:
+    forall vs ah hr es a r t m d ah' n x,
+    DRF t (vs, es) ah ->
+    Add (HB (C (n, fresh vs) :: es)) ah (m, fresh vs, (READ, d)) ah' ->
+    MM.MapsTo r hr ah' ->
+    LastWrite (A:=Trace.datum) (HB (C (n, fresh vs) :: es)) a hr ->
+    MapsTo x n vs ->
+    (m = r /\ exists hm, hr = (fresh vs, None)::hm /\ MM.MapsTo r hm ah /\ LastWrite (HB es) a hm) \/
+    (m <> r /\ MM.MapsTo r hr ah /\ LastWrite (HB es) a hr).
+  Proof.
+    intros.
+    assert (Hdrf: DRF ((x,Trace.MEM m (Trace.READ d))::t) (x::vs, C (n, fresh vs):: es) ah'). {
+      intros.
+      eapply drf_some with (o':=(m, (READ, d))); eauto.
+      - simpl.
+        apply drf_to_cg in H.
+        apply CG.cg_continue; auto using maps_to_eq.
+      - simpl.
+        inversion H0; subst.
+        eapply drf_reduces; eauto.
+    }
+    assert (Hx:=drf_to_cg H). (* DRF *)
+    inversion H0; subst; clear H0.
+    assert (mt:=H1).
+    rewrite MM_Facts.add_mapsto_iff in mt.
+    destruct mt as [(?,?)|(?,?)]. {
+      subst.
+      apply last_write_inv_cons_read in H2.
+      left.
+      intuition.
+      exists l.
+      intuition.
+      eapply last_write_inv_hb in H2; eauto using drf_to_cg.
+    }
+    right.
+    intuition.
+    eapply last_write_inv_hb in H2; eauto using drf_to_cg.
+  Qed.
+
+  Lemma last_write_inv_write:
+    forall vs ah hr es a r t m d ah' n x,
+    DRF t (vs, es) ah ->
+    Add (HB (C (n, fresh vs) :: es)) ah (m, fresh vs, (WRITE, d)) ah' ->
+    MM.MapsTo r hr ah' ->
+    LastWrite (A:=Trace.datum) (HB (C (n, fresh vs) :: es)) a hr ->
+    MapsTo x n vs ->
+    (m = r /\ a = (fresh vs, Some d) /\ (fresh vs, Some d) :: nil = hr /\ ~ MM.In m ah) \/
+    (m <> r /\ MM.MapsTo r hr ah /\ LastWrite (HB es) a hr) \/
+    (m = r /\ a = (fresh vs, Some d) /\ exists l, (fresh vs, Some d) :: l = hr /\ MM.MapsTo m l ah).
+  Proof.
+    intros.
+    assert (Hdrf: DRF ((x,Trace.MEM m (Trace.WRITE d))::t) (x::vs, C (n, fresh vs):: es) ah'). {
+      intros.
+      eapply drf_some with (o':=(m, (WRITE, d))); eauto.
+      - simpl.
+        apply drf_to_cg in H.
+        apply CG.cg_continue; auto using maps_to_eq.
+      - simpl.
+        eapply drf_reduces; eauto.
+    }
+    assert (Hx:=drf_to_cg H). (* DRF *)
+    assert (mt:=H1).
+    inversion H0; subst; clear H0. { (* Add *)
+      rewrite MM_Facts.add_mapsto_iff in mt.
+      destruct mt as [(?,?)|(?,?)]. {
+        left.
+        subst.
+        intuition.
+        eauto using last_write_inv_cons_nil.
+      }
+      eapply last_write_inv_hb in H2; eauto using drf_to_cg.
+    }
+    rewrite MM_Facts.add_mapsto_iff in mt.
+    destruct mt as [(?,?)|(?,?)]. {
+      subst.
+      apply last_write_inv_cons in H2.
+      destruct H2 as [Hy|(Ha,Hb)]. {
+        right.
+        right.
+        intuition.
+        eauto 7.
+      }
+      eapply last_write_inv_hb in Hb; eauto using drf_to_cg.
+      assert (Hw: Write (fresh vs, Some d)) by auto using write_some.
+      apply Ha in Hw; clear Ha.
+      destruct Hw as [Hw|Hw]. {
+        simpl in *.
+        apply drf_to_cg in Hdrf.
+        eapply hb_inv_cons_continue in Hw; eauto.
+        destruct Hw as [N|[(?,?)|(?,N)]].
+        - eapply cg_hb_absurd_node_l in N; eauto; contradiction.
+        - subst.
+          simpl_node.
+        - eapply cg_hb_absurd_node_l in N; eauto; contradiction.
+      }
+      simpl in *.
+      apply last_write_to_in in Hb.
+      assert (Hn: Node (a_when a) vs). {
+        eauto using drf_to_node.
+      }
+      rewrite <- Hw in *.
+      simpl_node.
+    }
+    eapply last_write_inv_hb in H2; eauto using drf_to_cg.
+  Qed.
+
+  Section forall_prec.
+  Let forall_prec_cons:
+    forall (a:access Trace.datum node) es (h:list (access Trace.datum node)) e,
+    List.Forall
+       (fun b =>
+        Write b -> HB es (a_when b) (a_when a) \/ a = b) h ->
+    List.Forall
+      (fun b =>
+        Write b -> HB (e :: es) (a_when b) (a_when a) \/ a = b) h.
+  Proof.
+    intros.
+    rewrite Forall_forall in *; intros.
+    apply H in H0; auto.
+    destruct H0; auto using hb_cons.
+  Qed.
+
+  Lemma last_write_to_forall_prec:
+    forall t vs es ah,
+    DRF t (vs, es) ah ->
+    forall r a h,
+    MM.MapsTo r h ah ->
+    LastWrite (HB es) a h ->
+    List.Forall (fun b => Write b -> HB es (a_when b) (a_when a) \/ a = b) h.
+  Proof.
+    induction t; intros. {
+      inversion H; subst; clear H.
+      unfold empty in *.
+      rewrite MM_Facts.empty_mapsto_iff in *.
+      contradiction.
+    }
+    assert (Hx:=H).
+    assert (Hdrf:=H).
+    apply drf_to_cg in Hx;
+    destruct a as (x,[]);
+    inversion Hx; subst; clear Hx; simpl_node.
+    - eauto using drf_inv_init.
+    - destruct m0.
+      + eauto using last_write_inv_alloc, drf_inv_alloc.
+      + eapply drf_inv_read in H; eauto.
+        destruct H as (ah', (?,?)).
+        eapply last_write_inv_read in H1; eauto.
+        destruct H1 as [(?,(l,(?,(?,Hw))))|(?,(?,?))].
+        * subst.
+          apply Forall_cons; intros. {
+            inversion H1.
+          }
+          eauto.
+        * eauto.
+      + apply drf_inv_write in H.
+        destruct H as (ah', (?, Hadd)).
+        eapply last_write_inv_write in H1; eauto.
+        destruct H1 as [(?,(?,(?,?)))|[(?,(?,?))|(?,(?,(l,(?,?))))]].
+        * subst.
+          apply Forall_cons. {
+            intros.
+            simpl.
+            auto.
+          }
+          auto using Forall_nil.
+        * eauto.
+        * subst.
+          apply Forall_cons; intros; auto.
+          assert (Hlw: exists a, LastWrite (HB (snd (vs0,es0))) a l). {
+            eauto using drf_ref_to_last_write.
+          }
+          simpl in *; destruct Hlw as (a, Hlw).
+          eapply IHt in Hlw; eauto.
+          rewrite Forall_forall in *.
+          intros c; intros.
+          assert (Hw := H2).
+          apply Hlw in H2; auto.
+          destruct H2. {
+            inversion Hadd; subst; clear Hadd. {
+              assert (l = nil). {
+                rewrite MM_Facts.add_mapsto_iff in *.
+                destruct H0 as [(?,Heq)|(?,_)].
+                - inversion Heq; subst; auto.
+                - contradiction.
+              }
+              subst.
+              inversion H1.
+            }
+            assert (l0 = l) by eauto using MM_Facts.MapsTo_fun; subst.
+            unfold WriteSafe,ForallWrites in *.
+            apply H12 in H1; auto.
+            destruct H1. {
+              simpl in *.
+              auto.
+            }
+            simpl in *.
+            rewrite H1 in *.
+            eapply cg_hb_absurd_node_l in H2; eauto; contradiction.
+          }
+          subst.
+          inversion Hadd; subst; clear Hadd. {
+            assert (l = nil). {
+              rewrite MM_Facts.add_mapsto_iff in *.
+              destruct H0 as [(?,Heq)|(?,_)].
+              - inversion Heq; subst; auto.
+              - contradiction.
+            }
+            subst.
+            inversion H1.
+          }
+          assert (l0 = l) by eauto using MM_Facts.MapsTo_fun; subst.
+          unfold WriteSafe,ForallWrites in *.
+          assert (Hi:=H1). (* In c l *)
+          apply H11 in H1; auto.
+          destruct H1. {
+            simpl in *.
+            auto.
+          }
+          simpl in *.
+          assert (Node (a_when c) vs0). {
+            eauto using drf_to_node.
+          }
+          rewrite H1 in *.
+          simpl_node.
+        - apply drf_inv_future in Hdrf.
+          eauto using last_write_inv_future.
+        - apply drf_inv_force in Hdrf.
+          eauto using last_write_inv_force.
+  Qed.
+  End forall_prec.
+(*
+  Lemma last_write_inv_write:
+    forall ah x r d t vs es n a h,
+    DRF ((x, Trace.MEM r (Trace.WRITE d))::t) (x :: vs,C (n, fresh vs) :: es) ah ->
+    MM.MapsTo r ((fresh vs, Some d) :: h) ah ->
+    LastWrite (HB (C (n, fresh vs) :: es)) a ((fresh vs, Some d) :: h) ->
+    a = (fresh vs, Some d).
+  Proof.
+    intros.
+    inversion H; subst; clear H;
+    simpl in *; inversion H10; subst; clear H10.
+    inversion H11; subst; clear H11.
+    inversion H3; subst; clear H3.
+    inversion H9; subst; clear H9.
+    simpl_node.
+    rename es' into es.
+    assert (cg = (vs, es)). {
+      eauto using drf_to_cg, cg_fun.
+    }
+    subst.
+    inversion H1; subst; clear H1.
+    simpl in *.
+    destruct H2; auto.
+    unfold ForallWrites in *.
+    apply Forall_forall in H3.
+    inversion H3; subst; clear H3.
+    assert (Hw: Write (fresh vs, Some d)) by auto using write_some.
+    apply H8 in Hw.
+  Qed.
+*)
 (*
   Ltac simpl_drf :=
   match goal with
