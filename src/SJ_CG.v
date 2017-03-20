@@ -1455,7 +1455,7 @@ Section Alt.
     unfold not; intros.
     inversion H.
   Qed.
-(*
+
   Let spawn_point_cons:
     forall x n vs es y e' e z t,
     CG.SpawnPoint x n t (vs, es) ->
@@ -1463,8 +1463,7 @@ Section Alt.
   Proof.
     auto using CG.spawn_point_join.
   Qed.
-*)
-(*
+
   Let hb_can_join_cons:
     forall vs es n x e' e y t z,
     HBCanJoin t (vs, es) n x ->
@@ -1476,12 +1475,11 @@ Section Alt.
     }
     auto using hb_can_join_eq.
   Qed.
-*)
-(*
+
   Let hb_can_join_cons_c:
-    forall vs es a b y x,
+    forall vs es a b y x t,
     HBCanJoin t (vs, es) a x ->
-    HBCanJoin ((y, CONTINUE)::t) (y :: vs, CG.C (a, b) :: es) b x.
+    HBCanJoin ((y, CG.CONTINUE)::t) (y :: vs, CG.C (a, b) :: es) b x.
   Proof.
     intros.
     inversion H; subst; clear H. {
@@ -1497,18 +1495,17 @@ Section Alt.
     apply hb_can_join_hb with (ny:=a); simpl;
     auto using CG.spawn_point_continue, CG.edge_to_hb.
   Qed.
-*)
 (*
   Let hb_can_join_cons_j:
-    forall vs es a b y x,
-    HBCanJoin (y :: vs, es) a x ->
-    HBCanJoin (y :: vs, CG.J (a, b) :: es) b x.
+    forall vs es a b y x t z,
+    HBCanJoin t (y :: vs, es) a x ->
+    HBCanJoin ((z, CG.JOIN y)::t) (y :: vs, CG.J (a, b) :: es) b x.
   Proof.
     intros.
     inversion H; subst; clear H. {
       simpl in *.
       apply hb_can_join_hb with (ny:=ny).
-      + eauto using CG.spawn_point_join.
+      + eapply CG.spawn_point_join.
       + simpl in *.
         remember ((_,_)::es) as es'.
         assert (CG.HB es' ny a) by (subst; auto using CG.hb_cons).
@@ -1571,26 +1568,19 @@ Section Alt.
     eauto using CG.cg_hb_edge_to_node_r.
   Qed.
 
-(*
-  (* -------------------------------------- *)
-
-
-
-
-
   Let hb_can_join_to_node:
-    forall vs es n x,
-    EdgeToNode (vs, es) ->
-    HBCanJoin (vs, es) n x ->
+    forall t vs es n x,
+    CG.CG t (vs, es) ->
+    HBCanJoin t (vs, es) n x ->
     Node n vs.
   Proof.
     intros.
     inversion H0; subst; clear H0; simpl in *. {
-      apply edge_to_node_hb_snd with (vs:=vs) in H2; auto.
+      eapply CG.hb_to_node_snd with (vs:=vs) in H2; eauto.
     }
     eauto using spawn_point_to_node.
   Qed.
-
+(*
   Let hb_absurd_fresh_lhs:
     forall nx x (vs:list tid) es (n:node),
     DAG (FGraph.Edge (cg_edges (F (nx, node_next (fresh vs)) :: C (nx, fresh vs) :: es))) ->
@@ -1611,11 +1601,15 @@ Section Alt.
     destruct Hy as [Hx|[(?,[?|Hx])|[(?,Hx)|(Hx,?)]]]; subst; simpl_node;
     hb_simpl.
   Qed.
+*)
+  (* -------------------------------------- *)
+
+(*
 
 
   Let spawn_point_to_in:
-    forall es vs x n,
-    CG.SpawnPoint x n (vs, es) ->
+    forall es vs x n t,
+    CG.SpawnPoint x n t (vs, es) ->
     List.In x vs.
   Proof.
     induction es; intros. {
@@ -2023,26 +2017,3 @@ Section Alt.
   *)
 End Alt.
 
-(*
-Section Extra.
-  Lemma build_cg:
-    forall t k,
-    Events.Run t k ->
-    exists a cg, CG.Run a t cg.
-  Proof.
-    induction t; intros. {
-      exists (taskid 0).
-      exists (make_cg (taskid 0)).
-      auto using run_nil.
-    }
-    inversion H; subst; clear H.
-    apply IHt in H2.
-    destruct H2 as (x, (cg, Hr)).
-    exists x.
-    inversion H4; subst; clear H4.
-    - inversion H; subst; clear H.
-      CG.Reduces
-    apply run_cons in Hr.
-  Qed.
-End Extra.
-*)

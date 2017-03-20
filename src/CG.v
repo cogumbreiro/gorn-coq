@@ -652,6 +652,24 @@ Section PropsEx.
     destruct H0; auto.
   Qed.
 
+  Lemma hb_to_node_snd:
+    forall t vs es x y,
+    CG t (vs, es) ->
+    HB es x y ->
+    Node y vs.
+  Proof.
+    eauto using edge_to_node_hb_snd, cg_to_edge_to_node.
+  Qed.
+
+  Lemma hb_to_node_fst:
+    forall t vs es x y,
+    CG t (vs, es) ->
+    HB es x y ->
+    Node x vs.
+  Proof.
+    eauto using edge_to_node_hb_fst, cg_to_edge_to_node.
+  Qed.
+
   Lemma hb_edge_cons:
     forall es e a b,
     HB_Edge es (a, b) ->
