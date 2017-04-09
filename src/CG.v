@@ -251,10 +251,14 @@ Section Props.
   | EQ: x = y -> Relation x y
   | PAR: MHP x y -> Relation x y.
 
+  Require Aniceto.Graphs.FGraph.
+
   Lemma hb_dec:
     forall x y,
-    Relation x y.
-  Admitted. (* TODO: prove this at the graph-level *)
+    { HB x y } + { ~ HB x y }.
+  Proof.
+    Admitted.
+  (* TODO: prove this at the graph-level *)
 
 End Props.
 

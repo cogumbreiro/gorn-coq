@@ -341,6 +341,13 @@ Section LastWrites.
   (R, W) ==>wr(n, x) (R, W{x += n})
    *)
 
+  Definition unsafe_add r a (ah:access_history A E) :=
+  let h := (match MM.find r ah with
+  | None => nil
+  | Some h => h
+  end) in
+  MM.add r (a::h) ah.
+
   Inductive Add: access_history A E -> (mid * E * op) -> access_history A E -> Prop :=
   | add_alloc:
     forall g r d n,
@@ -1360,6 +1367,7 @@ Module T.
   Import Tid.
   Import Node.
 
+  Notation cg_access := (access Trace.datum node).
   Notation cg_access_history := (access_history Trace.datum node).
   Notation cg_access_history_op := (op Trace.datum).
 
@@ -1374,6 +1382,30 @@ Module T.
     es = CG.C (n, n') :: es' ->
     Add (CG.HB es) ah (r, n', o) ah' ->
     DRF_Reduces es ah (r, o) ah'.
+
+  Definition op_to_access (o:cg_access_history_op) :=
+  let (o, d) := o in
+  match o with
+  | READ => None
+  | WRITE => Some d
+  end.
+
+  Inductive WFAccess: list cg_edge -> cg_access_history -> (mid * cg_access_history_op) -> Prop :=
+  | wf_access_read:
+    forall r h n n' es ah d n'',
+    MM.MapsTo r h ah ->
+    LastWrite (HB (C (n, n') :: es)) (n'', Some d) h ->
+    HB (C (n, n') :: es) n'' n' ->
+    WFAccess (C (n, n') :: es) ah (r, (READ, d))
+  | wf_access_write:
+    forall es ah r d,
+    WFAccess es ah (r, (WRITE, d)).
+
+  Inductive Step: list (edge_type * (node * node)) -> cg_access_history -> (mid * cg_access_history_op) -> cg_access_history -> Prop :=
+  | step_def:
+    forall n n' o r es ah,
+    WFAccess (CG.C (n, n') :: es) ah (r,o) ->
+    Step (CG.C (n, n') :: es) ah (r, o) (unsafe_add r (n', op_to_access o) ah).
 
   Definition op_to_ah (o:Trace.op) : option (mid*cg_access_history_op) :=
   match o with
@@ -1398,6 +1430,23 @@ Module T.
     CG.T.CG ((x,o)::t) (vs, es) ->
     op_to_ah o = None ->
     DRF ((x,o)::t) (vs,es) ah.
+
+  Inductive History: Trace.trace -> CG.computation_graph -> cg_access_history -> Prop :=
+  | history_nil:
+    History nil (nil, nil) (empty Trace.datum node)
+  | history_some:
+    forall o o' ah' vs es cg x t ah,
+    History t cg ah ->
+    CG.T.CG ((x,o)::t) (vs, es) ->
+    op_to_ah o = Some o' ->
+    Step es ah o' ah' ->
+    History ((x,o)::t) (vs,es) ah'
+  | history_none:
+    forall o vs es cg x t ah,
+    History t cg ah ->
+    CG.T.CG ((x,o)::t) (vs, es) ->
+    op_to_ah o = None ->
+    History ((x,o)::t) (vs,es) ah.
 
   Definition NodeDef (vs:list tid) (g:cg_access_history) :=
     forall a r h,
@@ -1587,9 +1636,19 @@ Section NodeDef.
     eauto using node_cons.
   Qed.
 
-  Lemma drf_to_node_def:
+  Lemma history_to_cg:
     forall t cg ah,
-    DRF t cg ah ->
+    History t cg ah ->
+    CG t cg.
+  Proof.
+    induction t; intros;
+    inversion H; subst; clear H;
+    auto using cg_nil.
+  Qed.
+
+  Lemma history_to_node_def:
+    forall t cg ah,
+    History t cg ah ->
     NodeDef (fst cg) ah.
   Proof.
     induction t; intros; inversion H; subst; clear H.
@@ -1599,24 +1658,121 @@ Section NodeDef.
       contradiction.
     - (* read/write *)
       assert (Hx:=H2).
-      apply drf_to_cg in Hx.
+      apply history_to_cg in Hx.
       apply IHt in H2; simpl in *;
-      destruct o; simpl in *; try (inversion H4; clear H4);
-      destruct m0; inversion H0; subst; clear H0;
-      inversion H7; subst; clear H7;
-      inversion H5; subst; clear H5; simpl in *;
-      try (rename es' into es);
-      inversion H3; subst; clear H3; subst; eauto; simpl_node;
-        assert (cg0 = (vs0, es)) by eauto using CG.cg_fun; subst;
-        eauto.
+      destruct o; simpl in *; try (inversion H4; clear H4).
+      inversion H7; subst; clear H7; unfold unsafe_add.
+      inversion H3; subst; clear H3; simpl in *;
+      try (rename es' into es).
+      simpl_node.
+      assert (cg0 = (vs0, es0)) by eauto using CG.cg_fun; subst.
+      destruct (MM_Extra.find_rw r ah0) as [(R,?)|(?,(R,?))];
+      rewrite R; eauto.
     - assert (Hx:=H2).
       apply IHt in H2.
       unfold NodeDef in *; intros; simpl in *.
       destruct o; inversion H6; subst; clear H6;
       inversion H3; subst; clear H3;
       try (rename es0 into es);
-      assert (cg0 = (vs0, es)) by eauto using drf_to_cg, cg_fun; subst;
+      assert (cg0 = (vs0, es)) by eauto using history_to_cg, cg_fun; subst;
       eauto using node_cons.
+  Qed.
+  Section DrfToHistory.
+    Lemma read_inv:
+      forall {E A} n d,
+      Read (E:=E) (A:=A) (n, d) ->
+      d = None.
+    Proof.
+      intros.
+      unfold Read in *.
+      destruct d. {
+        contradiction H.
+        auto using write_some.
+      }
+      trivial.
+    Qed.
+
+    Let drf_reduces_to_step vs ah (Hnd : NodeDef vs ah):
+      forall es n o ah',
+      DRF_Reduces (C (n, fresh vs)::es) ah o ah' ->
+      Step (C (n, fresh vs)::es) ah o ah'.
+    Proof.
+      intros.
+      inversion H; subst; clear H.
+      inversion H0; subst; clear H0.
+      remember (fresh vs) as n'.
+      assert (R: ah' = unsafe_add r (n', op_to_access o0) ah);
+      unfold unsafe_add.
+       {
+        inversion H1; subst; clear H1; simpl.
+        - destruct (MM_Extra.find_rw r ah) as [(R,?)|(?,(?,?))]. {
+            rewrite R.
+            trivial.
+          }
+          contradiction H5.
+          eauto using MM_Extra.mapsto_to_in.
+        - destruct (MM_Extra.find_rw r ah) as [(R,?)|(?,(R,?))]. {
+            contradiction H.
+            eauto using MM_Extra.mapsto_to_in.
+          }
+          rewrite R.
+          assert (x = l) by eauto using MM_Facts.MapsTo_fun; subst.
+          trivial.
+        - destruct (MM_Extra.find_rw r ah) as [(R,?)|(?,(R,?))]. {
+            contradiction H.
+            eauto using MM_Extra.mapsto_to_in.
+          }
+          rewrite R.
+          assert (x = l) by eauto using MM_Facts.MapsTo_fun; subst.
+          trivial.
+      }
+      rewrite R.
+      assert (WFAccess (C (n0, n') :: es') ah (r, o0)). {
+        inversion H1; subst; clear H1; auto using wf_access_write.
+        apply wf_access_read with (n'':=n'0) (h:=l); auto.
+        apply last_write_to_in in H7.
+        assert (Hin := H7).
+        eapply write_safe_inv_in in H7; eauto.
+        destruct H7 as [N|[?|?]].
+        - apply read_inv in N.
+          inversion N.
+        - auto.
+        - simpl in *; subst.
+          eapply Hnd in Hin; eauto.
+          simpl in *.
+          simpl_node.
+      }
+      auto using step_def.
+    Qed.
+
+    Lemma drf_to_history:
+      forall t cg ah,
+      DRF t cg ah ->
+      History t cg ah.
+    Proof.
+      induction t; intros. {
+        inversion H; subst; clear H.
+        auto using history_nil.
+      }
+      inversion H; subst; clear H; eauto using history_none.
+      destruct o; inversion H4; subst.
+      inversion H3; subst.
+      assert (R: cg0 = (vs0, es0)) by eauto using cg_fun, drf_to_cg.
+      subst.
+      apply IHt in H2.
+      assert (Hx := H2).
+      apply history_to_node_def in Hx.
+      simpl in *; simpl_node.
+      eapply history_some; eauto.
+    Qed.
+  End DrfToHistory.
+
+  Lemma drf_to_node_def:
+    forall t cg ah,
+    DRF t cg ah ->
+    NodeDef (fst cg) ah.
+  Proof.
+    eauto using drf_to_history, history_to_node_def.
   Qed.
 
   Lemma drf_to_node:
@@ -1629,6 +1785,19 @@ Section NodeDef.
     intros.
     assert (R: vs = (fst (vs,es))) by auto; rewrite R.
     apply drf_to_node_def in H.
+    eauto.
+  Qed.
+
+  Lemma history_to_node:
+    forall t vs es ah r h a,
+    History t (vs, es) ah ->
+    MM.MapsTo r h ah ->
+    List.In a h ->
+    Node (a_when a) vs.
+  Proof.
+    intros.
+    assert (R: vs = (fst (vs,es))) by auto; rewrite R.
+    apply history_to_node_def in H.
     eauto.
   Qed.
 
@@ -2670,6 +2839,290 @@ End AccessFun.
           eauto using last_write_inv_force.
   Qed.
   End forall_prec.
+
+  Section DRFToHistory.
+
+
+    Let race_Free_history_inv:
+      forall es es' ah ah' o,
+      RaceFreeHistory (HB es') ah' ->
+      Step es ah o ah' ->
+      RaceFreeHistory (HB es') ah.
+    Proof.
+      intros.
+      inversion H0; subst; clear H0.
+      unfold unsafe_add in *.
+      destruct (MM_Extra.find_rw r ah) as [(R,?)|(?,(R,?))]. {
+        rewrite R in *.
+        unfold RaceFreeHistory in *; intros.
+        eapply H with (r0:=r0); eauto.
+        eapply MM.add_2; auto.
+        unfold not; intros; subst.
+        contradiction H0.
+        eauto using MM_Extra.mapsto_to_in.
+      }
+      rewrite R in *; clear R.
+      unfold RaceFreeHistory in *; intros.
+      (* -- *)
+      destruct (mid_eq_dec r r0). {
+        subst.
+        apply H with (l:=(n', op_to_access o0) :: l) (r:=r0); auto using in_cons.
+        assert (x = l) by eauto using MM_Facts.MapsTo_fun; subst.
+        auto using MM.add_1.
+      }
+      eapply H with (r0:=r0); eauto.
+      rewrite MM_Facts.add_mapsto_iff.
+      auto.
+    Qed.
+
+    Let racy_access_impl:
+      forall {A E:Type} (R1 R2: E -> E -> Prop) a b,
+      RacyAccess (A:=A) R1 a b ->
+      (R2 (a_when a) (a_when b) -> R1 (a_when a) (a_when b)) ->
+      (R2 (a_when b) (a_when a) -> R1 (a_when b) (a_when a)) ->
+      RacyAccess (A:=A) R2 a b.
+    Proof.
+      intros.
+      inversion H; subst; clear H.
+      apply racy_access_def; auto.
+      destruct H4; split; unfold not; intros; auto.
+    Qed.
+
+    Let race_free_access_impl:
+      forall {A E:Type} (R1 R2: E -> E -> Prop) a b,
+      RaceFreeAccess (A:=A) R1 a b ->
+      (R1 (a_when a) (a_when b) -> R2 (a_when a) (a_when b)) ->
+      (R1 (a_when b) (a_when a) -> R2 (a_when b) (a_when a)) ->
+      RaceFreeAccess (A:=A) R2 a b.
+    Proof.
+      intros.
+      unfold RaceFreeAccess, not in *; intros.
+      apply H.
+      eapply racy_access_impl in H2; eauto.
+    Qed.
+
+    Let race_free_history_impl:
+      forall {A E:Type} (R1 R2: E -> E -> Prop) ah,
+      (forall x y r l, MM.MapsTo r l ah -> List.In x l -> List.In y l -> R1 (a_when x) (a_when y) -> R2 (a_when x) (a_when y)) ->
+      RaceFreeHistory (A:=A) R1 ah ->
+      RaceFreeHistory (A:=A) R2 ah.
+    Proof.
+      unfold RaceFreeHistory in *; intros.
+      assert (RaceFreeAccess R1 a b) by eauto.
+      apply race_free_access_impl with (R3:=R1); auto; intros;
+      eapply H in H5; eauto.
+    Qed.
+
+    Lemma race_free_access_inv {E}
+      (eq_dec: forall (x y:E), {x = y} + {x <> y})
+      Lt (lt_dec: forall x y, { Lt x y } + { ~ Lt x y }):
+      forall {A} x y,
+      RaceFreeAccess (A:=A) (E:=E) Lt x y ->
+      a_when x = a_when y \/
+      (Read x /\ Read y) \/
+      ((Write x \/ Write y) /\ (Lt (a_when x) (a_when y)  \/ Lt (a_when y) (a_when x))).
+    Proof.
+      intros.
+      unfold RaceFreeAccess in *.
+      destruct (eq_dec (a_when x) (a_when y)). {
+        auto.
+      }
+      right.
+      destruct (write_dec x). {
+        destruct (lt_dec (a_when x) (a_when y)); auto.
+        destruct (lt_dec (a_when y) (a_when x)); auto.
+        contradiction H.
+        apply racy_access_def; auto.
+      }
+      destruct (write_dec y). {
+        destruct (lt_dec (a_when x) (a_when y)); auto.
+        destruct (lt_dec (a_when y) (a_when x)); auto.
+        contradiction H.
+        apply racy_access_def; auto.
+      }
+      auto.
+    Qed.
+
+    Let step_to_drf_reduces vs ah es t n (Hnd : NodeDef vs ah) x (Hcg: CG.CG ((x, CONTINUE) :: map event_to_cg t)
+       (x :: vs, C (n, fresh vs) :: es)):
+      forall o ah',
+      RaceFreeHistory (HB (C (n, fresh vs) :: es)) ah' ->
+      Step (C (n, fresh (A:=tid) vs) :: es) ah o ah' ->
+      MapsTo x n vs ->
+      RaceFreeHistory (HB es) ah ->
+      DRF_Reduces (C (n, fresh (A:=tid) vs) :: es) ah o ah'.
+    Proof.
+      intros.
+      inversion H0; subst; clear H0.
+      eapply drf_reduces; eauto.
+      unfold unsafe_add, op_to_access in *.
+      destruct (MM_Extra.find_rw r ah) as [(R,?)|(h,(R,?))], o0 as ([], d); rewrite R in *; simpl in *.
+      - inversion H9; subst; clear H9.
+        contradiction H0.
+        eauto using MM_Extra.mapsto_to_in.
+      - apply add_alloc; auto.
+      - (* read *)
+        inversion H9; subst; clear H9.
+        assert (h0 = h) by eauto using MM_Facts.MapsTo_fun; subst.
+        apply add_read with (n':=n''); auto.
+        unfold WriteSafe, ForallWrites; intros.
+        unfold RaceFreeHistory in *.
+        assert (RaceFreeAccess  (HB (C (n, fresh vs) :: es)) a (fresh vs, None)). {
+          apply H with (r0:=r) (l:=(fresh vs, None) :: h);
+          auto using in_cons, in_eq, MM.add_1.
+        }
+        apply race_free_access_inv in H5; auto using node_eq_dec. {
+          destruct H5 as [N|[(N,_)|([],Hhb)]].
+          - simpl in *.
+            eapply Hnd in H3; eauto.
+          - unfold Read; contradiction.
+          - destruct Hhb; auto.
+            simpl in *.
+            eapply hb_inv_cons_c with (x:=x) in H6; eauto.
+            destruct H6; auto.
+            inversion Hcg; subst; clear Hcg; simpl_node.
+            apply cg_hb_absurd_node_l with (t:=(map event_to_cg t)) in H6; auto.
+            contradiction.
+          - destruct Hhb; auto; simpl in *.
+            eapply hb_inv_cons_c with (x:=x) in H6; eauto.
+            destruct H6. {
+              inversion Hcg; subst; clear Hcg; simpl_node.
+              apply cg_hb_absurd_node_l with (t:=(map event_to_cg t)) in H6; auto.
+              contradiction.
+            }
+            eapply Hnd in H3; eauto.
+        }
+        auto using hb_dec.
+      - inversion H9; subst; clear H9.
+        apply add_write; auto. {
+          unfold RaceFreeHistory, WriteSafe, ForallWrites in *; intros.
+          assert (Hrf: RaceFreeAccess (HB (C (n, fresh vs) :: es)) (fresh vs, Some d) a). {
+            eauto using in_cons, in_eq, MM.add_1.
+          }
+          apply race_free_access_inv in Hrf; auto using node_eq_dec, hb_dec.
+          destruct Hrf as [N|[(N,_)|([],Hhb)]]; simpl in *.
+          - auto.
+          - apply read_inv in N.
+            inversion N.
+          - destruct Hhb; auto.
+            apply hb_inv_cons_c with (x:=x) (t:=(x, CONTINUE) :: map event_to_cg t) in H6; auto.
+            destruct H6; auto.
+            inversion Hcg; subst; clear Hcg; simpl_node.
+            apply cg_hb_absurd_node_l with (t:=map event_to_cg t) in H6; auto.
+            contradiction.
+          - destruct Hhb; auto.
+            apply hb_inv_cons_c with (x:=x) (t:=(x, CONTINUE) :: map event_to_cg t) in H6; auto.
+            destruct H6; auto.
+            inversion Hcg; subst; clear Hcg; simpl_node.
+            apply cg_hb_absurd_node_l with (t:=map event_to_cg t) in H6; auto.
+            contradiction.
+        }
+        unfold ReadSafe, ForallReads, RaceFreeHistory in *; intros.
+        assert (Hrf: RaceFreeAccess (HB (C (n, fresh vs) :: es)) (fresh vs, Some d) a). {
+          eauto using in_cons, in_eq, MM.add_1.
+        }
+        apply race_free_access_inv in Hrf; auto using node_eq_dec, hb_dec.
+        destruct Hrf as [N|[(N,_)|([],Hhb)]]; simpl in *.
+        + auto.
+        + apply read_inv in N.
+          inversion N.
+        + destruct Hhb; auto.
+          apply hb_inv_cons_c with (x:=x) (t:=(x, CONTINUE) :: map event_to_cg t) in H6; auto.
+          destruct H6; auto.
+          inversion Hcg; subst; clear Hcg; simpl_node.
+          apply cg_hb_absurd_node_l with (t:=map event_to_cg t) in H6; auto.
+          contradiction.
+        + destruct Hhb; auto.
+          apply hb_inv_cons_c with (x:=x) (t:=(x, CONTINUE) :: map event_to_cg t) in H6; auto.
+          destruct H6; auto.
+          inversion Hcg; subst; clear Hcg; simpl_node.
+          apply cg_hb_absurd_node_l with (t:=map event_to_cg t) in H6; auto.
+          contradiction.
+    Qed.
+
+    Lemma history_to_drf:
+      forall t cg ah,
+      History t cg ah ->
+      RaceFreeHistory (HB (snd cg)) ah ->
+      DRF t cg ah.
+    Proof.
+      induction t; intros. {
+        inversion H; subst; clear H.
+        auto using drf_nil.
+      }
+      inversion H; subst; clear H. {
+        rename ah into ah'.
+        rename ah0 into ah.
+        rename cg0 into cg.
+        destruct cg as (vs', es').
+        destruct o; inversion H5; subst; clear H5.
+        assert (Hc: exists n, MapsTo x n vs' /\ (vs,es) = (x::vs', C (n, fresh vs') :: es')). {
+          inversion H4; subst; clear H4.
+          simpl_node.
+          apply history_to_cg in H3.
+          assert (R:(vs0,es0) = (vs', es')) by
+          eauto using cg_fun; inversion R; subst; clear R.
+          eauto.
+        }
+        destruct Hc as (n, (?, R)); inversion R; subst; clear R.
+        simpl in *.
+        assert (RaceFreeHistory (HB (snd (vs', es'))) ah). {
+          assert (Hr: RaceFreeHistory (HB (C (n, fresh vs') :: es')) ah) by eauto.
+          apply race_free_history_impl with (R1:=HB (C (n, fresh vs') :: es'));
+          intros; auto.
+          eapply hb_inv_cons_c in H7; eauto; simpl.
+          destruct H7 as [?|R]; auto.
+          eapply history_to_node in H6; eauto.
+          rewrite R in *.
+          simpl_node. (* absurd *)
+        }
+        apply IHt in H3; auto.
+        eapply drf_some; eauto.
+        eapply step_to_drf_reduces; eauto.
+        apply drf_to_node_def in H3.
+        simpl in *; auto.
+      }
+      apply IHt in H3; eauto using drf_none.
+      simpl in *.
+      apply race_free_history_impl with (R1:= (HB es));
+      intros; auto.
+      destruct o; simpl in *; inversion H7; subst; clear H7;
+      inversion H4; subst.
+      - assert (cg0 = (vs0, es)) by eauto using cg_fun, history_to_cg; subst.
+        auto.
+      - simpl_node.
+        destruct m0; simpl in *; inversion H8.
+        assert (cg0 = (vs0, es0)) by eauto using cg_fun, history_to_cg; subst.
+        simpl in *.
+        apply hb_inv_cons_c with (a:=a_when x0) (b:=a_when y) in H4; auto;
+        clear H5.
+        destruct H4; auto.
+        eapply history_to_node in H2; eauto.
+        rewrite H4 in *.
+        simpl_node.
+      - simpl_node.
+        assert (cg0 = (vs0, es0)) by eauto using cg_fun, history_to_cg; subst.
+        simpl in *.
+        eapply hb_inv_cons_fork in H5; eauto.
+        destruct H5 as [?|[(R,?)|[(R,?)|[(R,?)|[(R,?)|[(?,(R,?))|(?,(R,?))]]]]]];
+        auto;
+        subst;
+        eapply history_to_node in H2; eauto;
+        try (rewrite <- R in *;
+        simpl_node).
+        rewrite <- H5 in *.
+        simpl_node.
+      - simpl_node.
+        assert (cg0 = (vs0, es0)) by eauto using cg_fun, history_to_cg; subst.
+        simpl in *.
+        eapply hb_inv_cons_join in H5; eauto.
+        destruct H5 as [?|?]; auto.
+        destruct H5 as [(R,?)|[(R,?)|[(R,?)|(R,?)]]];
+        eapply history_to_node in H2; eauto;
+        try (rewrite <- R in *;
+        simpl_node).
+    Qed.
+  End DRFToHistory.
 (*
   Lemma last_write_inv_write:
     forall ah x r d t vs es n a h,
