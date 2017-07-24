@@ -1,4 +1,4 @@
-# SIF formalization in Coq
+# Known-Joins formalization in Coq
 
 Run once:
 
@@ -9,14 +9,16 @@ To run the proofs use `make`.
 * [`src/SafeJoins.v`](src/SafeJoins.v) corresponds to Section 3, where
 Theorem 3.2 is called `deadlock_avoidance`.
 
-* [`src/CG.v`](src/CG.v) corresponds to Section 4.2.
+* [`src/CG.v`](src/CG.v) defines computation graph from traces (Section 4.1).
 
-* [`src/AccessHistory.v`](src/AccessHistory.v) corresponds to Section 4.3,
-where Lemma 4.1 is called `wf_reduces`.
+* [`src/AccessHistory.v`](src/AccessHistory.v) defines shared memory, data-races,
+  memory accesses and so on.
 
-* [`src/SJ_CG.v`](src/SJ_CG.v) correspnds to Section 4.4, where Lemma 4.2
-is called `sj_spec`.
+* [`src/SJ_CG.v`](src/SJ_CG.v) formalizes maps Safe-Joins in a computation
+  graph (since the former operates on a trace); in short, this file formalizes
+  known-sets at the node level (of a computation graph).
 
-* [`src/LocalInfo.v`](src/LocalInfo.v) corresponds to Section 4.5, where Theorem 4.3
-corresponds to `wf_reduces_alt`.
+* [`src/LocalInfo.v`](src/LocalInfo.v) formalizes the local memory in
+  a computation graph. The file also includes the connection between
+  shared memory and local information. The main result is `wf_reduces_alt`.
 
