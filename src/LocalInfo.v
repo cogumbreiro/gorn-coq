@@ -710,6 +710,7 @@ Section SR.
       unfold LastWriteCanJoin in *.
       - simpl in *.
         subst.
+        clear H9.
         apply AccessHistory.last_write_inv_cons_read in H3.
         apply AccessHistory.T.drf_to_cg in H0.
         eapply AccessHistory.T.last_write_inv_hb in H10; eauto.
