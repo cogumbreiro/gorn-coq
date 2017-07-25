@@ -10,6 +10,11 @@ Require Import Tid.
 
 Require Import Aniceto.Graphs.FGraph.
 
+(**
+  In our analysis we only care about fork and join operations; everything else
+  is ignored.
+  *)
+
   Inductive op_type := FORK | JOIN.
 
   Structure op := {
@@ -19,27 +24,52 @@ Require Import Aniceto.Graphs.FGraph.
   }.
 
 Module SJ_Notations.
+
+  (**
+    We define a simple notation to wrap up the structure and make it less
+    verbose.
+    *)
+
   Notation F x y := ({| op_t := FORK; op_src:=x; op_dst := y |}).
   Notation J x y := ({| op_t := JOIN; op_src:=x; op_dst := y |}).
 End SJ_Notations.
 
 Section Defs.
 
+  (** The type of a trace of forks and joins. *)
+
   Definition trace := list op.
+
+  (** A known-graph defined as a list of edges [(x,y)] means that x knows y. *)
 
   Notation known := (list (tid*tid)).
 
+  (** Returns the outgoing node in an edge if the edge departs from [t].
+    Expression [outgoing t e] returns [Some y] if [e = (x, y)],
+    otherwise it returns [None]. *)
+
   Definition outgoing_of t (e:tid*tid) := let (x,y) := e in if tid_eq_dec x t then Some y else None.
+
+  (** Given a known-graph return all the tasks [x] knows. *)
 
   Definition filter_outgoing x := List.omap (outgoing_of x).
 
+  (** Copies the knowledge of [x] to [y], such that [y] knows every task
+  that [x] knows. *)
+  
   Definition copy_from (x y:tid) k := map (fun z => (y, z)) (filter_outgoing x k).
+
+  (** When [x] forks [y], the [y] copies the knowledge of [x]. *)
 
   Definition fork (x y:tid) (k:known) : known :=
   copy_from x y k ++ (x,y) :: k.
 
+  (** When [x] joins with [y], [x] copies the knowledge of [y]. *)
+
   Definition join (x y:tid) (k:known) : known :=
   copy_from y x k ++ k.
+
+  (** Given a fork/join extend the knowledge-graph. *)
 
   Definition eval (o:op) :=
   let f := match op_t o with
@@ -57,6 +87,8 @@ Section Defs.
     unfold fork.
     auto using incl_refl, incl_appr, incl_tl.
   Qed.
+
+  (** The knowledge graph [k] is a sub-graph of applying a fork to [k]. *)
 
   Lemma in_fork:
     forall e x y k,
@@ -77,6 +109,8 @@ Section Defs.
     auto using incl_refl, incl_appr.
   Qed.
 
+  (** Similarly, the knowledge graph [k] is a sub-graph of applying a join to [k]. *)
+
   Lemma in_join:
     forall e x y k,
     List.In e k ->
@@ -86,6 +120,8 @@ Section Defs.
     assert (incl k (join x y k)) by eauto using join_incl.
     unfold incl in *; auto.
   Qed.
+
+  (** The edges of a knowledge graph grow monotonically with evaluation. *)
 
   Lemma eval_incl:
     forall k o,
@@ -106,6 +142,8 @@ Section Defs.
     auto.
   Qed.
 
+  (** Checks if the operation is well-formed given a certain knowledge-graph. *)
+
   Inductive CanCheckOp (k:known) : op -> Prop :=
   | can_check_fork:
     forall (x y:tid),
@@ -116,6 +154,8 @@ Section Defs.
     forall x y,
     Edge k (x,y) ->
     CanCheckOp k {| op_t := JOIN; op_src := x; op_dst:= y|}.
+
+  (** Checking well-formedness is decidable. *)
 
   Lemma can_check_op_dec k o:
     { CanCheckOp k o } + { ~ CanCheckOp k o }.
@@ -144,6 +184,8 @@ Section Defs.
       contradiction.
   Defined.
 
+  (** Checks if a reduction step is is well formed. *)
+
   Inductive CheckOp k : op -> known -> Prop :=
   | check_fork:
     forall (x y:tid),
@@ -155,6 +197,8 @@ Section Defs.
     Edge k (x,y) ->
     CheckOp k {| op_t := JOIN; op_src := x; op_dst:= y|} (join x y k).
 
+  (** Checks if a trace is well formed. *)
+
   Inductive Safe : trace -> known -> Prop :=
   | safe_nil:
     Safe nil nil
@@ -163,6 +207,8 @@ Section Defs.
     CanCheckOp k o ->
     Safe l k ->
     Safe (o::l) (eval o k).
+
+  (** Decidable function that computes if a trace is well formed. *)
 
   Fixpoint is_safe t :=
   match t with
@@ -196,6 +242,9 @@ Section Defs.
     inversion H; subst; clear H; subst; unfold eval; simpl in *;
     auto using can_check_fork, can_check_join.
   Qed.
+  
+  (** Correctness proof of the predicate [is_safe] and the well-formedness
+  proposition [Safe], part I. *)
 
   Lemma is_safe_some:
     forall t k,
@@ -215,6 +264,9 @@ Section Defs.
       }
       inversion H.
   Qed.
+
+  (** Correctness proof of the predicate [is_safe] and the well-formedness
+  proposition [Safe], part II. *)
 
   Lemma safe_to_is_safe:
     forall t k,
@@ -819,6 +871,9 @@ Section Defs.
     auto using edge_to_reaches.
   Qed.
 
+  (** If the wait-for-graph is nonempty, then there exists a task
+  that is not waiting for anyone (i.e., can execute). *)
+
   Theorem progress:
     forall t k rs,
     Safe t k ->
@@ -848,6 +903,11 @@ Section Defs.
   Qed.
 
   Require Import Aniceto.Graphs.FGraph.
+
+  (**
+    If the trace is well-formed and the WFG is a subset of the knowledge graph,
+    then the WFG is a DAG (deadlock free).
+    *)
 
   Corollary deadlock_avoidance:
     forall t k wfg,
